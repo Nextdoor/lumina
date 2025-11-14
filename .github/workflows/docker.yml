@@ -53,24 +53,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser (snapshot) - AMD64 only
-        if: ${{ ! inputs.publish }}
+      - name: Run GoReleaser - AMD64
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
           args: release --snapshot --clean --config .goreleaser-amd64.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMG: lumina:local
-
-      - name: Run GoReleaser (release) - AMD64 only
-        if: ${{ inputs.publish }}
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean --config .goreleaser-amd64.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMG: lumina:local
@@ -116,24 +104,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser (snapshot) - ARM64 only
-        if: ${{ ! inputs.publish }}
+      - name: Run GoReleaser - ARM64
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
           args: release --snapshot --clean --config .goreleaser-arm64.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMG: lumina:local
-
-      - name: Run GoReleaser (release) - ARM64 only
-        if: ${{ inputs.publish }}
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean --config .goreleaser-arm64.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMG: lumina:local
