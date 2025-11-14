@@ -109,11 +109,11 @@ func Load(path string) (*Config, error) {
 	// Manually bind each config key to its environment variable
 	// Viper's automatic mapping doesn't handle camelCase to SCREAMING_SNAKE_CASE well
 	v.SetEnvPrefix("LUMINA")
-	v.BindEnv("defaultRegion", "LUMINA_DEFAULT_REGION")
-	v.BindEnv("logLevel", "LUMINA_LOG_LEVEL")
-	v.BindEnv("metricsBindAddress", "LUMINA_METRICS_BIND_ADDRESS")
-	v.BindEnv("healthProbeBindAddress", "LUMINA_HEALTH_PROBE_BIND_ADDRESS")
-	v.BindEnv("accountValidationInterval", "LUMINA_ACCOUNT_VALIDATION_INTERVAL")
+	_ = v.BindEnv("defaultRegion", "LUMINA_DEFAULT_REGION")
+	_ = v.BindEnv("logLevel", "LUMINA_LOG_LEVEL")
+	_ = v.BindEnv("metricsBindAddress", "LUMINA_METRICS_BIND_ADDRESS")
+	_ = v.BindEnv("healthProbeBindAddress", "LUMINA_HEALTH_PROBE_BIND_ADDRESS")
+	_ = v.BindEnv("accountValidationInterval", "LUMINA_ACCOUNT_VALIDATION_INTERVAL")
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
@@ -184,7 +184,10 @@ func (a *AWSAccount) Validate() error {
 
 	// Validate AssumeRole ARN format
 	if !isValidIAMRoleARN(a.AssumeRoleARN) {
-		return fmt.Errorf("invalid AssumeRole ARN %q: must be in format arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME", a.AssumeRoleARN)
+		return fmt.Errorf(
+			"invalid AssumeRole ARN %q: must be in format arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME",
+			a.AssumeRoleARN,
+		)
 	}
 
 	// Verify that the ARN's account ID matches the configured account ID

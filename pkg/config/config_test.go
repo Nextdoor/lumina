@@ -314,18 +314,18 @@ accountValidationInterval: "5m"`
 		// Restore original environment
 		for k, v := range originalEnv {
 			if v == "" {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			} else {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 		}
 	}()
 
-	os.Setenv("LUMINA_DEFAULT_REGION", "eu-west-1")
-	os.Setenv("LUMINA_LOG_LEVEL", "debug")
-	os.Setenv("LUMINA_METRICS_BIND_ADDRESS", ":9090")
-	os.Setenv("LUMINA_HEALTH_PROBE_BIND_ADDRESS", ":9091")
-	os.Setenv("LUMINA_ACCOUNT_VALIDATION_INTERVAL", "10m")
+	_ = os.Setenv("LUMINA_DEFAULT_REGION", "eu-west-1")
+	_ = os.Setenv("LUMINA_LOG_LEVEL", "debug")
+	_ = os.Setenv("LUMINA_METRICS_BIND_ADDRESS", ":9090")
+	_ = os.Setenv("LUMINA_HEALTH_PROBE_BIND_ADDRESS", ":9091")
+	_ = os.Setenv("LUMINA_ACCOUNT_VALIDATION_INTERVAL", "10m")
 
 	cfg, err := Load(configPath)
 	if err != nil {
