@@ -151,17 +151,56 @@ This project will be open-sourced. Contributions are welcome!
 3. **No internal references** - code must be ready for public release
 4. **Conventional commits** - use `type(component): description` format
 
+## Local Development
+
+### Prerequisites
+
+```bash
+# Install GoReleaser locally via Make (recommended)
+make goreleaser
+
+# Or install system-wide with brew
+# brew install goreleaser
+```
+
+### Building Locally
+
+```bash
+# Build everything using GoReleaser (matches CI exactly)
+bin/goreleaser build --snapshot --clean
+
+# Binaries will be in: dist/manager_linux_amd64_v1/manager
+# Or: dist/manager_linux_arm64/manager (depending on your platform)
+
+# Build Docker images using GoReleaser
+IMG=lumina:dev bin/goreleaser release --snapshot --clean
+
+# This creates:
+# - Multi-arch binaries in dist/
+# - Docker image tagged as lumina:dev
+```
+
 ### Running Locally
 
 ```bash
-# Install dependencies
-go mod download
-
 # Run controller against current kubeconfig context
 make run
 
 # Run with debug logging
 make run ARGS="--zap-log-level=debug"
+```
+
+### Loading into Kind
+
+```bash
+# Build image with GoReleaser
+IMG=lumina:dev bin/goreleaser release --snapshot --clean
+
+# Load into Kind cluster
+kind load docker-image lumina:dev
+
+# Deploy to Kind
+make deploy IMG=lumina:dev
 ```
 
 ## Documentation
