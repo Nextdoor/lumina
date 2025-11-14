@@ -22,10 +22,10 @@ import (
 
 func TestMockClient_EC2(t *testing.T) {
 	tests := []struct {
-		name           string
-		accountConfig  AccountConfig
-		setupMock      func(*MockClient)
-		expectError    bool
+		name            string
+		accountConfig   AccountConfig
+		setupMock       func(*MockClient)
+		expectError     bool
 		checkAssumeRole bool
 	}{
 		{

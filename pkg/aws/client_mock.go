@@ -38,9 +38,9 @@ type MockClient struct {
 	AssumeRoleCalls []AssumeRoleCall
 
 	// Errors can be set to simulate AWS API errors
-	EC2Error           error
-	SavingsPlansError  error
-	PricingError       error
+	EC2Error          error
+	SavingsPlansError error
+	PricingError      error
 }
 
 // AssumeRoleCall records an AssumeRole operation for testing.
