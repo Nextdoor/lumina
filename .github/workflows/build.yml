@@ -1,0 +1,13 @@
+name: Build
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    uses: ./.github/workflows/docker.yml
+    with:
+      publish: false

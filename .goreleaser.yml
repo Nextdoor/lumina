@@ -1,0 +1,85 @@
+before:
+  # https://goreleaser.com/customization/hooks/
+  hooks:
+    - go mod tidy
+
+builds:
+  # Manager (controller)
+  - id: manager
+    main: ./cmd/main.go
+    binary: manager
+    env: [CGO_ENABLED=0]
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+dockers:
+  # Local image only used for `make docker-build`
+  - image_templates: ["{{ .Env.IMG }}"]
+    dockerfile: Dockerfile
+    use: buildx
+    skip_push: true
+
+  # Release - AMD64
+  - image_templates: ["ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64"]
+    dockerfile: Dockerfile
+    goarch: amd64
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.description=Kubernetes controller for real-time AWS cost visibility
+      - --label=org.opencontainers.image.url=https://github.com/nextdoor/{{ .ProjectName }}
+      - --label=org.opencontainers.image.source=https://github.com/nextdoor/{{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.created={{ time "2006-01-02T15:04:05Z07:00" }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+
+  # Release - ARM64
+  - image_templates: ["ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8"]
+    goarch: arm64
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/arm64/v8
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.description=Kubernetes controller for real-time AWS cost visibility
+      - --label=org.opencontainers.image.url=https://github.com/nextdoor/{{ .ProjectName }}
+      - --label=org.opencontainers.image.source=https://github.com/nextdoor/{{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.created={{ time "2006-01-02T15:04:05Z07:00" }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+
+docker_manifests:
+  - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}
+    image_templates:
+      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
+
+  - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:latest
+    image_templates:
+      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
+
+# https://goreleaser.com/customization/changelog/
+changelog:
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Testing
+      regexp: '^.*?test(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Others
+      order: 999

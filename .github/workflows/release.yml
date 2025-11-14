@@ -1,0 +1,11 @@
+name: Release
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  publish:
+    uses: ./.github/workflows/docker.yml
+    with:
+      publish: true

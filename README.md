@@ -85,12 +85,35 @@ make docker-build IMG=lumina-controller:dev
 
 ### Deployment
 
+#### Using Pre-built Images
+
+Container images are automatically built and published to GitHub Container Registry on every commit to main and on releases:
+
 ```bash
-# Deploy to cluster
-make deploy IMG=lumina-controller:latest
+# Deploy latest stable release
+make deploy IMG=ghcr.io/nextdoor/lumina:latest
+
+# Deploy specific version
+make deploy IMG=ghcr.io/nextdoor/lumina:v0.1.0
 
 # View logs
 kubectl logs -n lumina-system deployment/lumina-controller-manager
+```
+
+**Available image tags:**
+- `latest` - Latest build from main branch
+- `main` - Latest build from main branch (same as latest)
+- `v*.*.*` - Semantic version releases (e.g., v0.1.0, v0.2.1)
+- `sha-<commit>` - Specific commit builds
+
+Images are built for both `linux/amd64` and `linux/arm64` platforms.
+
+#### Building Custom Images
+
+```bash
+# Build and load into local Kind cluster
+make docker-build docker-push IMG=lumina-controller:dev
+make deploy IMG=lumina-controller:dev
 ```
 
 ## Configuration
