@@ -97,7 +97,11 @@ func LoadScenario(scenario Scenario, client *aws.MockClient) {
 
 	// Load pricing data (shared across accounts)
 	pricingClient := client.Pricing(nil)
-	mockPricing := pricingClient.(*aws.MockPricingClient)
+	mockPricing, ok := pricingClient.(*aws.MockPricingClient)
+	if !ok || mockPricing == nil {
+		// PricingClient was not initialized, skip pricing data
+		return
+	}
 	for _, account := range scenario.Accounts {
 		for _, instance := range account.Instances {
 			// Set default on-demand pricing if not already set
