@@ -1,3 +1,7 @@
+# GoReleaser v2 configuration
+# https://goreleaser.com/
+version: 2
+
 before:
   # https://goreleaser.com/customization/hooks/
   hooks:
