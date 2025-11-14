@@ -1,0 +1,17 @@
+# Kustomization for e2e testing with LocalStack
+# This overlay patches the manager deployment to use LocalStack
+# as the AWS endpoint for integration testing.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configuration
+resources:
+  - ../default
+
+# Patches to configure LocalStack endpoint
+patches:
+  - path: manager_patch.yaml
+    target:
+      kind: Deployment
+      name: controller-manager

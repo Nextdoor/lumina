@@ -179,6 +179,65 @@ func GetProjectDir() (string, error) {
 	return wd, nil
 }
 
+// InstallLocalStack installs LocalStack into the cluster using kubectl apply.
+func InstallLocalStack() error {
+	dir, err := GetProjectDir()
+	if err != nil {
+		return err
+	}
+
+	manifestPath := fmt.Sprintf("%s/test/e2e/localstack", dir)
+	cmd := exec.Command("kubectl", "apply", "-k", manifestPath)
+	if _, err := Run(cmd); err != nil {
+		return fmt.Errorf("failed to apply LocalStack manifests: %w", err)
+	}
+
+	// Wait for LocalStack deployment to be ready
+	cmd = exec.Command("kubectl", "wait", "deployment/localstack",
+		"--for", "condition=Available",
+		"--namespace", "localstack",
+		"--timeout", "3m",
+	)
+	if _, err := Run(cmd); err != nil {
+		return fmt.Errorf("failed waiting for LocalStack deployment: %w", err)
+	}
+
+	// Wait for LocalStack pod to be ready
+	cmd = exec.Command("kubectl", "wait", "pod",
+		"--selector=app=localstack",
+		"--for", "condition=Ready",
+		"--namespace", "localstack",
+		"--timeout", "3m",
+	)
+	if _, err := Run(cmd); err != nil {
+		return fmt.Errorf("failed waiting for LocalStack pod: %w", err)
+	}
+
+	return nil
+}
+
+// UninstallLocalStack uninstalls LocalStack from the cluster.
+func UninstallLocalStack() {
+	dir, err := GetProjectDir()
+	if err != nil {
+		warnError(err)
+		return
+	}
+
+	manifestPath := fmt.Sprintf("%s/test/e2e/localstack", dir)
+	cmd := exec.Command("kubectl", "delete", "-k", manifestPath, "--ignore-not-found")
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
+	}
+}
+
+// IsLocalStackInstalled checks if LocalStack is installed in the cluster.
+func IsLocalStackInstalled() bool {
+	cmd := exec.Command("kubectl", "get", "deployment", "localstack", "-n", "localstack")
+	_, err := Run(cmd)
+	return err == nil
+}
+
 // UncommentCode searches for target in the file and remove the comment prefix
 // of the target content. The target content may span multiple lines.
 func UncommentCode(filename, target, prefix string) error {

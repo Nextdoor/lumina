@@ -38,20 +38,21 @@ Lines that set `BaseEndpoint` when `endpointURL != ""`:
 
 ## Integration Tests with LocalStack
 
-The `localstack_integration_test.go` file (built with `-tags=localstack`) provides comprehensive testing of:
+AWS integration testing is performed as part of the end-to-end (e2e) test suite, which runs LocalStack inside a Kind Kubernetes cluster. This provides comprehensive testing of:
 
 - Real STS AssumeRole operations
 - Multi-account access patterns
 - Client caching behavior
 - Credential management
-- Error handling for STS failures
+- Controller integration with AWS services
+- End-to-end workflows with LocalStack
 
 These tests achieve 100% coverage of the production code paths but are not included in regular unit test runs because they require:
 
-1. Docker and docker-compose installed
-2. LocalStack container running
-3. Several seconds to complete
-4. Network access
+1. Kind cluster
+2. Docker for building controller images
+3. LocalStack deployed in Kubernetes
+4. Several minutes to complete (builds images, deploys services)
 
 ## Running Tests
 
@@ -63,25 +64,30 @@ make test
 
 This runs fast unit tests without external dependencies. Coverage will be ~94% for the AWS package, which is acceptable given the constraints documented above.
 
-### LocalStack Integration Tests
+### End-to-End Tests with LocalStack
 
 ```bash
-# Start LocalStack
-make test-localstack-setup
-
-# Run integration tests
-make test-localstack
-
-# Stop LocalStack
-make test-localstack-teardown
+make test-e2e
 ```
 
-Or run the full cycle:
+This will:
+1. Create a Kind cluster (if it doesn't exist)
+2. Build the controller Docker image
+3. Deploy CertManager
+4. Deploy LocalStack with pre-configured IAM roles
+5. Deploy the Lumina controller with AWS environment variables pointing to LocalStack
+6. Run all e2e tests including LocalStack integration tests
+7. Clean up resources
 
+The e2e tests include:
+- LocalStack health checks
+- IAM role verification
+- STS AssumeRole operations
+- Controller AWS environment configuration validation
+
+To skip certain installations if already present:
 ```bash
-cd test/localstack && docker-compose up -d
-go test -v -tags=localstack ./pkg/aws/...
-cd test/localstack && docker-compose down
+CERT_MANAGER_INSTALL_SKIP=true LOCALSTACK_INSTALL_SKIP=true make test-e2e
 ```
 
 ## Coverage Analysis

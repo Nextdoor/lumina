@@ -68,10 +68,19 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
+		By("deploying the controller-manager with e2e configuration")
+		// Use kubectl apply with e2e kustomization that includes LocalStack config
+		cmd = exec.Command("kubectl", "apply", "-k", "config/e2e")
 		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager with e2e config")
+
+		// Update the image in the deployment to use our test image
+		cmd = exec.Command("kubectl", "set", "image",
+			"deployment/lumina-controller-manager",
+			fmt.Sprintf("manager=%s", projectImage),
+			"-n", namespace)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to set controller-manager image")
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -263,11 +272,37 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})
 
+		It("should have AWS configuration for LocalStack", func() {
+			By("checking controller environment variables")
+			cmd := exec.Command("kubectl", "get", "deployment",
+				"lumina-controller-manager", "-n", namespace,
+				"-o", "jsonpath={.spec.template.spec.containers[0].env[*].name}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to get controller env vars")
+			Expect(output).To(ContainSubstring("AWS_ENDPOINT_URL"), "AWS_ENDPOINT_URL not configured")
+			Expect(output).To(ContainSubstring("AWS_ACCESS_KEY_ID"), "AWS_ACCESS_KEY_ID not configured")
+
+			By("verifying AWS_ENDPOINT_URL points to LocalStack")
+			cmd = exec.Command("kubectl", "get", "deployment",
+				"lumina-controller-manager", "-n", namespace,
+				"-o", "jsonpath={.spec.template.spec.containers[0].env[?(@.name=='AWS_ENDPOINT_URL')].value}")
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to get AWS_ENDPOINT_URL value")
+			Expect(output).To(ContainSubstring("localstack"), "AWS_ENDPOINT_URL does not point to LocalStack")
+		})
+
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.
 		// Consider applying sample/CR(s) and check their status and/or verifying
 		// the reconciliation by using the metrics, i.e.:
+		//
+		// TODO: Add test that creates a sample CR that triggers AWS API calls
+		// This will validate end-to-end that the controller can:
+		// 1. Read configuration from CR
+		// 2. Assume IAM roles via STS
+		// 3. Query EC2/Savings Plans APIs
+		// 4. Update CR status with results
 		// metricsOutput, err := getMetricsOutput()
 		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
 		// Expect(metricsOutput).To(ContainSubstring(
