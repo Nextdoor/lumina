@@ -25,6 +25,7 @@ archives:
 
 dockers:
   # Local image only used for `make docker-build`
+  # Kept in old format since IMG env var and skip_push work differently in v2
   - image_templates: ["{{ .Env.IMG }}"]
     dockerfile: Dockerfile
     use: buildx
@@ -37,14 +38,21 @@ dockers:
       - pkg/
       - config/
 
-  # Release/Snapshot - AMD64
-  # For releases: tags as v0.1.0-amd64
-  # For snapshots: tags as main-<sha>-amd64
-  - image_templates:
-      - "ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64"
+dockers_v2:
+  # CI builds - multi-platform with automatic manifest creation
+  # For releases: ghcr.io/nextdoor/lumina:v0.1.0, :latest
+  # For snapshots: ghcr.io/nextdoor/lumina:main-<sha>, :main
+  - ids: []  # No pre-built binaries
+    images:
+      - "ghcr.io/nextdoor/{{ .ProjectName }}"
+    tags:
+      - "{{ .Version }}"  # v0.1.0 for releases, main-<sha> for snapshots
+      - "{{ if not .IsSnapshot }}latest{{ end }}"  # Only for releases
+      - "{{ if .IsSnapshot }}main{{ end }}"  # Only for snapshots
+    platforms:
+      - linux/amd64
+      - linux/arm64
     dockerfile: Dockerfile
-    goarch: amd64
-    use: buildx
     extra_files:
       - go.mod
       - go.sum
@@ -52,68 +60,18 @@ dockers:
       - internal/
       - pkg/
       - config/
-    build_flag_templates:
-      - --platform=linux/amd64
-      - --cache-from=type=gha
-      - --cache-to=type=gha,mode=max
-      - --label=org.opencontainers.image.title={{ .ProjectName }}
-      - --label=org.opencontainers.image.description=Kubernetes controller for real-time AWS cost visibility
-      - --label=org.opencontainers.image.url=https://github.com/nextdoor/{{ .ProjectName }}
-      - --label=org.opencontainers.image.source=https://github.com/nextdoor/{{ .ProjectName }}
-      - --label=org.opencontainers.image.version={{ .Version }}
-      - --label=org.opencontainers.image.created={{ time "2006-01-02T15:04:05Z07:00" }}
-      - --label=org.opencontainers.image.revision={{ .FullCommit }}
-      - --label=org.opencontainers.image.licenses=Apache-2.0
-
-  # Release/Snapshot - ARM64
-  # For releases: tags as v0.1.0-arm64v8
-  # For snapshots: tags as main-<sha>-arm64v8
-  - image_templates:
-      - "ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8"
-    goarch: arm64
-    dockerfile: Dockerfile
-    use: buildx
-    extra_files:
-      - go.mod
-      - go.sum
-      - cmd/
-      - internal/
-      - pkg/
-      - config/
-    build_flag_templates:
-      - --platform=linux/arm64/v8
-      - --cache-from=type=gha
-      - --cache-to=type=gha,mode=max
-      - --label=org.opencontainers.image.title={{ .ProjectName }}
-      - --label=org.opencontainers.image.description=Kubernetes controller for real-time AWS cost visibility
-      - --label=org.opencontainers.image.url=https://github.com/nextdoor/{{ .ProjectName }}
-      - --label=org.opencontainers.image.source=https://github.com/nextdoor/{{ .ProjectName }}
-      - --label=org.opencontainers.image.version={{ .Version }}
-      - --label=org.opencontainers.image.created={{ time "2006-01-02T15:04:05Z07:00" }}
-      - --label=org.opencontainers.image.revision={{ .FullCommit }}
-      - --label=org.opencontainers.image.licenses=Apache-2.0
-
-docker_manifests:
-  # Multi-arch manifest with version/snapshot tag
-  # For releases: ghcr.io/nextdoor/lumina:v0.1.0
-  # For snapshots: ghcr.io/nextdoor/lumina:main-<sha>
-  - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}
-    image_templates:
-      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
-      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
-
-  # Latest tag - only for actual releases, not snapshots
-  - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:latest
-    image_templates:
-      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
-      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
-    skip_push: auto  # Skip for snapshots
-
-  # Main tag - only for snapshots from main branch
-  - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:main
-    image_templates:
-      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
-      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
+    build_args:
+      BUILDKIT_CACHE_FROM: "type=gha"
+      BUILDKIT_CACHE_TO: "type=gha,mode=max"
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "Kubernetes controller for real-time AWS cost visibility"
+      "org.opencontainers.image.url": "https://github.com/nextdoor/{{ .ProjectName }}"
+      "org.opencontainers.image.source": "https://github.com/nextdoor/{{ .ProjectName }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.created": "{{ time \"2006-01-02T15:04:05Z07:00\" }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.licenses": "Apache-2.0"
 
 # https://goreleaser.com/customization/changelog/
 changelog:

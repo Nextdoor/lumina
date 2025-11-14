@@ -198,7 +198,7 @@ GORELEASER ?= $(LOCALBIN)/goreleaser
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
-GORELEASER_VERSION ?= v2.6.1
+GORELEASER_VERSION ?= v2.12.7
 
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
