@@ -16,6 +16,8 @@ jobs:
   build-amd64:
     name: Build AMD64
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
+    outputs:
+      image-tag: ${{ steps.get-tag.outputs.tag }}
     permissions:
       contents: write
       packages: write
@@ -63,10 +65,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMG: lumina:local
 
+      - name: Extract image tag
+        id: get-tag
+        run: |
+          # GoReleaser creates images with format: ghcr.io/nextdoor/lumina:main-<shortcommit>-amd64
+          VERSION="main-$(git rev-parse --short HEAD)"
+          echo "tag=${VERSION}-amd64" >> $GITHUB_OUTPUT
+          echo "Built image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64"
+
   # Build ARM64 image natively on arm64 runner
   build-arm64:
     name: Build ARM64
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-arm64/cache=/var/cache/magic/extras=magic-cache
+    outputs:
+      image-tag: ${{ steps.get-tag.outputs.tag }}
     permissions:
       contents: write
       packages: write
@@ -114,6 +126,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMG: lumina:local
 
+      - name: Extract image tag
+        id: get-tag
+        run: |
+          # GoReleaser creates images with format: ghcr.io/nextdoor/lumina:main-<shortcommit>-arm64
+          VERSION="main-$(git rev-parse --short HEAD)"
+          echo "tag=${VERSION}-arm64" >> $GITHUB_OUTPUT
+          echo "Built image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64"
+
   # Create multi-arch manifest
   manifest:
     name: Create Manifest
@@ -136,35 +156,35 @@ jobs:
         run: |
           set -e
 
-          # Determine version tag from GitHub context
-          if [[ "${{ inputs.publish }}" == "true" ]]; then
-            # For releases, use the git tag (github.ref_name contains the tag)
-            VERSION="${{ github.ref_name }}"
-          else
-            # For snapshots, use main-<sha> (short commit SHA)
-            VERSION="main-${{ github.event.pull_request.head.sha || github.sha }}"
-            VERSION="${VERSION:0:12}"  # Shorten to main-<short-sha>
-          fi
+          # Use the exact image tags from the build jobs
+          AMD64_TAG="${{ needs.build-amd64.outputs.image-tag }}"
+          ARM64_TAG="${{ needs.build-arm64.outputs.image-tag }}"
+
+          # Extract base version (without arch suffix) from AMD64 tag
+          # E.g., "main-abc1234-amd64" -> "main-abc1234"
+          VERSION="${AMD64_TAG%-amd64}"
 
           IMAGE_BASE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
 
           echo "Creating manifests for version: ${VERSION}"
+          echo "Using AMD64 image: ${IMAGE_BASE}:${AMD64_TAG}"
+          echo "Using ARM64 image: ${IMAGE_BASE}:${ARM64_TAG}"
 
           # Create and push version-specific manifest
           docker buildx imagetools create -t "${IMAGE_BASE}:${VERSION}" \
-            "${IMAGE_BASE}:${VERSION}-amd64" \
-            "${IMAGE_BASE}:${VERSION}-arm64"
+            "${IMAGE_BASE}:${AMD64_TAG}" \
+            "${IMAGE_BASE}:${ARM64_TAG}"
 
           # For releases, also create :latest
           if [[ "${{ inputs.publish }}" == "true" ]]; then
             docker buildx imagetools create -t "${IMAGE_BASE}:latest" \
-              "${IMAGE_BASE}:${VERSION}-amd64" \
-              "${IMAGE_BASE}:${VERSION}-arm64"
+              "${IMAGE_BASE}:${AMD64_TAG}" \
+              "${IMAGE_BASE}:${ARM64_TAG}"
           fi
 
           # For snapshots, also create :main
           if [[ "${{ inputs.publish }}" != "true" ]]; then
             docker buildx imagetools create -t "${IMAGE_BASE}:main" \
-              "${IMAGE_BASE}:${VERSION}-amd64" \
-              "${IMAGE_BASE}:${VERSION}-arm64"
+              "${IMAGE_BASE}:${AMD64_TAG}" \
+              "${IMAGE_BASE}:${ARM64_TAG}"
           fi
