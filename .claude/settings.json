@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:projen.io)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
