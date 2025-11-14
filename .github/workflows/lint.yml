@@ -6,7 +6,7 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     steps:
       - name: Setup RunsOn magic cache
         uses: runs-on/action@v2

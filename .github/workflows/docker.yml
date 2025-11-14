@@ -9,13 +9,13 @@ on:
 
 env:
   IMAGE_REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: nextdoor/lumina
 
 jobs:
   # Build AMD64 image natively on x64 runner
   build-amd64:
     name: Build AMD64
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     permissions:
       contents: write
       packages: write
@@ -78,7 +78,7 @@ jobs:
   # Build ARM64 image natively on arm64 runner
   build-arm64:
     name: Build ARM64
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-arm64/cache=/var/cache/magic/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-arm64/cache=/var/cache/magic/extras=magic-cache
     permissions:
       contents: write
       packages: write
@@ -142,7 +142,7 @@ jobs:
   manifest:
     name: Create Manifest
     needs: [build-amd64, build-arm64]
-    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     permissions:
       packages: write
 
