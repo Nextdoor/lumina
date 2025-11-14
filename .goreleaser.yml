@@ -25,7 +25,6 @@ archives:
 
 dockers:
   # Local image only used for `make docker-build`
-  # Kept in old format since IMG env var and skip_push work differently in v2
   - image_templates: ["{{ .Env.IMG }}"]
     dockerfile: Dockerfile
     use: buildx
@@ -38,40 +37,9 @@ dockers:
       - pkg/
       - config/
 
-dockers_v2:
-  # CI builds - multi-platform with automatic manifest creation
-  # For releases: ghcr.io/nextdoor/lumina:v0.1.0, :latest
-  # For snapshots: ghcr.io/nextdoor/lumina:main-<sha>, :main
-  - ids: []  # No pre-built binaries
-    images:
-      - "ghcr.io/nextdoor/{{ .ProjectName }}"
-    tags:
-      - "{{ .Version }}"  # v0.1.0 for releases, main-<sha> for snapshots
-      - "{{ if not .IsSnapshot }}latest{{ end }}"  # Only for releases
-      - "{{ if .IsSnapshot }}main{{ end }}"  # Only for snapshots
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    dockerfile: Dockerfile
-    extra_files:
-      - go.mod
-      - go.sum
-      - cmd/
-      - internal/
-      - pkg/
-      - config/
-    build_args:
-      BUILDKIT_CACHE_FROM: "type=gha"
-      BUILDKIT_CACHE_TO: "type=gha,mode=max"
-    labels:
-      "org.opencontainers.image.title": "{{ .ProjectName }}"
-      "org.opencontainers.image.description": "Kubernetes controller for real-time AWS cost visibility"
-      "org.opencontainers.image.url": "https://github.com/nextdoor/{{ .ProjectName }}"
-      "org.opencontainers.image.source": "https://github.com/nextdoor/{{ .ProjectName }}"
-      "org.opencontainers.image.version": "{{ .Version }}"
-      "org.opencontainers.image.created": "{{ time \"2006-01-02T15:04:05Z07:00\" }}"
-      "org.opencontainers.image.revision": "{{ .FullCommit }}"
-      "org.opencontainers.image.licenses": "Apache-2.0"
+# CI builds use platform-specific configs (.goreleaser-amd64.yml, .goreleaser-arm64.yml)
+# to enable native builds on amd64 and arm64 runners (much faster than QEMU emulation).
+# Manifests are created separately in the GitHub Actions workflow.
 
 # https://goreleaser.com/customization/changelog/
 changelog:
