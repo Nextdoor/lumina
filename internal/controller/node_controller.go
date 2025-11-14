@@ -14,6 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package controller contains Kubernetes controller implementations.
+//
+// Coverage: NodeReconciler scaffolding is excluded from unit test coverage.
+// The Reconcile() and SetupWithManager() functions are kubebuilder-generated
+// stubs that will be tested through integration tests once implemented.
+
 package controller
 
 import (
