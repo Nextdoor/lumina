@@ -5,7 +5,7 @@ version: 2
 # Snapshot configuration for main branch builds
 # Formats version as "main-<short-sha>" instead of "0.0.0-SNAPSHOT-<sha>"
 snapshot:
-  name_template: "main-{{ .ShortCommit }}"
+  version_template: "main-{{ .ShortCommit }}"
 
 before:
   # https://goreleaser.com/customization/hooks/
@@ -13,16 +13,15 @@ before:
     - go mod tidy
 
 builds:
-  # Manager (controller)
-  - id: manager
-    main: ./cmd/main.go
-    binary: manager
-    env: [CGO_ENABLED=0]
-    goos:
-      - linux
-    goarch:
-      - amd64
-      - arm64
+  # Skip binary builds - Dockerfile builds from source
+  # We only ship Docker images, not standalone binaries
+  - skip: true
+
+# Disable archives since we're not building binaries
+archives:
+  - id: dummy
+    files:
+      - none*  # No files to archive
 
 dockers:
   # Local image only used for `make docker-build`
