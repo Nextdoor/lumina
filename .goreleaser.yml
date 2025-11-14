@@ -54,8 +54,8 @@ dockers:
       - config/
     build_flag_templates:
       - --platform=linux/amd64
-      - --cache-from=type=local,src=/tmp/.buildx-cache
-      - --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max
+      - --cache-from=type=gha
+      - --cache-to=type=gha,mode=max
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description=Kubernetes controller for real-time AWS cost visibility
       - --label=org.opencontainers.image.url=https://github.com/nextdoor/{{ .ProjectName }}
@@ -82,8 +82,8 @@ dockers:
       - config/
     build_flag_templates:
       - --platform=linux/arm64/v8
-      - --cache-from=type=local,src=/tmp/.buildx-cache
-      - --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max
+      - --cache-from=type=gha
+      - --cache-to=type=gha,mode=max
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description=Kubernetes controller for real-time AWS cost visibility
       - --label=org.opencontainers.image.url=https://github.com/nextdoor/{{ .ProjectName }}

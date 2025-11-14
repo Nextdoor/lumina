@@ -14,13 +14,16 @@ env:
 jobs:
   build:
     name: Build and Publish
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64,cache=/var/cache/magic
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=s3-cache
     permissions:
       contents: write
       packages: write
       id-token: write
 
     steps:
+      - name: Setup RunsOn magic cache
+        uses: runs-on/action@v2
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -45,14 +48,6 @@ jobs:
           driver-opts: |
             image=moby/buildkit:latest
             network=host
-
-      - name: Configure Docker cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -82,13 +77,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMG: lumina:local
-
-      # Move cache to prevent it from growing indefinitely
-      # https://github.com/docker/build-push-action/blob/master/docs/advanced/cache.md#local-cache
-      - name: Move Docker cache
-        if: always()
-        run: |
-          rm -rf /tmp/.buildx-cache
-          if [ -d /tmp/.buildx-cache-new ]; then
-            mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-          fi
