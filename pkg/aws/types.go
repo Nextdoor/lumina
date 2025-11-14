@@ -88,6 +88,9 @@ type Instance struct {
 
 	// Platform is the OS platform (e.g., "linux", "windows")
 	Platform string
+
+	// SpotInstanceRequestID is the spot instance request ID if this is a spot instance
+	SpotInstanceRequestID string
 }
 
 // ReservedInstance represents an EC2 Reserved Instance.
@@ -118,6 +121,12 @@ type ReservedInstance struct {
 
 	// OfferingClass is "standard" or "convertible"
 	OfferingClass string
+
+	// OfferingType is the payment option ("All Upfront", "Partial Upfront", "No Upfront")
+	OfferingType string
+
+	// Platform is the operating system ("Linux/UNIX", "Windows", etc.)
+	Platform string
 
 	// AccountID is the AWS account that owns this RI
 	AccountID string
