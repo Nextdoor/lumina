@@ -141,6 +141,8 @@ jobs:
   # Create multi-arch manifest
   manifest:
     name: Create Manifest
+    # Only create manifests when publishing (main branch or releases)
+    if: ${{ inputs.publish }}
     needs: [build-amd64, build-arm64]
     runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     permissions:
