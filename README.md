@@ -85,12 +85,35 @@ make docker-build IMG=lumina-controller:dev
 
 ### Deployment
 
+#### Using Pre-built Images
+
+Container images are automatically built and published to GitHub Container Registry on every commit to main and on releases:
+
 ```bash
-# Deploy to cluster
-make deploy IMG=lumina-controller:latest
+# Deploy latest stable release
+make deploy IMG=ghcr.io/nextdoor/lumina:latest
+
+# Deploy specific version
+make deploy IMG=ghcr.io/nextdoor/lumina:v0.1.0
 
 # View logs
 kubectl logs -n lumina-system deployment/lumina-controller-manager
+```
+
+**Available image tags:**
+- `latest` - Latest build from main branch
+- `main` - Latest build from main branch (same as latest)
+- `v*.*.*` - Semantic version releases (e.g., v0.1.0, v0.2.1)
+- `sha-<commit>` - Specific commit builds
+
+Images are built for both `linux/amd64` and `linux/arm64` platforms.
+
+#### Building Custom Images
+
+```bash
+# Build and load into local Kind cluster
+make docker-build docker-push IMG=lumina-controller:dev
+make deploy IMG=lumina-controller:dev
 ```
 
 ## Configuration
@@ -128,17 +151,56 @@ This project will be open-sourced. Contributions are welcome!
 3. **No internal references** - code must be ready for public release
 4. **Conventional commits** - use `type(component): description` format
 
+## Local Development
+
+### Prerequisites
+
+```bash
+# Install GoReleaser locally via Make (recommended)
+make goreleaser
+
+# Or install system-wide with brew
+# brew install goreleaser
+```
+
+### Building Locally
+
+```bash
+# Build everything using GoReleaser (matches CI exactly)
+bin/goreleaser build --snapshot --clean
+
+# Binaries will be in: dist/manager_linux_amd64_v1/manager
+# Or: dist/manager_linux_arm64/manager (depending on your platform)
+
+# Build Docker images using GoReleaser
+IMG=lumina:dev bin/goreleaser release --snapshot --clean
+
+# This creates:
+# - Multi-arch binaries in dist/
+# - Docker image tagged as lumina:dev
+```
+
 ### Running Locally
 
 ```bash
-# Install dependencies
-go mod download
-
 # Run controller against current kubeconfig context
 make run
 
 # Run with debug logging
 make run ARGS="--zap-log-level=debug"
+```
+
+### Loading into Kind
+
+```bash
+# Build image with GoReleaser
+IMG=lumina:dev bin/goreleaser release --snapshot --clean
+
+# Load into Kind cluster
+kind load docker-image lumina:dev
+
+# Deploy to Kind
+make deploy IMG=lumina:dev
 ```
 
 ## Documentation

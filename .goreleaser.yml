@@ -1,0 +1,61 @@
+# GoReleaser v2 configuration
+# https://goreleaser.com/
+version: 2
+
+# Snapshot configuration for main branch builds
+# Formats version as "main-<short-sha>" instead of "0.0.0-SNAPSHOT-<sha>"
+snapshot:
+  version_template: "main-{{ .ShortCommit }}"
+
+before:
+  # https://goreleaser.com/customization/hooks/
+  hooks:
+    - go mod tidy
+
+builds:
+  # Skip binary builds - Dockerfile builds from source
+  # We only ship Docker images, not standalone binaries
+  - skip: true
+
+# Disable archives since we're not building binaries
+archives:
+  - id: dummy
+    files:
+      - none*  # No files to archive
+
+dockers:
+  # Local image only used for `make docker-build`
+  - image_templates: ["{{ .Env.IMG }}"]
+    dockerfile: Dockerfile
+    use: buildx
+    skip_push: true
+    extra_files:
+      - go.mod
+      - go.sum
+      - cmd/
+      - internal/
+      - pkg/
+      - config/
+
+# CI builds use platform-specific configs (.goreleaser-amd64.yml, .goreleaser-arm64.yml)
+# to enable native builds on amd64 and arm64 runners (much faster than QEMU emulation).
+# Manifests are created separately in the GitHub Actions workflow.
+
+# https://goreleaser.com/customization/changelog/
+changelog:
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Testing
+      regexp: '^.*?test(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Others
+      order: 999

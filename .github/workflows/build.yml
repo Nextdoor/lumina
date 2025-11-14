@@ -1,0 +1,14 @@
+name: Build
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    uses: ./.github/workflows/docker.yml
+    with:
+      # Publish on main branch, build-only on PRs
+      publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
