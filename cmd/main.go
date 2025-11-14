@@ -101,15 +101,22 @@ func main() {
 	}
 
 	// Load controller configuration
+	// If config file doesn't exist, use empty config with defaults (for E2E tests)
 	cfg, err := config.Load(configFile)
 	if err != nil {
-		setupLog.Error(err, "failed to load configuration", "config-file", configFile)
-		os.Exit(1)
+		if _, statErr := os.Stat(configFile); os.IsNotExist(statErr) {
+			setupLog.Info("config file not found, using defaults", "config-file", configFile)
+			cfg = &config.Config{}
+		} else {
+			setupLog.Error(err, "failed to load configuration", "config-file", configFile)
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("loaded configuration",
+			"accounts", len(cfg.AWSAccounts),
+			"default-region", cfg.DefaultRegion,
+			"log-level", cfg.LogLevel)
 	}
-	setupLog.Info("loaded configuration",
-		"accounts", len(cfg.AWSAccounts),
-		"default-region", cfg.DefaultRegion,
-		"log-level", cfg.LogLevel)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will

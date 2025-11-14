@@ -20,15 +20,15 @@
 //   - Controller operational settings
 //
 // Configuration can be loaded from YAML files or environment variables.
+// Uses Viper for robust configuration management with automatic env binding.
 package config
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 // Config represents the complete controller configuration.
@@ -79,30 +79,52 @@ type AWSAccount struct {
 }
 
 // Load loads configuration from a YAML file and validates it.
-// Environment variables can override configuration values:
+//
+// Configuration precedence (highest to lowest):
+//  1. Environment variables (LUMINA_* prefix)
+//  2. Configuration file values
+//  3. Default values
+//
+// Environment variables can override any configuration value by converting
+// the field name to uppercase with LUMINA_ prefix. For example:
 //   - LUMINA_DEFAULT_REGION overrides defaultRegion
 //   - LUMINA_LOG_LEVEL overrides logLevel
 //   - LUMINA_METRICS_BIND_ADDRESS overrides metricsBindAddress
-//   - LUMINA_HEALTH_PROBE_BIND_ADDRESS overrides healthProbeBindAddress
-//   - LUMINA_ACCOUNT_VALIDATION_INTERVAL overrides accountValidationInterval
+//
+// Nested fields like awsAccounts[0].accountId are not overridable via env vars.
 func Load(path string) (*Config, error) {
-	// Read the configuration file
-	data, err := os.ReadFile(path)
-	if err != nil {
+	v := viper.New()
+
+	// Set configuration file
+	v.SetConfigFile(path)
+
+	// Set default values
+	v.SetDefault("defaultRegion", "us-west-2")
+	v.SetDefault("logLevel", "info")
+	v.SetDefault("metricsBindAddress", ":8080")
+	v.SetDefault("healthProbeBindAddress", ":8081")
+	v.SetDefault("accountValidationInterval", "5m")
+
+	// Enable environment variable overrides with LUMINA_ prefix
+	// Manually bind each config key to its environment variable
+	// Viper's automatic mapping doesn't handle camelCase to SCREAMING_SNAKE_CASE well
+	v.SetEnvPrefix("LUMINA")
+	v.BindEnv("defaultRegion", "LUMINA_DEFAULT_REGION")
+	v.BindEnv("logLevel", "LUMINA_LOG_LEVEL")
+	v.BindEnv("metricsBindAddress", "LUMINA_METRICS_BIND_ADDRESS")
+	v.BindEnv("healthProbeBindAddress", "LUMINA_HEALTH_PROBE_BIND_ADDRESS")
+	v.BindEnv("accountValidationInterval", "LUMINA_ACCOUNT_VALIDATION_INTERVAL")
+
+	// Read configuration file
+	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
-	// Parse YAML
+	// Unmarshal into Config struct
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
-
-	// Apply environment variable overrides
-	applyEnvOverrides(&cfg)
-
-	// Apply defaults
-	applyDefaults(&cfg)
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
@@ -173,44 +195,6 @@ func (a *AWSAccount) Validate() error {
 	}
 
 	return nil
-}
-
-// applyEnvOverrides applies environment variable overrides to the configuration.
-func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("LUMINA_DEFAULT_REGION"); v != "" {
-		cfg.DefaultRegion = v
-	}
-	if v := os.Getenv("LUMINA_LOG_LEVEL"); v != "" {
-		cfg.LogLevel = v
-	}
-	if v := os.Getenv("LUMINA_METRICS_BIND_ADDRESS"); v != "" {
-		cfg.MetricsBindAddress = v
-	}
-	if v := os.Getenv("LUMINA_HEALTH_PROBE_BIND_ADDRESS"); v != "" {
-		cfg.HealthProbeBindAddress = v
-	}
-	if v := os.Getenv("LUMINA_ACCOUNT_VALIDATION_INTERVAL"); v != "" {
-		cfg.AccountValidationInterval = v
-	}
-}
-
-// applyDefaults sets default values for optional configuration fields.
-func applyDefaults(cfg *Config) {
-	if cfg.DefaultRegion == "" {
-		cfg.DefaultRegion = "us-west-2"
-	}
-	if cfg.LogLevel == "" {
-		cfg.LogLevel = "info"
-	}
-	if cfg.MetricsBindAddress == "" {
-		cfg.MetricsBindAddress = ":8080"
-	}
-	if cfg.HealthProbeBindAddress == "" {
-		cfg.HealthProbeBindAddress = ":8081"
-	}
-	if cfg.AccountValidationInterval == "" {
-		cfg.AccountValidationInterval = "5m"
-	}
 }
 
 // isValidAccountID checks if a string is a valid 12-digit AWS account ID.

@@ -64,17 +64,17 @@ accountValidationInterval: "10m"`,
 			wantErr: false,
 		},
 		{
-			name: "empty config file",
-			yaml: ``,
+			name:    "empty config file",
+			yaml:    ``,
 			wantErr: true,
-			errMsg: "at least one AWS account must be configured",
+			errMsg:  "at least one AWS account must be configured",
 		},
 		{
 			name: "no accounts configured",
 			yaml: `awsAccounts: []
 defaultRegion: us-west-2`,
 			wantErr: true,
-			errMsg: "at least one AWS account must be configured",
+			errMsg:  "at least one AWS account must be configured",
 		},
 		{
 			name: "invalid account ID - too short",
@@ -83,7 +83,7 @@ defaultRegion: us-west-2`,
     name: "Test"
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"`,
 			wantErr: true,
-			errMsg: "invalid account ID",
+			errMsg:  "invalid account ID",
 		},
 		{
 			name: "invalid account ID - not numeric",
@@ -92,7 +92,7 @@ defaultRegion: us-west-2`,
     name: "Test"
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"`,
 			wantErr: true,
-			errMsg: "invalid account ID",
+			errMsg:  "invalid account ID",
 		},
 		{
 			name: "missing account name",
@@ -100,7 +100,7 @@ defaultRegion: us-west-2`,
   - accountId: "123456789012"
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"`,
 			wantErr: true,
-			errMsg: "account name is required",
+			errMsg:  "account name is required",
 		},
 		{
 			name: "empty account name",
@@ -109,7 +109,7 @@ defaultRegion: us-west-2`,
     name: ""
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"`,
 			wantErr: true,
-			errMsg: "account name is required",
+			errMsg:  "account name is required",
 		},
 		{
 			name: "whitespace-only account name",
@@ -118,7 +118,7 @@ defaultRegion: us-west-2`,
     name: "   "
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"`,
 			wantErr: true,
-			errMsg: "account name is required",
+			errMsg:  "account name is required",
 		},
 		{
 			name: "invalid ARN format",
@@ -127,7 +127,7 @@ defaultRegion: us-west-2`,
     name: "Test"
     assumeRoleArn: "not-an-arn"`,
 			wantErr: true,
-			errMsg: "invalid AssumeRole ARN",
+			errMsg:  "invalid AssumeRole ARN",
 		},
 		{
 			name: "ARN missing role name",
@@ -136,7 +136,7 @@ defaultRegion: us-west-2`,
     name: "Test"
     assumeRoleArn: "arn:aws:iam::123456789012:role/"`,
 			wantErr: true,
-			errMsg: "invalid AssumeRole ARN",
+			errMsg:  "invalid AssumeRole ARN",
 		},
 		{
 			name: "ARN account ID mismatch",
@@ -145,7 +145,7 @@ defaultRegion: us-west-2`,
     name: "Test"
     assumeRoleArn: "arn:aws:iam::987654321098:role/test-role"`,
 			wantErr: true,
-			errMsg: "does not match configured account ID",
+			errMsg:  "does not match configured account ID",
 		},
 		{
 			name: "duplicate account IDs",
@@ -157,7 +157,7 @@ defaultRegion: us-west-2`,
     name: "Account 2"
     assumeRoleArn: "arn:aws:iam::123456789012:role/role2"`,
 			wantErr: true,
-			errMsg: "duplicate account ID",
+			errMsg:  "duplicate account ID",
 		},
 		{
 			name: "invalid log level",
@@ -167,7 +167,7 @@ defaultRegion: us-west-2`,
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"
 logLevel: invalid`,
 			wantErr: true,
-			errMsg: "invalid log level",
+			errMsg:  "invalid log level",
 		},
 		{
 			name: "invalid YAML syntax",
@@ -176,7 +176,7 @@ logLevel: invalid`,
     name: "Test
     assumeRoleArn: "arn:aws:iam::123456789012:role/test-role"`,
 			wantErr: true,
-			errMsg: "failed to parse config file",
+			errMsg:  "failed to read config file", // Viper reports YAML parse errors as read errors
 		},
 		{
 			name: "govcloud ARN",
@@ -304,11 +304,11 @@ accountValidationInterval: "5m"`
 
 	// Set environment variables
 	originalEnv := map[string]string{
-		"LUMINA_DEFAULT_REGION":                os.Getenv("LUMINA_DEFAULT_REGION"),
-		"LUMINA_LOG_LEVEL":                     os.Getenv("LUMINA_LOG_LEVEL"),
-		"LUMINA_METRICS_BIND_ADDRESS":          os.Getenv("LUMINA_METRICS_BIND_ADDRESS"),
-		"LUMINA_HEALTH_PROBE_BIND_ADDRESS":     os.Getenv("LUMINA_HEALTH_PROBE_BIND_ADDRESS"),
-		"LUMINA_ACCOUNT_VALIDATION_INTERVAL":   os.Getenv("LUMINA_ACCOUNT_VALIDATION_INTERVAL"),
+		"LUMINA_DEFAULT_REGION":              os.Getenv("LUMINA_DEFAULT_REGION"),
+		"LUMINA_LOG_LEVEL":                   os.Getenv("LUMINA_LOG_LEVEL"),
+		"LUMINA_METRICS_BIND_ADDRESS":        os.Getenv("LUMINA_METRICS_BIND_ADDRESS"),
+		"LUMINA_HEALTH_PROBE_BIND_ADDRESS":   os.Getenv("LUMINA_HEALTH_PROBE_BIND_ADDRESS"),
+		"LUMINA_ACCOUNT_VALIDATION_INTERVAL": os.Getenv("LUMINA_ACCOUNT_VALIDATION_INTERVAL"),
 	}
 	defer func() {
 		// Restore original environment
@@ -358,7 +358,7 @@ func TestValidAccountID(t *testing.T) {
 		{"123456789012", true},
 		{"000000000000", true},
 		{"999999999999", true},
-		{"12345678901", false},  // too short
+		{"12345678901", false},   // too short
 		{"1234567890123", false}, // too long
 		{"12345678901a", false},  // contains letter
 		{"123-456-789", false},   // contains dashes
@@ -386,9 +386,9 @@ func TestValidIAMRoleARN(t *testing.T) {
 		{"arn:aws:iam::123456789012:role/Role_Name-123", true},
 		{"arn:aws-us-gov:iam::123456789012:role/test-role", true},
 		{"arn:aws-cn:iam::123456789012:role/test-role", true},
-		{"arn:aws:iam::123456789012:role/", false}, // missing role name
+		{"arn:aws:iam::123456789012:role/", false},     // missing role name
 		{"arn:aws:iam::123456789012:user/test", false}, // not a role
-		{"arn:aws:s3:::bucket", false}, // wrong service
+		{"arn:aws:s3:::bucket", false},                 // wrong service
 		{"not-an-arn", false},
 		{"", false},
 		{"arn:aws:iam::12345:role/test", false}, // invalid account ID length
