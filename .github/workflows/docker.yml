@@ -16,10 +16,12 @@ jobs:
   build-amd64:
     name: Build AMD64
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     permissions:
-      contents: write
+      contents: read
       packages: write
-      id-token: write
 
     steps:
       - name: Setup RunsOn magic cache
@@ -27,20 +29,11 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: false  # Disable built-in cache, using magic cache instead
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          install: true  # Set as default builder
+          install: true
           buildkitd-flags: --debug
           driver-opts: |
             image=moby/buildkit:latest
@@ -53,24 +46,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser - AMD64
-        uses: goreleaser/goreleaser-action@v6
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          distribution: goreleaser
-          version: latest
-          args: release --snapshot --clean --config .goreleaser-amd64.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMG: lumina:local
+          images: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=-amd64,onlatest=false
+          tags: |
+            type=ref,event=pr,prefix=test-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=test-
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Build ARM64 image natively on arm64 runner
   build-arm64:
     name: Build ARM64
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-arm64/cache=/var/cache/magic/extras=magic-cache
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     permissions:
-      contents: write
+      contents: read
       packages: write
-      id-token: write
 
     steps:
       - name: Setup RunsOn magic cache
@@ -78,20 +89,11 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: false  # Disable built-in cache, using magic cache instead
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          install: true  # Set as default builder
+          install: true
           buildkitd-flags: --debug
           driver-opts: |
             image=moby/buildkit:latest
@@ -104,21 +106,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser - ARM64
-        uses: goreleaser/goreleaser-action@v6
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          distribution: goreleaser
-          version: latest
-          args: release --snapshot --clean --config .goreleaser-arm64.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMG: lumina:local
+          images: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=-arm64,onlatest=false
+          tags: |
+            type=ref,event=pr,prefix=test-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=test-
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Create multi-arch manifest
   manifest:
     name: Create Manifest
-    # Only create manifests when publishing (main branch or releases)
-    if: ${{ inputs.publish }}
     needs: [build-amd64, build-arm64]
     runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     permissions:
@@ -132,39 +148,40 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr,prefix=test-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=test-
+
       - name: Create and push manifest
-        run: |
-          set -e
+        uses: int128/docker-manifest-create-action@v2
+        with:
+          tags: ${{ steps.meta.outputs.tags }}
+          sources: |
+            ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-amd64.outputs.image-digest }}
+            ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-arm64.outputs.image-digest }}
 
-          # Determine version tag from GitHub context
-          if [[ "${{ inputs.publish }}" == "true" ]]; then
-            # For releases, use the git tag (github.ref_name contains the tag)
-            VERSION="${{ github.ref_name }}"
-          else
-            # For snapshots, use main-<sha> (short commit SHA)
-            VERSION="main-${{ github.event.pull_request.head.sha || github.sha }}"
-            VERSION="${VERSION:0:12}"  # Shorten to main-<short-sha>
-          fi
+      - name: Create and push :latest manifest
+        if: ${{ github.ref_type == 'tag' }}
+        uses: int128/docker-manifest-create-action@v2
+        with:
+          tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          sources: |
+            ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-amd64.outputs.image-digest }}
+            ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-arm64.outputs.image-digest }}
 
-          IMAGE_BASE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
-
-          echo "Creating manifests for version: ${VERSION}"
-
-          # Create and push version-specific manifest
-          docker buildx imagetools create -t "${IMAGE_BASE}:${VERSION}" \
-            "${IMAGE_BASE}:${VERSION}-amd64" \
-            "${IMAGE_BASE}:${VERSION}-arm64"
-
-          # For releases, also create :latest
-          if [[ "${{ inputs.publish }}" == "true" ]]; then
-            docker buildx imagetools create -t "${IMAGE_BASE}:latest" \
-              "${IMAGE_BASE}:${VERSION}-amd64" \
-              "${IMAGE_BASE}:${VERSION}-arm64"
-          fi
-
-          # For snapshots, also create :main
-          if [[ "${{ inputs.publish }}" != "true" ]]; then
-            docker buildx imagetools create -t "${IMAGE_BASE}:main" \
-              "${IMAGE_BASE}:${VERSION}-amd64" \
-              "${IMAGE_BASE}:${VERSION}-arm64"
-          fi
+      - name: Create and push :main manifest
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: int128/docker-manifest-create-action@v2
+        with:
+          tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          sources: |
+            ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-amd64.outputs.image-digest }}
+            ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-arm64.outputs.image-digest }}

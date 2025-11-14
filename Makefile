@@ -120,12 +120,9 @@ build: manifests generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
-# Build docker image using GoReleaser (matches CI exactly).
-# Uses GoReleaser's snapshot mode to build locally without publishing.
-# The IMG variable is passed to GoReleaser to tag the resulting image.
 .PHONY: docker-build
-docker-build: goreleaser ## Build docker image with the manager using GoReleaser.
-	IMG=${IMG} "$(GORELEASER)" release --snapshot --clean --skip=announce,validate
+docker-build: ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -193,12 +190,10 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-GORELEASER ?= $(LOCALBIN)/goreleaser
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
-GORELEASER_VERSION ?= v2.12.7
 
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
@@ -238,11 +233,6 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-
-.PHONY: goreleaser
-goreleaser: $(GORELEASER) ## Download goreleaser locally if necessary.
-$(GORELEASER): $(LOCALBIN)
-	$(call go-install-tool,$(GORELEASER),github.com/goreleaser/goreleaser/v2,$(GORELEASER_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
