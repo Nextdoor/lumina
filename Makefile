@@ -64,18 +64,13 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 .PHONY: test-coverage
 test-coverage: test ## Run tests and display detailed coverage report
 	@echo ""
-	@echo "=== Coverage by Package ==="
-	@go list ./... | grep -v /e2e | while read pkg; do \
-		coverage=$$(go test -cover $$pkg 2>&1 | grep coverage | awk '{print $$NF}'); \
-		if [ -n "$$coverage" ]; then \
-			printf "%-60s %s\n" "$$pkg" "$$coverage"; \
-		fi \
-	done
+	@echo "Coverage by file:"
+	@go tool cover -func=cover.out | awk '{if ($$NF != "total:") print $$1, $$NF}' | awk -F: '{files[$$1] = $$NF} END {for (f in files) printf "  %-60s %s\n", f, files[f]}' | sort
 	@echo ""
-	@echo "=== Total Coverage ==="
-	@go tool cover -func=cover.out | grep "total:" | awk '{print $$3}'
+	@echo "Total coverage:"
+	@go tool cover -func=cover.out | grep "total:"
 	@echo ""
-	@echo "For detailed function-level coverage: go tool cover -func=cover.out"
+	@echo "For function-level detail: go tool cover -func=cover.out"
 	@echo "For HTML coverage report: make coverage-html"
 
 .PHONY: coverage-html
