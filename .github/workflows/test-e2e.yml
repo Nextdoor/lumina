@@ -1,13 +1,12 @@
 name: E2E Tests
 
 on:
-  push:
-  pull_request:
+  pull_request: {}
 
 jobs:
   test-e2e:
     name: Run on Ubuntu
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64
     steps:
       - name: Clone the code
         uses: actions/checkout@v4

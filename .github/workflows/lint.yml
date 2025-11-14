@@ -1,13 +1,12 @@
 name: Lint
 
 on:
-  push:
-  pull_request:
+  pull_request: {}
 
 jobs:
   lint:
-    name: Run on Ubuntu
-    runs-on: ubuntu-latest
+    name: Lint
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
