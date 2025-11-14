@@ -2,6 +2,11 @@
 # https://goreleaser.com/
 version: 2
 
+# Snapshot configuration for main branch builds
+# Formats version as "main-<short-sha>" instead of "0.0.0-SNAPSHOT-<sha>"
+snapshot:
+  name_template: "main-{{ .ShortCommit }}"
+
 before:
   # https://goreleaser.com/customization/hooks/
   hooks:
@@ -33,8 +38,11 @@ dockers:
       - pkg/
       - config/
 
-  # Release - AMD64
-  - image_templates: ["ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64"]
+  # Release/Snapshot - AMD64
+  # For releases: tags as v0.1.0-amd64
+  # For snapshots: tags as main-<sha>-amd64
+  - image_templates:
+      - "ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64"
     dockerfile: Dockerfile
     goarch: amd64
     use: buildx
@@ -56,8 +64,11 @@ dockers:
       - --label=org.opencontainers.image.revision={{ .FullCommit }}
       - --label=org.opencontainers.image.licenses=Apache-2.0
 
-  # Release - ARM64
-  - image_templates: ["ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8"]
+  # Release/Snapshot - ARM64
+  # For releases: tags as v0.1.0-arm64v8
+  # For snapshots: tags as main-<sha>-arm64v8
+  - image_templates:
+      - "ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8"
     goarch: arm64
     dockerfile: Dockerfile
     use: buildx
@@ -80,12 +91,23 @@ dockers:
       - --label=org.opencontainers.image.licenses=Apache-2.0
 
 docker_manifests:
+  # Multi-arch manifest with version/snapshot tag
+  # For releases: ghcr.io/nextdoor/lumina:v0.1.0
+  # For snapshots: ghcr.io/nextdoor/lumina:main-<sha>
   - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}
     image_templates:
       - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
       - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
 
+  # Latest tag - only for actual releases, not snapshots
   - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:latest
+    image_templates:
+      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
+    skip_push: auto  # Skip for snapshots
+
+  # Main tag - only for snapshots from main branch
+  - name_template: ghcr.io/nextdoor/{{ .ProjectName }}:main
     image_templates:
       - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-amd64
       - ghcr.io/nextdoor/{{ .ProjectName }}:{{ .Version }}-arm64v8
