@@ -26,12 +26,12 @@ import (
 // and that the expected number of resources are present.
 func TestScenarioLoading(t *testing.T) {
 	tests := []struct {
-		name               string
-		scenario           testdata.Scenario
-		expectedAccounts   int
-		expectedInstances  map[string]int // accountID -> instance count
-		expectedRIs        map[string]int // accountID -> RI count
-		expectedSPs        map[string]int // accountID -> SP count
+		name              string
+		scenario          testdata.Scenario
+		expectedAccounts  int
+		expectedInstances map[string]int // accountID -> instance count
+		expectedRIs       map[string]int // accountID -> RI count
+		expectedSPs       map[string]int // accountID -> SP count
 	}{
 		{
 			name:              "SimpleScenario",
@@ -42,9 +42,9 @@ func TestScenarioLoading(t *testing.T) {
 			expectedSPs:       map[string]int{"111111111111": 1},
 		},
 		{
-			name:              "ComplexScenario",
-			scenario:          testdata.ComplexScenario,
-			expectedAccounts:  3,
+			name:             "ComplexScenario",
+			scenario:         testdata.ComplexScenario,
+			expectedAccounts: 3,
 			expectedInstances: map[string]int{
 				"111111111111": 33, // production
 				"222222222222": 4,  // staging

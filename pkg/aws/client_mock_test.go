@@ -16,6 +16,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -102,6 +103,109 @@ func TestMockClient_EC2(t *testing.T) {
 				}
 				if call.AssumeRoleARN != tt.accountConfig.AssumeRoleARN {
 					t.Errorf("expected AssumeRoleARN %s, got %s", tt.accountConfig.AssumeRoleARN, call.AssumeRoleARN)
+				}
+			}
+		})
+	}
+}
+
+func TestMockClient_SavingsPlans(t *testing.T) {
+	tests := []struct {
+		name            string
+		accountConfig   AccountConfig
+		setupMock       func(*MockClient)
+		expectError     bool
+		checkAssumeRole bool
+	}{
+		{
+			name: "basic SavingsPlans client creation",
+			accountConfig: AccountConfig{
+				AccountID: "111111111111",
+				Name:      "Test Account",
+				Region:    "us-west-2",
+			},
+			expectError: false,
+		},
+		{
+			name: "SavingsPlans client with AssumeRole",
+			accountConfig: AccountConfig{
+				AccountID:     "222222222222",
+				Name:          "Production",
+				AssumeRoleARN: "arn:aws:iam::222222222222:role/lumina-controller",
+				SessionName:   "test-session",
+				Region:        "us-east-1",
+			},
+			expectError:     false,
+			checkAssumeRole: true,
+		},
+		{
+			name: "SavingsPlans client returns error",
+			accountConfig: AccountConfig{
+				AccountID: "333333333333",
+				Name:      "Test Account",
+				Region:    "us-west-2",
+			},
+			setupMock: func(m *MockClient) {
+				m.SavingsPlansError = errors.New("mock error")
+			},
+			expectError: true,
+		},
+		{
+			name: "reuse existing SavingsPlans client",
+			accountConfig: AccountConfig{
+				AccountID: "444444444444",
+				Name:      "Test Account",
+				Region:    "us-west-2",
+			},
+			setupMock: func(m *MockClient) {
+				// Pre-create a client for this account
+				m.SavingsPlansClients["444444444444"] = NewMockSavingsPlansClient()
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewMockClient()
+			if tt.setupMock != nil {
+				tt.setupMock(client)
+			}
+
+			ctx := context.Background()
+			spClient, err := client.SavingsPlans(ctx, tt.accountConfig)
+
+			if tt.expectError && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+
+			if !tt.expectError {
+				if spClient == nil {
+					t.Error("expected non-nil SavingsPlans client")
+				}
+
+				// Verify client is stored in map
+				if _, exists := client.SavingsPlansClients[tt.accountConfig.AccountID]; !exists {
+					t.Error("SavingsPlans client not stored in map")
+				}
+			}
+
+			// Check AssumeRole tracking
+			if tt.checkAssumeRole {
+				if len(client.AssumeRoleCalls) != 1 {
+					t.Errorf("expected 1 AssumeRole call, got %d", len(client.AssumeRoleCalls))
+				}
+				if len(client.AssumeRoleCalls) > 0 {
+					call := client.AssumeRoleCalls[0]
+					if call.AccountID != tt.accountConfig.AccountID {
+						t.Errorf("expected AccountID %s, got %s", tt.accountConfig.AccountID, call.AccountID)
+					}
+					if call.AssumeRoleARN != tt.accountConfig.AssumeRoleARN {
+						t.Errorf("expected AssumeRoleARN %s, got %s", tt.accountConfig.AssumeRoleARN, call.AssumeRoleARN)
+					}
 				}
 			}
 		})
