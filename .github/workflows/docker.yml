@@ -54,11 +54,11 @@ jobs:
           flavor: |
             suffix=-amd64,onlatest=false
           tags: |
-            type=ref,event=pr
+            type=ref,event=pr,prefix=test-
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
+            type=sha,format=short,prefix=test-
 
       - name: Build and push
         id: build
@@ -66,7 +66,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
-          push: ${{ inputs.publish }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -114,11 +114,11 @@ jobs:
           flavor: |
             suffix=-arm64,onlatest=false
           tags: |
-            type=ref,event=pr
+            type=ref,event=pr,prefix=test-
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
+            type=sha,format=short,prefix=test-
 
       - name: Build and push
         id: build
@@ -126,7 +126,7 @@ jobs:
         with:
           context: .
           platforms: linux/arm64
-          push: ${{ inputs.publish }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -135,7 +135,6 @@ jobs:
   # Create multi-arch manifest
   manifest:
     name: Create Manifest
-    if: ${{ inputs.publish }}
     needs: [build-amd64, build-arm64]
     runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     permissions:
@@ -155,13 +154,13 @@ jobs:
         with:
           images: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=pr
+            type=ref,event=pr,prefix=test-
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
+            type=sha,format=short,prefix=test-
 
-      - name: Create and push main manifest
+      - name: Create and push manifest
         uses: int128/docker-manifest-create-action@v2
         with:
           tags: ${{ steps.meta.outputs.tags }}
