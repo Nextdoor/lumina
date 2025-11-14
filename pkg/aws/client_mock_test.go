@@ -201,8 +201,22 @@ func TestMockEC2Client_DescribeReservedInstances(t *testing.T) {
 		{
 			name: "all RIs, no region filter",
 			reservedInsts: []ReservedInstance{
-				{ReservedInstanceID: "ri-1", Region: "us-west-2", InstanceType: "m5.xlarge", State: "active", Start: now, End: now.Add(365 * 24 * time.Hour)},
-				{ReservedInstanceID: "ri-2", Region: "us-east-1", InstanceType: "c5.2xlarge", State: "active", Start: now, End: now.Add(365 * 24 * time.Hour)},
+				{
+					ReservedInstanceID: "ri-1",
+					Region:             "us-west-2",
+					InstanceType:       "m5.xlarge",
+					State:              "active",
+					Start:              now,
+					End:                now.Add(365 * 24 * time.Hour),
+				},
+				{
+					ReservedInstanceID: "ri-2",
+					Region:             "us-east-1",
+					InstanceType:       "c5.2xlarge",
+					State:              "active",
+					Start:              now,
+					End:                now.Add(365 * 24 * time.Hour),
+				},
 			},
 			regions:       []string{},
 			expectedCount: 2,
@@ -210,8 +224,22 @@ func TestMockEC2Client_DescribeReservedInstances(t *testing.T) {
 		{
 			name: "filter by region",
 			reservedInsts: []ReservedInstance{
-				{ReservedInstanceID: "ri-1", Region: "us-west-2", InstanceType: "m5.xlarge", State: "active", Start: now, End: now.Add(365 * 24 * time.Hour)},
-				{ReservedInstanceID: "ri-2", Region: "us-east-1", InstanceType: "c5.2xlarge", State: "active", Start: now, End: now.Add(365 * 24 * time.Hour)},
+				{
+					ReservedInstanceID: "ri-1",
+					Region:             "us-west-2",
+					InstanceType:       "m5.xlarge",
+					State:              "active",
+					Start:              now,
+					End:                now.Add(365 * 24 * time.Hour),
+				},
+				{
+					ReservedInstanceID: "ri-2",
+					Region:             "us-east-1",
+					InstanceType:       "c5.2xlarge",
+					State:              "active",
+					Start:              now,
+					End:                now.Add(365 * 24 * time.Hour),
+				},
 			},
 			regions:       []string{"us-west-2"},
 			expectedCount: 1,

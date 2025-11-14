@@ -203,7 +203,11 @@ func (m *MockEC2Client) DescribeReservedInstances(ctx context.Context, regions [
 }
 
 // DescribeSpotPriceHistory returns the mock spot price data.
-func (m *MockEC2Client) DescribeSpotPriceHistory(ctx context.Context, regions []string, instanceTypes []string) ([]SpotPrice, error) {
+func (m *MockEC2Client) DescribeSpotPriceHistory(
+	ctx context.Context,
+	regions []string,
+	instanceTypes []string,
+) ([]SpotPrice, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.DescribeSpotPriceHistoryCallCount++
@@ -325,7 +329,12 @@ func NewMockPricingClient() *MockPricingClient {
 }
 
 // GetOnDemandPrice returns the mock on-demand price.
-func (m *MockPricingClient) GetOnDemandPrice(ctx context.Context, region string, instanceType string, operatingSystem string) (*OnDemandPrice, error) {
+func (m *MockPricingClient) GetOnDemandPrice(
+	ctx context.Context,
+	region string,
+	instanceType string,
+	operatingSystem string,
+) (*OnDemandPrice, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	m.GetOnDemandPriceCallCount++
@@ -340,7 +349,12 @@ func (m *MockPricingClient) GetOnDemandPrice(ctx context.Context, region string,
 }
 
 // GetOnDemandPrices returns mock on-demand prices for multiple instance types.
-func (m *MockPricingClient) GetOnDemandPrices(ctx context.Context, region string, instanceTypes []string, operatingSystem string) ([]OnDemandPrice, error) {
+func (m *MockPricingClient) GetOnDemandPrices(
+	ctx context.Context,
+	region string,
+	instanceTypes []string,
+	operatingSystem string,
+) ([]OnDemandPrice, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	m.GetOnDemandPricesCallCount++
@@ -358,7 +372,12 @@ func (m *MockPricingClient) GetOnDemandPrices(ctx context.Context, region string
 }
 
 // SetOnDemandPrice sets a mock on-demand price (helper for tests).
-func (m *MockPricingClient) SetOnDemandPrice(region string, instanceType string, operatingSystem string, pricePerHour float64) {
+func (m *MockPricingClient) SetOnDemandPrice(
+	region string,
+	instanceType string,
+	operatingSystem string,
+	pricePerHour float64,
+) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

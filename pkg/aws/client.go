@@ -71,11 +71,21 @@ type SavingsPlansClient interface {
 // information is publicly available.
 type PricingClient interface {
 	// GetOnDemandPrice returns the on-demand price for an instance type in a region.
-	GetOnDemandPrice(ctx context.Context, region string, instanceType string, operatingSystem string) (*OnDemandPrice, error)
+	GetOnDemandPrice(
+		ctx context.Context,
+		region string,
+		instanceType string,
+		operatingSystem string,
+	) (*OnDemandPrice, error)
 
 	// GetOnDemandPrices returns on-demand prices for multiple instance types.
 	// This is more efficient than calling GetOnDemandPrice multiple times.
-	GetOnDemandPrices(ctx context.Context, region string, instanceTypes []string, operatingSystem string) ([]OnDemandPrice, error)
+	GetOnDemandPrices(
+		ctx context.Context,
+		region string,
+		instanceTypes []string,
+		operatingSystem string,
+	) ([]OnDemandPrice, error)
 }
 
 // ClientConfig configures the AWS client creation.
