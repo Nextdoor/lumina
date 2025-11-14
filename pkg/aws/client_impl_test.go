@@ -1,0 +1,277 @@
+// Copyright 2025 Lumina Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package aws
+
+import (
+	"context"
+	"testing"
+)
+
+// TestNewRealClient tests that NewRealClient creates a valid client instance.
+// This test ensures the basic client initialization works without errors.
+func TestNewRealClient(t *testing.T) {
+	ctx := context.Background()
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	// Create client without endpoint (will use real AWS - but we won't call any APIs)
+	client, err := NewRealClient(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("expected no error creating real client, got: %v", err)
+	}
+
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+
+	// Verify client has initialized fields
+	if client.config.DefaultRegion != "us-west-2" {
+		t.Errorf("expected DefaultRegion us-west-2, got %s", client.config.DefaultRegion)
+	}
+
+	if client.stsClient == nil {
+		t.Error("expected non-nil STS client")
+	}
+
+	if client.ec2Clients == nil {
+		t.Error("expected initialized ec2Clients map")
+	}
+
+	if client.spClients == nil {
+		t.Error("expected initialized spClients map")
+	}
+}
+
+// TestNewRealClientWithEndpoint tests client creation with a custom endpoint.
+// This is used for LocalStack testing.
+func TestNewRealClientWithEndpoint(t *testing.T) {
+	ctx := context.Background()
+	cfg := ClientConfig{
+		DefaultRegion: "us-east-1",
+	}
+
+	endpoint := "http://localhost:4566"
+	client, err := NewRealClient(ctx, cfg, endpoint)
+	if err != nil {
+		t.Fatalf("expected no error creating client with endpoint, got: %v", err)
+	}
+
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+
+	if client.endpointURL != endpoint {
+		t.Errorf("expected endpointURL %s, got %s", endpoint, client.endpointURL)
+	}
+}
+
+// TestRealClientPricing tests that Pricing() returns a valid PricingClient.
+func TestRealClientPricing(t *testing.T) {
+	ctx := context.Background()
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Get pricing client
+	pricingClient := client.Pricing(ctx)
+	if pricingClient == nil {
+		t.Fatal("expected non-nil pricing client")
+	}
+
+	// Call again - should return cached instance
+	pricingClient2 := client.Pricing(ctx)
+	if pricingClient != pricingClient2 {
+		t.Error("expected same cached pricing client instance")
+	}
+}
+
+// TestPtrString tests the ptrString helper function.
+func TestPtrString(t *testing.T) {
+	str := "test"
+	ptr := ptrString(str)
+
+	if ptr == nil {
+		t.Fatal("expected non-nil pointer")
+	}
+
+	if *ptr != str {
+		t.Errorf("expected %s, got %s", str, *ptr)
+	}
+}
+
+// TestNewClientWithEndpointFunction tests the exported NewClientWithEndpoint function.
+func TestNewClientWithEndpointFunction(t *testing.T) {
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	// Test with empty endpoint
+	client, err := NewClientWithEndpoint(cfg, "")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+
+	// Test with LocalStack endpoint
+	client2, err := NewClientWithEndpoint(cfg, "http://localhost:4566")
+	if err != nil {
+		t.Fatalf("expected no error with endpoint, got: %v", err)
+	}
+	if client2 == nil {
+		t.Fatal("expected non-nil client with endpoint")
+	}
+}
+
+// TestNewClientFunction tests the exported NewClient function.
+func TestNewClientFunction(t *testing.T) {
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	client, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
+// TestRealClientEC2 tests the EC2 method with caching.
+func TestRealClientEC2(t *testing.T) {
+	ctx := context.Background()
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Create account config without AssumeRole
+	accountConfig := AccountConfig{
+		AccountID: "123456789012",
+		Name:      "Test",
+		Region:    "us-west-2",
+	}
+
+	// First call - should create and cache EC2 client
+	ec2Client1, err := client.EC2(ctx, accountConfig)
+	if err != nil {
+		t.Fatalf("failed to get EC2 client: %v", err)
+	}
+	if ec2Client1 == nil {
+		t.Fatal("expected non-nil EC2 client")
+	}
+
+	// Second call - should return cached client
+	ec2Client2, err := client.EC2(ctx, accountConfig)
+	if err != nil {
+		t.Fatalf("failed to get EC2 client (cached): %v", err)
+	}
+
+	// Verify it's the same cached instance
+	if ec2Client1 != ec2Client2 {
+		t.Error("expected same cached EC2 client instance")
+	}
+}
+
+// TestRealClientSavingsPlans tests the SavingsPlans method with caching.
+func TestRealClientSavingsPlans(t *testing.T) {
+	ctx := context.Background()
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Create account config without AssumeRole
+	accountConfig := AccountConfig{
+		AccountID: "123456789012",
+		Name:      "Test",
+		Region:    "us-west-2",
+	}
+
+	// First call - should create and cache SavingsPlans client
+	spClient1, err := client.SavingsPlans(ctx, accountConfig)
+	if err != nil {
+		t.Fatalf("failed to get SavingsPlans client: %v", err)
+	}
+	if spClient1 == nil {
+		t.Fatal("expected non-nil SavingsPlans client")
+	}
+
+	// Second call - should return cached client
+	spClient2, err := client.SavingsPlans(ctx, accountConfig)
+	if err != nil {
+		t.Fatalf("failed to get SavingsPlans client (cached): %v", err)
+	}
+
+	// Verify it's the same cached instance
+	if spClient1 != spClient2 {
+		t.Error("expected same cached SavingsPlans client instance")
+	}
+}
+
+// TestRealClientGetCredentialsWithoutAssumeRole tests getCredentials without AssumeRole.
+func TestRealClientGetCredentialsWithoutAssumeRole(t *testing.T) {
+	ctx := context.Background()
+	cfg := ClientConfig{
+		DefaultRegion: "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Create account config without AssumeRole ARN
+	accountConfig := AccountConfig{
+		AccountID: "123456789012",
+		Name:      "Test",
+	}
+
+	// Get credentials - should return test credentials
+	creds, err := client.getCredentials(ctx, accountConfig)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Verify test credentials
+	credValue, err := creds.Retrieve(ctx)
+	if err != nil {
+		t.Fatalf("failed to retrieve credentials: %v", err)
+	}
+
+	if credValue.AccessKeyID != "test" {
+		t.Errorf("expected AccessKeyID 'test', got %s", credValue.AccessKeyID)
+	}
+
+	if credValue.SecretAccessKey != "test" {
+		t.Errorf("expected SecretAccessKey 'test', got %s", credValue.SecretAccessKey)
+	}
+}

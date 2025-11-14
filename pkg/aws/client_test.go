@@ -43,15 +43,14 @@ func TestNewClient(t *testing.T) {
 		MaxRetries:    3,
 	}
 
-	// Currently NewClient returns nil, nil (placeholder)
-	// This test ensures the function signature is covered
+	// NewClient should create a real AWS client
 	client, err := NewClient(config)
 
-	if client != nil {
-		t.Errorf("expected nil client (not yet implemented), got %v", client)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if err != nil {
-		t.Errorf("expected nil error (not yet implemented), got %v", err)
+	if client == nil {
+		t.Fatal("expected non-nil client")
 	}
 }

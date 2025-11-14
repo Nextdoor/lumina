@@ -113,7 +113,20 @@ type ClientConfig struct {
 // NewClient creates a new AWS client with the specified configuration.
 // The client handles credential management, AssumeRole operations,
 // retries, and rate limiting automatically.
+//
+// For production use, this creates a RealClient that connects to actual AWS APIs.
+// For testing with LocalStack, use NewClientWithEndpoint instead.
 func NewClient(config ClientConfig) (Client, error) {
-	// This will be implemented in client_impl.go
-	return nil, nil
+	// Create a real AWS client with no custom endpoint (production use)
+	return NewClientWithEndpoint(config, "")
+}
+
+// NewClientWithEndpoint creates a new AWS client with a custom endpoint URL.
+// This is primarily used for testing with LocalStack.
+//
+// For production use, pass an empty endpointURL or use NewClient instead.
+// For LocalStack testing, pass "http://localhost:4566" as endpointURL.
+func NewClientWithEndpoint(config ClientConfig, endpointURL string) (Client, error) {
+	// Create a real AWS client with the specified endpoint
+	return NewRealClient(context.Background(), config, endpointURL)
 }
