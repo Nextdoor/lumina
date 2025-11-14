@@ -2,6 +2,9 @@ name: Tests
 
 on:
   pull_request: {}
+  push:
+    branches:
+      - main
 
 jobs:
   test:
@@ -20,3 +23,6 @@ jobs:
         run: |
           go mod tidy
           make test
+
+      - name: Report coverage
+        run: make cover

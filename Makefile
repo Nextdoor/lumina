@@ -59,25 +59,15 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out -covermode=atomic
 
-.PHONY: test-coverage
-test-coverage: test ## Run tests and display detailed coverage report
-	@echo ""
-	@echo "Coverage by file:"
-	@go tool cover -func=cover.out | awk '{if ($$NF != "total:") print $$1, $$NF}' | awk -F: '{files[$$1] = $$NF} END {for (f in files) printf "  %-60s %s\n", f, files[f]}' | sort
-	@echo ""
-	@echo "Total coverage:"
-	@go tool cover -func=cover.out | grep "total:"
-	@echo ""
-	@echo "For function-level detail: go tool cover -func=cover.out"
-	@echo "For HTML coverage report: make coverage-html"
+.PHONY: cover
+cover: ## Display test coverage report
+	go tool cover -func cover.out
 
-.PHONY: coverage-html
-coverage-html: test ## Generate HTML coverage report
-	@go tool cover -html=cover.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
-	@echo "Open with: open coverage.html"
+.PHONY: coverhtml
+coverhtml: ## Generate and open HTML coverage report
+	go tool cover -html cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.

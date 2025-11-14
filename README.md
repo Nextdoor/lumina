@@ -108,7 +108,10 @@ Prometheus metrics will expose node costs and Savings Plans utilization. Metrics
 make test
 
 # Coverage report
-make test-coverage
+make cover
+
+# HTML coverage report
+make coverhtml
 
 # E2E tests (requires Kind cluster)
 make test-e2e
