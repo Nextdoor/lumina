@@ -1,0 +1,87 @@
+# Lumina Controller Configuration Example
+#
+# This file shows all available configuration options for the Lumina controller.
+# Copy this file to config.yaml and customize for your environment.
+
+# AWS Accounts Configuration
+# Define all AWS accounts that the controller should monitor for cost data.
+# The controller will assume the specified IAM role in each account to collect
+# EC2 instance, Reserved Instance, and Savings Plans data.
+awsAccounts:
+  # Production account example
+  - accountId: "123456789012"
+    name: "Production"
+    assumeRoleArn: "arn:aws:iam::123456789012:role/lumina-controller"
+    # region: "us-west-2"  # Optional: override default region for this account
+
+  # Staging account example
+  - accountId: "987654321098"
+    name: "Staging"
+    assumeRoleArn: "arn:aws:iam::987654321098:role/lumina-controller"
+
+  # Additional accounts can be added as needed
+  # - accountId: "111111111111"
+  #   name: "Development"
+  #   assumeRoleArn: "arn:aws:iam::111111111111:role/lumina-controller"
+
+# Default AWS region for API calls
+# Can be overridden by LUMINA_DEFAULT_REGION environment variable
+# Default: us-west-2
+defaultRegion: "us-west-2"
+
+# Log level: debug, info, warn, error
+# Can be overridden by LUMINA_LOG_LEVEL environment variable
+# Default: info
+logLevel: "info"
+
+# Address for the metrics endpoint (Prometheus scraping)
+# Can be overridden by LUMINA_METRICS_BIND_ADDRESS environment variable
+# Default: :8080
+metricsBindAddress: ":8080"
+
+# Address for health probe endpoints (/healthz, /readyz)
+# Can be overridden by LUMINA_HEALTH_PROBE_BIND_ADDRESS environment variable
+# Default: :8081
+healthProbeBindAddress: ":8081"
+
+# How often to validate AWS account access
+# Format: Go duration string (e.g., "5m", "10m", "1h")
+# Can be overridden by LUMINA_ACCOUNT_VALIDATION_INTERVAL environment variable
+# Default: 5m
+accountValidationInterval: "5m"
+
+# IAM Role Requirements:
+#
+# Each AWS account must have an IAM role with the following permissions:
+#
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Action": [
+#         "ec2:DescribeInstances",
+#         "ec2:DescribeReservedInstances",
+#         "ec2:DescribeSpotPriceHistory",
+#         "savingsplans:DescribeSavingsPlans",
+#         "organizations:DescribeOrganization"
+#       ],
+#       "Resource": "*"
+#     }
+#   ]
+# }
+#
+# Trust relationship:
+#
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Principal": {
+#         "AWS": "arn:aws:iam::<CONTROLLER_ACCOUNT_ID>:role/<CONTROLLER_ROLE_NAME>"
+#       },
+#       "Action": "sts:AssumeRole"
+#     }
+#   ]
+# }

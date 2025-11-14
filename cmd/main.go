@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/nextdoor/lumina/internal/controller"
+	"github.com/nextdoor/lumina/pkg/config"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -65,7 +66,10 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var configFile string
 	var tlsOpts []func(*tls.Config)
+	flag.StringVar(&configFile, "config", "/etc/lumina/config.yaml",
+		"Path to the controller configuration file. Can be overridden with LUMINA_CONFIG_PATH environment variable.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -90,6 +94,22 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Allow environment variable to override config file path
+	if envConfigPath := os.Getenv("LUMINA_CONFIG_PATH"); envConfigPath != "" {
+		configFile = envConfigPath
+	}
+
+	// Load controller configuration
+	cfg, err := config.Load(configFile)
+	if err != nil {
+		setupLog.Error(err, "failed to load configuration", "config-file", configFile)
+		os.Exit(1)
+	}
+	setupLog.Info("loaded configuration",
+		"accounts", len(cfg.AWSAccounts),
+		"default-region", cfg.DefaultRegion,
+		"log-level", cfg.LogLevel)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
