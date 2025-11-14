@@ -6,7 +6,7 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64,cache=/var/cache/magic
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -15,6 +15,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false  # Disable built-in cache, using magic cache instead
 
       - name: Run linter
         uses: golangci/golangci-lint-action@v8

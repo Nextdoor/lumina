@@ -14,7 +14,7 @@ env:
 jobs:
   build:
     name: Build and Publish
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64,cache=/var/cache/magic
     permissions:
       contents: write
       packages: write
@@ -31,6 +31,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false  # Disable built-in cache, using magic cache instead
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
