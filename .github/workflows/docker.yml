@@ -144,15 +144,9 @@ jobs:
     needs: [build-amd64, build-arm64]
     runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic
     permissions:
-      contents: read  # Required to checkout from private repo
       packages: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -164,16 +158,19 @@ jobs:
         run: |
           set -e
 
-          # Determine version tag
+          # Determine version tag from GitHub context
           if [[ "${{ inputs.publish }}" == "true" ]]; then
-            # For releases, get the tag
-            VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            # For releases, use the git tag (github.ref_name contains the tag)
+            VERSION="${{ github.ref_name }}"
           else
-            # For snapshots, use main-<sha>
-            VERSION="main-$(git rev-parse --short HEAD)"
+            # For snapshots, use main-<sha> (short commit SHA)
+            VERSION="main-${{ github.event.pull_request.head.sha || github.sha }}"
+            VERSION="${VERSION:0:12}"  # Shorten to main-<short-sha>
           fi
 
           IMAGE_BASE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          echo "Creating manifests for version: ${VERSION}"
 
           # Create and push version-specific manifest
           docker buildx imagetools create -t "${IMAGE_BASE}:${VERSION}" \
