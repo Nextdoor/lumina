@@ -14,6 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package utils provides test utilities for E2E tests.
+//
+// Coverage: Excluded - these utilities are kubebuilder-generated scaffolding
+// used only in E2E tests with Kind clusters. They are tested through actual
+// E2E test execution, not unit tests.
+
 package utils
 
 import (

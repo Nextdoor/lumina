@@ -95,69 +95,25 @@ kubectl logs -n lumina-system deployment/lumina-controller-manager
 
 ## Configuration
 
-Lumina requires IAM permissions to assume roles in all AWS accounts. See [docs/iam-setup.md](docs/iam-setup.md) for details.
-
-Example configuration:
-
-```yaml
-awsAccounts:
-  - accountId: "111111111111"
-    name: "Production"
-    assumeRoleArn: "arn:aws:iam::111111111111:role/lumina-cost-controller"
-  - accountId: "222222222222"
-    name: "Staging"
-    assumeRoleArn: "arn:aws:iam::222222222222:role/lumina-cost-controller"
-```
+Lumina will require IAM permissions to assume roles in all AWS accounts. Configuration format TBD.
 
 ## Metrics
 
-Lumina exposes the following Prometheus metrics:
-
-### Node Costs
-```
-# Estimated hourly cost with all discounts applied
-ec2_node_hourly_cost_estimate{instance_id, node_name, instance_type, lifecycle, provisioner}
-
-# Full on-demand price (no discounts)
-ec2_node_hourly_cost_shelf_price{instance_id, node_name, instance_type}
-
-# Cost breakdown by source (RI, SP, OnDemand, Spot)
-ec2_node_cost_source{instance_id, node_name, source}
-```
-
-### Savings Plans Utilization
-```
-# Fixed hourly commitment amount
-savings_plan_hourly_commitment{savings_plan_arn, type, account_id}
-
-# Current utilization rate ($/hour)
-savings_plan_current_utilization_rate{savings_plan_arn, type, account_id}
-
-# Remaining capacity ($/hour)
-savings_plan_remaining_capacity{savings_plan_arn, type, account_id}
-
-# Utilization percentage
-savings_plan_utilization_percent{savings_plan_arn, type, account_id}
-```
-
-See [docs/metrics.md](docs/metrics.md) for complete metric reference.
+Prometheus metrics will expose node costs and Savings Plans utilization. Metrics design TBD.
 
 ## Testing
 
-Lumina uses a multi-tier testing strategy:
-
-### Unit Tests
 ```bash
+# Unit tests
 make test
-```
 
-### Integration Tests (with fake AWS backend)
-```bash
-make test-integration
-```
+# Coverage report
+make cover
 
-### E2E Tests (requires cluster)
-```bash
+# HTML coverage report
+make coverhtml
+
+# E2E tests (requires Kind cluster)
 make test-e2e
 ```
 
@@ -188,9 +144,7 @@ make run ARGS="--zap-log-level=debug"
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) - Project coding guidelines
-- [docs/architecture.md](docs/architecture.md) - Architecture deep-dive
-- [docs/metrics.md](docs/metrics.md) - Complete metrics reference
-- [docs/iam-setup.md](docs/iam-setup.md) - AWS IAM configuration
+- [pkg/aws/README.md](pkg/aws/README.md) - AWS client package documentation
 
 ## License
 

@@ -1,0 +1,220 @@
+// Copyright 2025 Lumina Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package aws provides abstractions for interacting with AWS services.
+//
+// This file contains pure data structure definitions with no logic.
+// These types are thoroughly tested through their usage in mock tests
+// and integration tests, so direct unit tests would provide no value.
+
+package aws
+
+import (
+	"time"
+)
+
+// AccountConfig represents configuration for accessing an AWS account.
+// Supports both direct credentials and AssumeRole-based access.
+type AccountConfig struct {
+	// AccountID is the AWS account ID (e.g., "111111111111")
+	AccountID string
+
+	// Name is a human-readable name for this account (e.g., "Production")
+	Name string
+
+	// AssumeRoleARN is the ARN of the role to assume for cross-account access.
+	// If empty, uses the default credential chain.
+	// Example: "arn:aws:iam::111111111111:role/lumina-cost-controller"
+	AssumeRoleARN string
+
+	// ExternalID is an optional external ID for AssumeRole operations.
+	// Used for enhanced security when assuming roles across accounts.
+	ExternalID string
+
+	// SessionName is the name to use for AssumeRole sessions.
+	// Defaults to "lumina-controller" if not specified.
+	SessionName string
+
+	// Region is the default AWS region for API calls.
+	// Can be overridden per-API call if needed.
+	Region string
+}
+
+// Instance represents an EC2 instance with relevant cost information.
+type Instance struct {
+	// InstanceID is the EC2 instance ID (e.g., "i-abc123def456")
+	InstanceID string
+
+	// InstanceType is the instance type (e.g., "m5.xlarge")
+	InstanceType string
+
+	// AvailabilityZone is the AZ where the instance is running
+	AvailabilityZone string
+
+	// Region is the AWS region
+	Region string
+
+	// Lifecycle is either "spot" or "on-demand"
+	Lifecycle string
+
+	// State is the current instance state (e.g., "running", "stopped")
+	State string
+
+	// LaunchTime is when the instance was launched
+	LaunchTime time.Time
+
+	// AccountID is the AWS account that owns this instance
+	AccountID string
+
+	// Tags are the EC2 instance tags
+	Tags map[string]string
+
+	// PrivateDNSName is the internal DNS name (useful for K8s correlation)
+	PrivateDNSName string
+
+	// PrivateIPAddress is the private IP address
+	PrivateIPAddress string
+
+	// Platform is the OS platform (e.g., "linux", "windows")
+	Platform string
+}
+
+// ReservedInstance represents an EC2 Reserved Instance.
+type ReservedInstance struct {
+	// ReservedInstanceID is the unique identifier
+	ReservedInstanceID string
+
+	// InstanceType is the instance type this RI covers
+	InstanceType string
+
+	// AvailabilityZone is the AZ (or "regional" for regional RIs)
+	AvailabilityZone string
+
+	// Region is the AWS region
+	Region string
+
+	// InstanceCount is the number of instances this RI covers
+	InstanceCount int32
+
+	// State is the RI state (e.g., "active", "retired")
+	State string
+
+	// Start is when the RI started
+	Start time.Time
+
+	// End is when the RI expires
+	End time.Time
+
+	// OfferingClass is "standard" or "convertible"
+	OfferingClass string
+
+	// AccountID is the AWS account that owns this RI
+	AccountID string
+}
+
+// SavingsPlan represents an AWS Savings Plan.
+type SavingsPlan struct {
+	// SavingsPlanARN is the unique ARN identifier
+	SavingsPlanARN string
+
+	// SavingsPlanID is the short ID
+	SavingsPlanID string
+
+	// SavingsPlanType is either "EC2Instance" or "Compute"
+	SavingsPlanType string
+
+	// State is the current state (e.g., "active", "retired")
+	State string
+
+	// Commitment is the hourly commitment amount in USD (e.g., 150.00)
+	Commitment float64
+
+	// Region is the AWS region (or "all" for Compute SPs)
+	Region string
+
+	// InstanceFamily is the instance family for EC2 Instance SPs (e.g., "m5")
+	// Empty for Compute SPs (applies to all families)
+	InstanceFamily string
+
+	// Start is when the SP started
+	Start time.Time
+
+	// End is when the SP expires
+	End time.Time
+
+	// AccountID is the AWS account that owns this SP
+	AccountID string
+
+	// EC2InstanceFamily is the specific instance family for EC2 Instance SPs
+	// (legacy field for compatibility)
+	EC2InstanceFamily string
+}
+
+// SpotPrice represents the current spot price for an instance type.
+type SpotPrice struct {
+	// InstanceType is the instance type
+	InstanceType string
+
+	// AvailabilityZone is the AZ
+	AvailabilityZone string
+
+	// SpotPrice is the current hourly spot price in USD
+	SpotPrice float64
+
+	// Timestamp is when this price was observed
+	Timestamp time.Time
+
+	// ProductDescription is the OS type (e.g., "Linux/UNIX")
+	ProductDescription string
+}
+
+// OnDemandPrice represents the on-demand price for an instance type.
+type OnDemandPrice struct {
+	// InstanceType is the instance type
+	InstanceType string
+
+	// Region is the AWS region
+	Region string
+
+	// PricePerHour is the on-demand hourly price in USD
+	PricePerHour float64
+
+	// OperatingSystem is the OS type (e.g., "Linux")
+	OperatingSystem string
+
+	// Tenancy is "Shared", "Dedicated", or "Host"
+	Tenancy string
+}
+
+// CostEstimate represents a cost estimate for an instance.
+type CostEstimate struct {
+	// InstanceID is the EC2 instance ID
+	InstanceID string
+
+	// EstimatedHourlyCost is the estimated cost per hour with discounts
+	EstimatedHourlyCost float64
+
+	// ShelfPrice is the full on-demand price (no discounts)
+	ShelfPrice float64
+
+	// CoverageType indicates what's covering this instance:
+	// "reserved_instance", "savings_plan", "on_demand", or "spot"
+	CoverageType string
+
+	// SavingsPlanARN is the ARN of the SP covering this (if applicable)
+	SavingsPlanARN string
+
+	// Timestamp is when this estimate was calculated
+	Timestamp time.Time
+}

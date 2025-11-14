@@ -35,6 +35,7 @@ Requirements:
 - When adding new code, tests must be included in the same commit/PR
 
 Valid reasons for `// coverage:ignore`:
+- Pure data structures with no logic (e.g., type definitions)
 - Unreachable error conditions in generated code
 - Defensive programming checks that cannot be triggered in tests
 - Platform-specific code that cannot be tested in CI environment
@@ -43,6 +44,8 @@ Invalid reasons:
 - "Hard to test" - refactor the code to make it testable
 - "Takes too long" - optimize the test or use appropriate mocking
 - "Edge case" - edge cases must be tested
+
+**Do NOT write tests for pure data structures**: Testing that struct field assignment works (e.g., `config.Field = "value"`) provides zero value. These types are covered through their usage in real tests.
 
 ### 3. Testing Strategy
 
@@ -112,6 +115,60 @@ The CI pipeline must enforce:
 - Linting passes
 - No hardcoded internal references (future enhancement)
 - Build succeeds
+
+## Documentation Style
+
+### README Files
+
+README files should be **concise and information-dense**:
+
+- **Be terse**: Get to the point quickly, avoid fluff and repetition
+- **Minimal examples**: 1-2 short code snippets maximum
+- **Focus on "what" and "why"**: Not extensive "how-to" tutorials
+- **Bullet points over paragraphs**: Easy to scan
+- **No dozens of code examples**: Link to godoc or tests for detailed usage
+
+Bad README:
+```markdown
+## How to Create a Client
+
+First, you'll need to create a client configuration. Here's how...
+[10 paragraphs of explanation]
+[5 different code examples showing every possible option]
+```
+
+Good README:
+```markdown
+## Quick Start
+
+`client := aws.NewClient(aws.ClientConfig{DefaultRegion: "us-west-2"})`
+
+See godoc for full API reference.
+```
+
+### Code Comments
+
+In contrast to READMEs, **code comments should be verbose and explain intent**:
+
+```go
+// Good: Explains WHY, not just WHAT
+// We need to query all regions because Savings Plans can apply to instances
+// in any region (for Compute SPs) or specific regions (for EC2 Instance SPs).
+// Querying all regions upfront is more efficient than per-region queries
+// because the AWS API charges per request, not per result count.
+regions := []string{"us-west-2", "us-east-1", "eu-west-1"}
+
+// Bad: Just repeats the code
+// Set regions variable
+regions := []string{"us-west-2", "us-east-1", "eu-west-1"}
+```
+
+Key principles for code comments:
+- Explain **intent and reasoning**, not mechanics
+- Document **why decisions were made**
+- Call out **non-obvious implications**
+- Explain **edge cases and gotchas**
+- Reference **RFC sections or external docs** when relevant
 
 ## Questions or Exceptions
 

@@ -14,6 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Main entrypoint for the Lumina controller manager.
+// This file is generated scaffolding from kubebuilder and will be
+// tested through E2E tests, not unit tests.
+//
+// Coverage: Excluded - main entrypoints are tested via E2E tests
+
 package main
 
 import (

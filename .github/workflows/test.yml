@@ -1,13 +1,15 @@
 name: Tests
 
 on:
+  pull_request: {}
   push:
-  pull_request:
+    branches:
+      - main
 
 jobs:
   test:
-    name: Run on Ubuntu
-    runs-on: ubuntu-latest
+    name: Test
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -21,3 +23,6 @@ jobs:
         run: |
           go mod tidy
           make test
+
+      - name: Report coverage
+        run: make cover
