@@ -12,7 +12,7 @@ spec:
         args:
         - --leader-elect
         - --health-probe-bind-address=:8081
-        - --config-file=/etc/lumina/config.yaml
+        - --config=/etc/lumina/config.yaml
         env:
         # Configure AWS SDK to use LocalStack endpoint
         - name: AWS_ENDPOINT_URL
