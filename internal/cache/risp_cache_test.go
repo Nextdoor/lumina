@@ -336,7 +336,7 @@ func TestConcurrentAccess(t *testing.T) {
 	// Run concurrent updates and reads
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
-		go func(id int) {
+		go func() {
 			// Concurrent writes
 			ri := []aws.ReservedInstance{
 				{ReservedInstanceID: "ri-concurrent"},
@@ -355,7 +355,7 @@ func TestConcurrentAccess(t *testing.T) {
 			_ = cache.GetFreshness("us-west-2:111111111111:ri")
 
 			done <- true
-		}(i)
+		}()
 	}
 
 	// Wait for all goroutines
