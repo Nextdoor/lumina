@@ -291,6 +291,37 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(output).To(ContainSubstring("localstack"), "AWS_ENDPOINT_URL does not point to LocalStack")
 		})
 
+		It("should successfully load config and make AWS API calls", func() {
+			By("checking controller logs for config loading")
+			verifyConfigLoaded := func(g Gomega) {
+				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to get controller logs")
+				g.Expect(output).NotTo(ContainSubstring("config file not found"), "Should not have config file error")
+				g.Expect(output).To(Or(
+					ContainSubstring("loaded configuration"),
+					ContainSubstring("Starting workers"),
+				), "Controller should have loaded config successfully")
+			}
+			Eventually(verifyConfigLoaded, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying controller is making AWS STS AssumeRole calls")
+			verifyAWSCalls := func(g Gomega) {
+				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to get controller logs")
+				// Look for evidence of AWS API calls or role assumption
+				g.Expect(output).To(Or(
+					ContainSubstring("AssumeRole"),
+					ContainSubstring("test-production"),
+					ContainSubstring("test-staging"),
+					ContainSubstring("000000000000"),
+					ContainSubstring("111111111111"),
+				), "Controller should be processing AWS accounts from config")
+			}
+			Eventually(verifyAWSCalls, 1*time.Minute, 5*time.Second).Should(Succeed())
+		})
+
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.

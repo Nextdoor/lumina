@@ -9,6 +9,10 @@ spec:
     spec:
       containers:
       - name: manager
+        args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --config-file=/etc/lumina/config.yaml
         env:
         # Configure AWS SDK to use LocalStack endpoint
         - name: AWS_ENDPOINT_URL
@@ -23,3 +27,11 @@ spec:
         # Disable SSL verification for LocalStack
         - name: AWS_EC2_METADATA_DISABLED
           value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/lumina
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: lumina-config

@@ -9,7 +9,15 @@ kind: Kustomization
 resources:
   - ../default
 
-# Patches to configure LocalStack endpoint
+# ConfigMap with test configuration
+configMapGenerator:
+  - name: lumina-config
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true
+
+# Patches to configure LocalStack endpoint and mount config
 patches:
   - path: manager_patch.yaml
     target:

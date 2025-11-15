@@ -1,0 +1,16 @@
+# Test configuration for e2e tests with LocalStack
+# This configuration tells Lumina to query the test accounts in LocalStack
+
+defaultRegion: us-west-2
+logLevel: debug
+
+awsAccounts:
+  - accountId: "000000000000"
+    name: "test-production"
+    assumeRoleArn: "arn:aws:iam::000000000000:role/lumina/LuminaTestRole"
+    region: "us-west-2"
+
+  - accountId: "111111111111"
+    name: "test-staging"
+    assumeRoleArn: "arn:aws:iam::111111111111:role/lumina/LuminaStagingRole"
+    region: "us-east-1"
