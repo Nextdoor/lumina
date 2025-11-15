@@ -16,7 +16,9 @@ package aws
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -25,6 +27,19 @@ import (
 const (
 	testLocalStackEndpoint = "http://localhost:4566"
 )
+
+// isLocalStackAvailable checks if LocalStack is running and accessible.
+func isLocalStackAvailable() bool {
+	client := &http.Client{
+		Timeout: 1 * time.Second,
+	}
+	resp, err := client.Get(testLocalStackEndpoint)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode < 500
+}
 
 // TestNewRealEC2Client tests that NewRealEC2Client creates a valid client.
 func TestNewRealEC2Client(t *testing.T) {
@@ -104,7 +119,12 @@ func TestRealEC2ClientDescribeInstances(t *testing.T) {
 }
 
 // TestRealEC2ClientDescribeReservedInstances tests the DescribeReservedInstances method.
+// This test requires LocalStack to be running.
 func TestRealEC2ClientDescribeReservedInstances(t *testing.T) {
+	if !isLocalStackAvailable() {
+		t.Skip("Skipping test: LocalStack is not available at " + testLocalStackEndpoint)
+	}
+
 	ctx := context.Background()
 	creds := credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
@@ -113,7 +133,7 @@ func TestRealEC2ClientDescribeReservedInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

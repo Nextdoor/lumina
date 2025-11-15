@@ -42,6 +42,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	"github.com/nextdoor/lumina/internal/cache"
 	"github.com/nextdoor/lumina/internal/controller"
 	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/config"
@@ -220,6 +221,17 @@ func main() {
 	luminaMetrics.ControllerRunning.Set(1)
 	setupLog.Info("metrics initialized and controller running metric set")
 
+	// Create AWS client for controllers and health checks
+	// This client handles credential management and AssumeRole operations
+	awsClient, err := aws.NewClient(aws.ClientConfig{
+		DefaultRegion: cfg.DefaultRegion,
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create AWS client")
+		os.Exit(1)
+	}
+	setupLog.Info("created AWS client")
+
 	if err := (&controller.NodeReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -227,6 +239,27 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		os.Exit(1)
 	}
+
+	// Initialize RI/SP cache for Phase 2 data collection
+	rispCache := cache.NewRISPCache()
+	setupLog.Info("initialized RI/SP cache")
+
+	// Setup RISP reconciler for hourly data collection
+	// This reconciler queries AWS APIs for Reserved Instances and Savings Plans
+	// and maintains an in-memory cache for cost calculation (future phases)
+	if err := (&controller.RISPReconciler{
+		AWSClient: awsClient,
+		Config:    cfg,
+		Cache:     rispCache,
+		Metrics:   luminaMetrics,
+		Log:       ctrl.Log.WithName("risp-reconciler"),
+		Regions:   []string{"us-west-2", "us-east-1"}, // TODO: Make configurable
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RISP")
+		os.Exit(1)
+	}
+	setupLog.Info("registered RISP reconciler for hourly data collection")
+
 	// +kubebuilder:scaffold:builder
 
 	// Setup health checks
@@ -239,13 +272,7 @@ func main() {
 	// The readiness probe (readyz) validates AWS account access.
 	// This ensures the controller doesn't receive traffic until all configured
 	// AWS accounts are accessible via AssumeRole.
-	awsClient, err := aws.NewClient(aws.ClientConfig{
-		DefaultRegion: cfg.DefaultRegion,
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to create AWS client for health checks")
-		os.Exit(1)
-	}
+	// Reuse the AWS client created earlier for the reconciler
 	validator := aws.NewAccountValidator(awsClient)
 	awsHealthChecker := aws.NewHealthChecker(validator, cfg.AWSAccounts)
 	if err := mgr.AddReadyzCheck("readyz", awsHealthChecker.Check); err != nil {

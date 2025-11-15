@@ -16,11 +16,30 @@ package aws
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 )
+
+const (
+	testLocalStackEndpointSP = "http://localhost:4566"
+)
+
+// isLocalStackAvailable checks if LocalStack is running and accessible.
+func isLocalStackAvailableSP() bool {
+	client := &http.Client{
+		Timeout: 1 * time.Second,
+	}
+	resp, err := client.Get(testLocalStackEndpointSP)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode < 500
+}
 
 // TestNewRealSPClient tests that NewRealSPClient creates a valid client.
 func TestNewRealSPClient(t *testing.T) {
@@ -72,7 +91,12 @@ func TestNewRealSPClientWithEndpoint(t *testing.T) {
 }
 
 // TestRealSPClientDescribeSavingsPlans tests the DescribeSavingsPlans method.
+// This test requires LocalStack to be running.
 func TestRealSPClientDescribeSavingsPlans(t *testing.T) {
+	if !isLocalStackAvailableSP() {
+		t.Skip("Skipping test: LocalStack is not available at " + testLocalStackEndpointSP)
+	}
+
 	ctx := context.Background()
 	creds := credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
@@ -81,7 +105,7 @@ func TestRealSPClientDescribeSavingsPlans(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, "")
+	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, testLocalStackEndpointSP)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -99,7 +123,12 @@ func TestRealSPClientDescribeSavingsPlans(t *testing.T) {
 }
 
 // TestRealSPClientGetSavingsPlanByARN tests the GetSavingsPlanByARN method.
+// This test requires LocalStack to be running.
 func TestRealSPClientGetSavingsPlanByARN(t *testing.T) {
+	if !isLocalStackAvailableSP() {
+		t.Skip("Skipping test: LocalStack is not available at " + testLocalStackEndpointSP)
+	}
+
 	ctx := context.Background()
 	creds := credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
@@ -108,7 +137,7 @@ func TestRealSPClientGetSavingsPlanByARN(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, "")
+	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, testLocalStackEndpointSP)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
