@@ -1,0 +1,38 @@
+# Patch for e2e testing to configure LocalStack AWS endpoint
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        args:
+        - --metrics-bind-address=:8443
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --config=/etc/lumina/config.yaml
+        env:
+        # Configure AWS SDK to use LocalStack endpoint
+        - name: AWS_ENDPOINT_URL
+          value: "http://localstack.localstack.svc.cluster.local:4566"
+        # Use test AWS credentials (LocalStack doesn't validate these)
+        - name: AWS_ACCESS_KEY_ID
+          value: "test"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "test"
+        - name: AWS_DEFAULT_REGION
+          value: "us-west-2"
+        # Disable SSL verification for LocalStack
+        - name: AWS_EC2_METADATA_DISABLED
+          value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/lumina
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: lumina-config

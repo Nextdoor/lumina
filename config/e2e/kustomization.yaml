@@ -1,0 +1,28 @@
+# Kustomization for e2e testing with LocalStack
+# This overlay patches the manager deployment to use LocalStack
+# as the AWS endpoint for integration testing.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Ensure all resources are in the correct namespace
+namespace: lumina-system
+
+# Base configuration
+resources:
+  - ../default
+
+# ConfigMap with test configuration
+configMapGenerator:
+  - name: lumina-config
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true
+
+# Patches to configure LocalStack endpoint and mount config
+patches:
+  - path: manager_patch.yaml
+    target:
+      kind: Deployment
+      name: controller-manager

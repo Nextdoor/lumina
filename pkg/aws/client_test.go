@@ -19,16 +19,20 @@ import (
 	"time"
 )
 
+const (
+	testRegion = "us-west-2"
+)
+
 func TestClientConfig(t *testing.T) {
 	config := ClientConfig{
-		DefaultRegion: "us-west-2",
+		DefaultRegion: testRegion,
 		MaxRetries:    3,
 		RetryDelay:    time.Second,
 		HTTPTimeout:   30 * time.Second,
 		EnableMetrics: true,
 	}
 
-	if config.DefaultRegion != "us-west-2" {
+	if config.DefaultRegion != testRegion {
 		t.Errorf("expected DefaultRegion us-west-2, got %s", config.DefaultRegion)
 	}
 
@@ -39,19 +43,18 @@ func TestClientConfig(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 	config := ClientConfig{
-		DefaultRegion: "us-west-2",
+		DefaultRegion: testRegion,
 		MaxRetries:    3,
 	}
 
-	// Currently NewClient returns nil, nil (placeholder)
-	// This test ensures the function signature is covered
+	// NewClient should create a real AWS client
 	client, err := NewClient(config)
 
-	if client != nil {
-		t.Errorf("expected nil client (not yet implemented), got %v", client)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if err != nil {
-		t.Errorf("expected nil error (not yet implemented), got %v", err)
+	if client == nil {
+		t.Fatal("expected non-nil client")
 	}
 }
