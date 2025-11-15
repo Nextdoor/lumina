@@ -19,6 +19,10 @@ import (
 	"testing"
 )
 
+const (
+	testCredentialValue = "test"
+)
+
 // TestNewRealClient tests that NewRealClient creates a valid client instance.
 // This test ensures the basic client initialization works without errors.
 func TestNewRealClient(t *testing.T) {
@@ -63,7 +67,7 @@ func TestNewRealClientWithEndpoint(t *testing.T) {
 		DefaultRegion: "us-east-1",
 	}
 
-	endpoint := "http://localhost:4566"
+	endpoint := testLocalStackEndpoint
 	client, err := NewRealClient(ctx, cfg, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error creating client with endpoint, got: %v", err)
@@ -105,7 +109,7 @@ func TestRealClientPricing(t *testing.T) {
 
 // TestPtrString tests the ptrString helper function.
 func TestPtrString(t *testing.T) {
-	str := "test"
+	str := testCredentialValue
 	ptr := ptrString(str)
 
 	if ptr == nil {
@@ -133,7 +137,7 @@ func TestNewClientWithEndpointFunction(t *testing.T) {
 	}
 
 	// Test with LocalStack endpoint
-	client2, err := NewClientWithEndpoint(cfg, "http://localhost:4566")
+	client2, err := NewClientWithEndpoint(cfg, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("expected no error with endpoint, got: %v", err)
 	}
@@ -267,11 +271,11 @@ func TestRealClientGetCredentialsWithoutAssumeRole(t *testing.T) {
 		t.Fatalf("failed to retrieve credentials: %v", err)
 	}
 
-	if credValue.AccessKeyID != "test" {
+	if credValue.AccessKeyID != testCredentialValue {
 		t.Errorf("expected AccessKeyID 'test', got %s", credValue.AccessKeyID)
 	}
 
-	if credValue.SecretAccessKey != "test" {
+	if credValue.SecretAccessKey != testCredentialValue {
 		t.Errorf("expected SecretAccessKey 'test', got %s", credValue.SecretAccessKey)
 	}
 }

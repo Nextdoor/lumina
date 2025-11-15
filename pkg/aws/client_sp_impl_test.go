@@ -32,7 +32,7 @@ func TestNewRealSPClient(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "us-west-2", creds, "")
+	client, err := NewRealSPClient(ctx, testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestNewRealSPClient(t *testing.T) {
 		t.Fatal("expected non-nil client")
 	}
 
-	if client.region != "us-west-2" {
+	if client.region != testRegion {
 		t.Errorf("expected region us-west-2, got %s", client.region)
 	}
 
@@ -60,7 +60,7 @@ func TestNewRealSPClientWithEndpoint(t *testing.T) {
 		},
 	}
 
-	endpoint := "http://localhost:4566"
+	endpoint := testLocalStackEndpoint
 	client, err := NewRealSPClient(ctx, "us-east-1", creds, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -81,7 +81,7 @@ func TestRealSPClientDescribeSavingsPlans(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "us-west-2", creds, "")
+	client, err := NewRealSPClient(ctx, testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -108,12 +108,13 @@ func TestRealSPClientGetSavingsPlanByARN(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "us-west-2", creds, "")
+	client, err := NewRealSPClient(ctx, testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	plan, err := client.GetSavingsPlanByARN(ctx, "arn:aws:savingsplans::123456789012:savingsplan/12345678-1234-1234-1234-123456789012")
+	testARN := "arn:aws:savingsplans::123456789012:savingsplan/12345678-1234-1234-1234-123456789012"
+	plan, err := client.GetSavingsPlanByARN(ctx, testARN)
 	if err != nil {
 		t.Errorf("expected no error from stub, got: %v", err)
 	}

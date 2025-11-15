@@ -32,7 +32,12 @@ type RealEC2Client struct {
 // NewRealEC2Client creates a new EC2 client with the specified credentials.
 // The credentials should come from either the default credential chain or
 // from an STS AssumeRole operation.
-func NewRealEC2Client(ctx context.Context, region string, creds credentials.StaticCredentialsProvider, endpointURL string) (*RealEC2Client, error) {
+func NewRealEC2Client(
+	ctx context.Context,
+	region string,
+	creds credentials.StaticCredentialsProvider,
+	endpointURL string,
+) (*RealEC2Client, error) {
 	// Load AWS configuration with the provided credentials
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(region),

@@ -22,6 +22,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 )
 
+const (
+	testLocalStackEndpoint = "http://localhost:4566"
+)
+
 // TestNewRealEC2Client tests that NewRealEC2Client creates a valid client.
 func TestNewRealEC2Client(t *testing.T) {
 	ctx := context.Background()
@@ -32,7 +36,7 @@ func TestNewRealEC2Client(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -41,7 +45,7 @@ func TestNewRealEC2Client(t *testing.T) {
 		t.Fatal("expected non-nil client")
 	}
 
-	if client.region != "us-west-2" {
+	if client.region != testRegion {
 		t.Errorf("expected region us-west-2, got %s", client.region)
 	}
 
@@ -60,7 +64,7 @@ func TestNewRealEC2ClientWithEndpoint(t *testing.T) {
 		},
 	}
 
-	endpoint := "http://localhost:4566"
+	endpoint := testLocalStackEndpoint
 	client, err := NewRealEC2Client(ctx, "us-east-1", creds, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)

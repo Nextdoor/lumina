@@ -146,7 +146,10 @@ func (c *RealClient) Pricing(_ context.Context) PricingClient {
 // getCredentials returns credentials for the specified account.
 // If AssumeRoleARN is set, it performs an STS AssumeRole operation.
 // Otherwise, it returns the default credentials from the credential chain.
-func (c *RealClient) getCredentials(ctx context.Context, accountConfig AccountConfig) (credentials.StaticCredentialsProvider, error) {
+func (c *RealClient) getCredentials(
+	ctx context.Context,
+	accountConfig AccountConfig,
+) (credentials.StaticCredentialsProvider, error) {
 	// If no AssumeRoleARN, use default credentials
 	// (Note: For production use, we'd need to support default credentials better.
 	// For now, this is primarily for testing with LocalStack where we use static credentials)

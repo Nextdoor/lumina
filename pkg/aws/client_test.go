@@ -19,16 +19,20 @@ import (
 	"time"
 )
 
+const (
+	testRegion = "us-west-2"
+)
+
 func TestClientConfig(t *testing.T) {
 	config := ClientConfig{
-		DefaultRegion: "us-west-2",
+		DefaultRegion: testRegion,
 		MaxRetries:    3,
 		RetryDelay:    time.Second,
 		HTTPTimeout:   30 * time.Second,
 		EnableMetrics: true,
 	}
 
-	if config.DefaultRegion != "us-west-2" {
+	if config.DefaultRegion != testRegion {
 		t.Errorf("expected DefaultRegion us-west-2, got %s", config.DefaultRegion)
 	}
 
@@ -39,7 +43,7 @@ func TestClientConfig(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 	config := ClientConfig{
-		DefaultRegion: "us-west-2",
+		DefaultRegion: testRegion,
 		MaxRetries:    3,
 	}
 

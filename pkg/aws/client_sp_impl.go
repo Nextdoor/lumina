@@ -30,7 +30,12 @@ type RealSPClient struct {
 }
 
 // NewRealSPClient creates a new Savings Plans client with the specified credentials.
-func NewRealSPClient(ctx context.Context, region string, creds credentials.StaticCredentialsProvider, endpointURL string) (*RealSPClient, error) {
+func NewRealSPClient(
+	ctx context.Context,
+	region string,
+	creds credentials.StaticCredentialsProvider,
+	endpointURL string,
+) (*RealSPClient, error) {
 	// Load AWS configuration with the provided credentials
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(region),
