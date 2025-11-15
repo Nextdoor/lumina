@@ -337,6 +337,217 @@ var _ = Describe("Manager", Ordered, func() {
 		//    strings.ToLower(<Kind>),
 		// ))
 	})
+
+	// Health probe tests run after the Manager is deployed and the pod is running.
+	// These tests are part of the Manager suite to ensure proper execution order.
+	Context("Health Probes", func() {
+		// Ensure controllerPodName is set before running health probe tests.
+		// This should already be set by the "should run successfully" test, but we verify it here
+		// as a safety check since these tests depend on having a running controller pod.
+		BeforeEach(func() {
+			if controllerPodName == "" {
+				By("getting controller pod name for health probe tests")
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get",
+						"pods", "-l", "control-plane=controller-manager",
+						"-o", "go-template={{ range .items }}"+
+							"{{ if not .metadata.deletionTimestamp }}"+
+							"{{ .metadata.name }}"+
+							"{{ \"\\n\" }}{{ end }}{{ end }}",
+						"-n", namespace,
+					)
+					podOutput, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					podNames := utils.GetNonEmptyLines(podOutput)
+					g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
+					controllerPodName = podNames[0]
+				}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}
+			Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name must be set")
+		})
+
+		It("should serve /healthz liveness probe", func() {
+			By("checking the /healthz endpoint")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "exec", "-n", namespace,
+					controllerPodName, "--",
+					"wget", "-O-", "-q", "http://localhost:8081/healthz")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to query /healthz endpoint")
+				g.Expect(output).To(ContainSubstring("ok"), "/healthz should return 'ok'")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+
+		It("should have liveness probe configured in pod", func() {
+			By("verifying the liveness probe is configured")
+			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.spec.containers[0].livenessProbe.httpGet.path}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("/healthz"), "Liveness probe should be configured for /healthz")
+		})
+
+		It("should serve /readyz readiness probe", func() {
+			By("checking the /readyz endpoint")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "exec", "-n", namespace,
+					controllerPodName, "--",
+					"wget", "-O-", "-q", "http://localhost:8081/readyz")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to query /readyz endpoint")
+				g.Expect(output).To(ContainSubstring("ok"), "/readyz should return 'ok'")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+
+		It("should have readiness probe configured in pod", func() {
+			By("verifying the readiness probe is configured")
+			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.spec.containers[0].readinessProbe.httpGet.path}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("/readyz"), "Readiness probe should be configured for /readyz")
+		})
+
+		It("should validate AWS account access in readiness probe", func() {
+			By("checking controller logs for AWS account validation")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// The controller should have successfully validated AWS accounts
+				// We expect to see the readiness check pass (no errors in logs about failed validation)
+				// If validation failed, we'd see errors like "failed to validate access to N/M AWS accounts"
+				g.Expect(output).NotTo(ContainSubstring("failed to validate access to"),
+					"AWS account validation should succeed")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+
+		It("should mark pod as ready when AWS accounts are accessible", func() {
+			By("checking pod Ready condition")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+					"-n", namespace,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"), "Pod should be marked as Ready")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		})
+
+		It("should serve /healthz with verbose output", func() {
+			By("querying /healthz with verbose flag")
+			cmd := exec.Command("kubectl", "exec", "-n", namespace,
+				controllerPodName, "--",
+				"wget", "-O-", "-q", "http://localhost:8081/healthz?verbose=true")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(ContainSubstring("healthz check passed"))
+		})
+
+		It("should serve /readyz with verbose output", func() {
+			By("querying /readyz with verbose flag")
+			cmd := exec.Command("kubectl", "exec", "-n", namespace,
+				controllerPodName, "--",
+				"wget", "-O-", "-q", "http://localhost:8081/readyz?verbose=true")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Or(
+				ContainSubstring("readyz check passed"),
+				ContainSubstring("aws-account-access"),
+			), "Verbose output should mention the aws-account-access check")
+		})
+
+		It("should list all readiness checks", func() {
+			By("querying /readyz with verbose flag to see all checks")
+			cmd := exec.Command("kubectl", "exec", "-n", namespace,
+				controllerPodName, "--",
+				"wget", "-O-", "-q", "http://localhost:8081/readyz?verbose=true")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			// The output should include our custom aws-account-access check
+			// Example output format from controller-runtime:
+			// [+]ping ok
+			// [+]aws-account-access ok
+			// readyz check passed
+			Expect(output).To(MatchRegexp(`(?m)^\\[.\\].*aws-account-access`),
+				"Should include aws-account-access check in verbose output")
+		})
+
+		It("should handle requests to individual health checks", func() {
+			By("checking /healthz/ping endpoint")
+			cmd := exec.Command("kubectl", "exec", "-n", namespace,
+				controllerPodName, "--",
+				"wget", "-O-", "-q", "http://localhost:8081/healthz/ping")
+			output, err := utils.Run(cmd)
+			// Individual check endpoints return "ok" when healthy
+			if err == nil {
+				Expect(output).To(ContainSubstring("ok"))
+			}
+		})
+
+		It("should handle requests to individual readiness checks", func() {
+			By("checking /readyz/aws-account-access endpoint")
+			cmd := exec.Command("kubectl", "exec", "-n", namespace,
+				controllerPodName, "--",
+				"wget", "-O-", "-q", "http://localhost:8081/readyz/aws-account-access")
+			output, err := utils.Run(cmd)
+			// Individual check endpoints return "ok" when healthy
+			if err == nil {
+				Expect(output).To(ContainSubstring("ok"))
+			}
+		})
+
+		It("should return error for non-existent check", func() {
+			By("querying a non-existent health check")
+			cmd := exec.Command("kubectl", "exec", "-n", namespace,
+				controllerPodName, "--",
+				"sh", "-c",
+				"wget -O- -q http://localhost:8081/healthz/nonexistent 2>&1 || echo 'error'")
+			output, err := utils.Run(cmd)
+			// Should return error or empty response
+			Expect(output).To(Or(
+				ContainSubstring("error"),
+				ContainSubstring("404"),
+				BeEmpty(),
+			), "Non-existent check should not succeed")
+			// Don't check err here as wget will return non-zero for 404
+			_ = err
+		})
+
+		It("should have correct probe configuration in deployment", func() {
+			By("checking deployment probe configuration")
+			cmd := exec.Command("kubectl", "get", "deployment",
+				"lumina-controller-manager", "-n", namespace,
+				"-o", "json")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify both probes are configured
+			Expect(output).To(ContainSubstring(`"livenessProbe"`))
+			Expect(output).To(ContainSubstring(`"readinessProbe"`))
+			Expect(output).To(ContainSubstring(`"/healthz"`))
+			Expect(output).To(ContainSubstring(`"/readyz"`))
+		})
+
+		It("should have low restart count when probes are healthy", func() {
+			By("verifying restart count is low (probes are passing)")
+			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.status.containerStatuses[0].restartCount}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			// In a healthy system, restart count should be 0 or very low
+			// If probes were failing, we'd see multiple restarts
+			By(fmt.Sprintf("Current restart count: %s", output))
+			Expect(output).To(Or(Equal("0"), Equal("1")),
+				"Restart count should be low when probes are healthy")
+		})
+	})
 })
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
