@@ -52,16 +52,20 @@ func getControllerPodName() (string, error) {
 	return podNames[0], nil
 }
 
-var _ = Describe("Health Probes", Ordered, func() {
+// Health probe tests must run after Manager tests so the controller pod exists.
+// Using Serial instead of Ordered to ensure they run after other test suites.
+var _ = Describe("Health Probes", Serial, func() {
 	var controllerPodName string
 
 	BeforeEach(func() {
-		// Get the controller pod name before each test
-		// This ensures we have the current pod name
-		var err error
-		controllerPodName, err = getControllerPodName()
-		Expect(err).NotTo(HaveOccurred(), "Failed to get controller pod name")
-		Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name should not be empty")
+		// Get the controller pod name before each test.
+		// Retry with Eventually to handle the case where the pod isn't ready yet.
+		Eventually(func(g Gomega) {
+			var err error
+			controllerPodName, err = getControllerPodName()
+			g.Expect(err).NotTo(HaveOccurred(), "Failed to get controller pod name")
+			g.Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name should not be empty")
+		}, 30*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	Context("Liveness Probe (/healthz)", func() {
