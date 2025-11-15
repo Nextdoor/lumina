@@ -32,7 +32,7 @@ func TestNewRealSPClient(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, testRegion, creds, "")
+	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestNewRealSPClientWithEndpoint(t *testing.T) {
 	}
 
 	endpoint := testLocalStackEndpoint
-	client, err := NewRealSPClient(ctx, "us-east-1", creds, endpoint)
+	client, err := NewRealSPClient(ctx, "123456789012", "us-east-1", creds, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRealSPClientDescribeSavingsPlans(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, testRegion, creds, "")
+	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestRealSPClientGetSavingsPlanByARN(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, testRegion, creds, "")
+	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

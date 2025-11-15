@@ -36,7 +36,7 @@ func TestNewRealEC2Client(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, testRegion, creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestNewRealEC2ClientWithEndpoint(t *testing.T) {
 	}
 
 	endpoint := testLocalStackEndpoint
-	client, err := NewRealEC2Client(ctx, "us-east-1", creds, endpoint)
+	client, err := NewRealEC2Client(ctx, "123456789012", "us-east-1", creds, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestRealEC2ClientDescribeInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestRealEC2ClientDescribeReservedInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRealEC2ClientDescribeSpotPriceHistory(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestRealEC2ClientGetInstanceByID(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
