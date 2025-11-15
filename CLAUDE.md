@@ -87,6 +87,29 @@ Integration test priorities:
 - Valid types: feat, fix, docs, test, refactor, chore, ci
 - Be specific about what changed and why
 
+### Pre-Commit Checklist
+
+**MANDATORY**: Before every commit, run these commands in order:
+
+```bash
+# 1. Run the linter to catch style issues
+make lint
+
+# 2. Run all tests with race detection
+go test -race ./...
+
+# 3. If both pass, stage and commit
+git add <files>
+git commit -m "your message"
+```
+
+If either the linter or tests fail:
+- Fix the issues
+- Re-run both checks
+- Only commit when both pass
+
+**Never skip these checks**. CI will fail if linting or tests fail, and you'll need to amend your commit anyway.
+
 ## Code Review Checklist
 
 Before submitting code for review:
