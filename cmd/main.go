@@ -37,6 +37,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -44,6 +45,7 @@ import (
 	"github.com/nextdoor/lumina/internal/controller"
 	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/config"
+	"github.com/nextdoor/lumina/pkg/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -209,6 +211,14 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	// Initialize Prometheus metrics
+	// Metrics are registered with the controller-runtime registry and exposed
+	// via the /metrics endpoint configured above. The ControllerRunning metric
+	// is set to 1 to indicate the controller has successfully started.
+	luminaMetrics := metrics.NewMetrics(ctrlmetrics.Registry)
+	luminaMetrics.ControllerRunning.Set(1)
+	setupLog.Info("metrics initialized and controller running metric set")
 
 	if err := (&controller.NodeReconciler{
 		Client: mgr.GetClient(),
