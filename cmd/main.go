@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/nextdoor/lumina/internal/controller"
+	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/config"
 	// +kubebuilder:scaffold:imports
 )
@@ -218,11 +219,26 @@ func main() {
 	}
 	// +kubebuilder:scaffold:builder
 
+	// Setup health checks
+	// The liveness probe (healthz) uses a simple ping check - if the process is running, it's alive.
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+
+	// The readiness probe (readyz) validates AWS account access.
+	// This ensures the controller doesn't receive traffic until all configured
+	// AWS accounts are accessible via AssumeRole.
+	awsClient, err := aws.NewClient(aws.ClientConfig{
+		DefaultRegion: cfg.DefaultRegion,
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create AWS client for health checks")
+		os.Exit(1)
+	}
+	validator := aws.NewAccountValidator(awsClient)
+	awsHealthChecker := aws.NewHealthChecker(validator, cfg.AWSAccounts)
+	if err := mgr.AddReadyzCheck("readyz", awsHealthChecker.Check); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}

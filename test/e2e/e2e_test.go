@@ -337,6 +337,114 @@ var _ = Describe("Manager", Ordered, func() {
 		//    strings.ToLower(<Kind>),
 		// ))
 	})
+
+	// Health probe tests run after the Manager is deployed and the pod is running.
+	// These tests are part of the Manager suite to ensure proper execution order.
+	Context("Health Probes", func() {
+		// Ensure controllerPodName is set before running health probe tests.
+		// This should already be set by the "should run successfully" test, but we verify it here
+		// as a safety check since these tests depend on having a running controller pod.
+		BeforeEach(func() {
+			if controllerPodName == "" {
+				By("getting controller pod name for health probe tests")
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get",
+						"pods", "-l", "control-plane=controller-manager",
+						"-o", "go-template={{ range .items }}"+
+							"{{ if not .metadata.deletionTimestamp }}"+
+							"{{ .metadata.name }}"+
+							"{{ \"\\n\" }}{{ end }}{{ end }}",
+						"-n", namespace,
+					)
+					podOutput, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					podNames := utils.GetNonEmptyLines(podOutput)
+					g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
+					controllerPodName = podNames[0]
+				}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}
+			Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name must be set")
+		})
+
+		It("should have liveness probe passing (pod not restarting)", func() {
+			By("verifying the pod has low restart count")
+			// Since the controller uses a distroless image without curl/wget,
+			// we verify the liveness probe is working by checking the pod hasn't restarted.
+			// If the liveness probe was failing, Kubernetes would restart the pod.
+			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.status.containerStatuses[0].restartCount}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Or(Equal("0"), Equal("1")),
+				"Restart count should be low when liveness probe is healthy")
+		})
+
+		It("should have liveness probe configured in pod", func() {
+			By("verifying the liveness probe is configured")
+			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.spec.containers[0].livenessProbe.httpGet.path}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("/healthz"), "Liveness probe should be configured for /healthz")
+		})
+
+		It("should have readiness probe passing (pod marked Ready)", func() {
+			By("verifying the pod is marked as Ready")
+			// Since the controller uses a distroless image without curl/wget,
+			// we verify the readiness probe is working by checking the pod is Ready.
+			// If the readiness probe was failing, the pod would not be marked Ready.
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+					"-n", namespace,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"), "Pod should be marked as Ready")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		})
+
+		It("should have readiness probe configured in pod", func() {
+			By("verifying the readiness probe is configured")
+			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.spec.containers[0].readinessProbe.httpGet.path}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("/readyz"), "Readiness probe should be configured for /readyz")
+		})
+
+		It("should validate AWS account access in readiness probe", func() {
+			By("checking controller logs for AWS account validation")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// The controller should have successfully validated AWS accounts
+				// We expect to see the readiness check pass (no errors in logs about failed validation)
+				// If validation failed, we'd see errors like "failed to validate access to N/M AWS accounts"
+				g.Expect(output).NotTo(ContainSubstring("failed to validate access to"),
+					"AWS account validation should succeed")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+
+		It("should have correct probe configuration in deployment", func() {
+			By("checking deployment probe configuration")
+			cmd := exec.Command("kubectl", "get", "deployment",
+				"lumina-controller-manager", "-n", namespace,
+				"-o", "json")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify both probes are configured
+			Expect(output).To(ContainSubstring(`"livenessProbe"`))
+			Expect(output).To(ContainSubstring(`"readinessProbe"`))
+			Expect(output).To(ContainSubstring(`"/healthz"`))
+			Expect(output).To(ContainSubstring(`"/readyz"`))
+		})
+	})
 })
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
