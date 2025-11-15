@@ -21,8 +21,8 @@ This enables cost-aware capacity management, chargeback, and cost optimization f
 ## Features (Planned)
 
 - ✅ Kubernetes controller scaffold (Phase 1)
-- ⏳ AWS account cross-account access (Phase 1)
-- ⏳ Reserved Instance & Savings Plans discovery (Phase 2-3)
+- ✅ AWS account cross-account access (Phase 1)
+- ✅ Reserved Instance & Savings Plans discovery (Phase 2)
 - ⏳ EC2 instance cost calculation (Phase 4-7)
 - ⏳ Kubernetes Node correlation (Phase 8)
 - ⏳ Spot price tracking (Phase 9)
