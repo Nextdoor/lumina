@@ -30,27 +30,38 @@ import (
 	"github.com/nextdoor/lumina/test/utils"
 )
 
+// getControllerPodName gets the controller pod name for health check tests.
+// This function is called within tests to get the current pod name.
+func getControllerPodName() (string, error) {
+	cmd := exec.Command("kubectl", "get",
+		"pods", "-l", "control-plane=controller-manager",
+		"-o", "go-template={{ range .items }}"+
+			"{{ if not .metadata.deletionTimestamp }}"+
+			"{{ .metadata.name }}"+
+			"{{ \"\\n\" }}{{ end }}{{ end }}",
+		"-n", namespace,
+	)
+	podOutput, err := utils.Run(cmd)
+	if err != nil {
+		return "", err
+	}
+	podNames := utils.GetNonEmptyLines(podOutput)
+	if len(podNames) == 0 {
+		return "", fmt.Errorf("no controller pods found")
+	}
+	return podNames[0], nil
+}
+
 var _ = Describe("Health Probes", Ordered, func() {
 	var controllerPodName string
 
-	BeforeAll(func() {
-		// Wait for controller pod to be running
-		By("getting the controller pod name")
-		Eventually(func(g Gomega) {
-			cmd := exec.Command("kubectl", "get",
-				"pods", "-l", "control-plane=controller-manager",
-				"-o", "go-template={{ range .items }}"+
-					"{{ if not .metadata.deletionTimestamp }}"+
-					"{{ .metadata.name }}"+
-					"{{ \"\\n\" }}{{ end }}{{ end }}",
-				"-n", namespace,
-			)
-			podOutput, err := utils.Run(cmd)
-			g.Expect(err).NotTo(HaveOccurred())
-			podNames := utils.GetNonEmptyLines(podOutput)
-			g.Expect(podNames).To(HaveLen(1))
-			controllerPodName = podNames[0]
-		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+	BeforeEach(func() {
+		// Get the controller pod name before each test
+		// This ensures we have the current pod name
+		var err error
+		controllerPodName, err = getControllerPodName()
+		Expect(err).NotTo(HaveOccurred(), "Failed to get controller pod name")
+		Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name should not be empty")
 	})
 
 	Context("Liveness Probe (/healthz)", func() {
