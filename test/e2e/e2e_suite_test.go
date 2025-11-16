@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -104,7 +105,12 @@ var _ = BeforeSuite(func() {
 	// Deploy the controller once for all tests to use
 	// This runs after CertManager and LocalStack are installed
 	By("creating manager namespace")
-	cmd = exec.Command("kubectl", "create", "ns", namespace)
+	cmd = exec.Command("kubectl", "create", "ns", namespace, "--dry-run=client", "-o", "yaml")
+	yamlOutput, err := utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to generate namespace YAML")
+
+	cmd = exec.Command("kubectl", "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(yamlOutput)
 	_, err = utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create namespace")
 
