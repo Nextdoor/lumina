@@ -72,11 +72,50 @@ func NewRealEC2Client(
 }
 
 // DescribeInstances returns all running EC2 instances in the specified regions.
-// If regions is empty, queries all regions.
-func (c *RealEC2Client) DescribeInstances(_ context.Context, _ []string) ([]Instance, error) {
-	// TODO: Implement real EC2 DescribeInstances call
-	// This will be implemented when we add actual EC2 querying logic
-	return []Instance{}, nil
+// If regions is empty, queries only the client's configured region.
+//
+// This method filters to only running instances by default to focus on resources
+// that incur costs. It handles pagination automatically to retrieve all instances.
+// coverage:ignore - requires real AWS credentials, tested via E2E with LocalStack
+func (c *RealEC2Client) DescribeInstances(ctx context.Context, regions []string) ([]Instance, error) {
+	// If no regions specified, query the client's configured region
+	queryRegions := regions
+	if len(queryRegions) == 0 {
+		queryRegions = []string{c.region}
+	}
+
+	var allInstances []Instance
+
+	for _, region := range queryRegions {
+		// Query instances in this region
+		// Filter to only running instances (the ones that incur costs)
+		input := &ec2.DescribeInstancesInput{
+			Filters: []types.Filter{
+				{
+					Name:   aws.String("instance-state-name"),
+					Values: []string{"running"},
+				},
+			},
+		}
+
+		// Handle pagination
+		paginator := ec2.NewDescribeInstancesPaginator(c.client, input)
+		for paginator.HasMorePages() {
+			output, err := paginator.NextPage(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to describe instances in %s: %w", region, err)
+			}
+
+			// Convert AWS SDK types to our types
+			for _, reservation := range output.Reservations {
+				for _, instance := range reservation.Instances {
+					allInstances = append(allInstances, convertInstance(instance, region, c.accountID))
+				}
+			}
+		}
+	}
+
+	return allInstances, nil
 }
 
 // DescribeReservedInstances returns all active Reserved Instances in the specified regions.
@@ -134,6 +173,59 @@ func (c *RealEC2Client) DescribeSpotPriceHistory(_ context.Context, _ []string, 
 func (c *RealEC2Client) GetInstanceByID(_ context.Context, _ string, _ string) (*Instance, error) {
 	// TODO: Implement real EC2 DescribeInstances call with instance ID filter
 	return nil, nil
+}
+
+const (
+	lifecycleOnDemand = "on-demand"
+	lifecycleSpot     = "spot"
+	platformLinux     = "linux"
+	platformWindows   = "windows"
+)
+
+// convertInstance converts an AWS SDK Instance to our type.
+func convertInstance(inst types.Instance, region, accountID string) Instance {
+	// Extract launch time
+	var launchTime time.Time
+	if inst.LaunchTime != nil {
+		launchTime = *inst.LaunchTime
+	}
+
+	// Determine lifecycle (spot or on-demand)
+	lifecycle := lifecycleOnDemand
+	if inst.InstanceLifecycle == types.InstanceLifecycleTypeSpot {
+		lifecycle = lifecycleSpot
+	}
+
+	// Normalize platform name
+	// AWS returns "windows" for Windows, but nothing for Linux
+	platform := platformLinux
+	if inst.Platform == types.PlatformValuesWindows {
+		platform = platformWindows
+	}
+
+	// Convert tags to map
+	tags := make(map[string]string)
+	for _, tag := range inst.Tags {
+		if tag.Key != nil && tag.Value != nil {
+			tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+		}
+	}
+
+	return Instance{
+		InstanceID:            aws.ToString(inst.InstanceId),
+		InstanceType:          string(inst.InstanceType),
+		AvailabilityZone:      aws.ToString(inst.Placement.AvailabilityZone),
+		Region:                region,
+		Lifecycle:             lifecycle,
+		State:                 string(inst.State.Name),
+		LaunchTime:            launchTime,
+		AccountID:             accountID,
+		Tags:                  tags,
+		PrivateDNSName:        aws.ToString(inst.PrivateDnsName),
+		PrivateIPAddress:      aws.ToString(inst.PrivateIpAddress),
+		Platform:              platform,
+		SpotInstanceRequestID: aws.ToString(inst.SpotInstanceRequestId),
+	}
 }
 
 // convertReservedInstance converts an AWS SDK ReservedInstance to our type.

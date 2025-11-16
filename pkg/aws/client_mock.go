@@ -162,6 +162,11 @@ func (m *MockEC2Client) DescribeInstances(ctx context.Context, regions []string)
 	defer m.mu.Unlock()
 	m.DescribeInstancesCallCount++
 
+	// Return error if set (for testing error paths)
+	if m.DescribeInstancesError != nil {
+		return nil, m.DescribeInstancesError
+	}
+
 	// Filter by region if specified
 	if len(regions) == 0 {
 		return m.Instances, nil

@@ -92,8 +92,12 @@ func TestNewRealEC2ClientWithEndpoint(t *testing.T) {
 }
 
 // TestRealEC2ClientDescribeInstances tests the DescribeInstances method.
-// Since the implementation is a stub, we just verify it returns without error.
+// This test requires LocalStack to be running with EC2 instances.
 func TestRealEC2ClientDescribeInstances(t *testing.T) {
+	if !isLocalStackAvailable() {
+		t.Skip("Skipping test: LocalStack is not available at " + testLocalStackEndpoint)
+	}
+
 	ctx := context.Background()
 	creds := credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
@@ -102,20 +106,22 @@ func TestRealEC2ClientDescribeInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	// Call the stub implementation
-	instances, err := client.DescribeInstances(ctx, []string{"us-west-2"})
+	// Note: This will return empty if LocalStack has no instances running
+	// The init-localstack.sh script should create test instances
+	instances, err := client.DescribeInstances(ctx, []string{testRegion})
 	if err != nil {
-		t.Errorf("expected no error from stub, got: %v", err)
+		t.Errorf("expected no error, got: %v", err)
 	}
 
-	// Stub returns empty slice
-	if len(instances) != 0 {
-		t.Errorf("expected empty instances from stub, got %d", len(instances))
+	// We can't assert exact count as it depends on LocalStack state
+	// Just verify the call works without error
+	if instances == nil {
+		t.Error("expected non-nil instances slice")
 	}
 }
 
@@ -134,12 +140,12 @@ func TestRealEC2ClientDescribeReservedInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, testLocalStackEndpoint)
+	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	ris, err := client.DescribeReservedInstances(ctx, []string{"us-west-2"})
+	ris, err := client.DescribeReservedInstances(ctx, []string{testRegion})
 	if err != nil {
 		t.Errorf("expected no error from stub, got: %v", err)
 	}
@@ -159,12 +165,12 @@ func TestRealEC2ClientDescribeSpotPriceHistory(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	prices, err := client.DescribeSpotPriceHistory(ctx, []string{"us-west-2"}, []string{"t3.micro"})
+	prices, err := client.DescribeSpotPriceHistory(ctx, []string{testRegion}, []string{"t3.micro"})
 	if err != nil {
 		t.Errorf("expected no error from stub, got: %v", err)
 	}
@@ -184,12 +190,12 @@ func TestRealEC2ClientGetInstanceByID(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", "us-west-2", creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	instance, err := client.GetInstanceByID(ctx, "us-west-2", "i-12345678")
+	instance, err := client.GetInstanceByID(ctx, testRegion, "i-12345678")
 	if err != nil {
 		t.Errorf("expected no error from stub, got: %v", err)
 	}
@@ -220,7 +226,7 @@ func TestConvertReservedInstance(t *testing.T) {
 			ProductDescription:  types.RIProductDescriptionLinuxUnix,
 		}
 
-		result := convertReservedInstance(awsRI, "us-west-2", "123456789012")
+		result := convertReservedInstance(awsRI, testRegion, "123456789012")
 
 		if result.ReservedInstanceID != "ri-12345678" {
 			t.Errorf("expected ReservedInstanceID ri-12345678, got %s", result.ReservedInstanceID)
@@ -231,7 +237,7 @@ func TestConvertReservedInstance(t *testing.T) {
 		if result.AvailabilityZone != "us-west-2a" {
 			t.Errorf("expected AvailabilityZone us-west-2a, got %s", result.AvailabilityZone)
 		}
-		if result.Region != "us-west-2" {
+		if result.Region != testRegion {
 			t.Errorf("expected Region us-west-2, got %s", result.Region)
 		}
 		if result.InstanceCount != 3 {
@@ -292,6 +298,199 @@ func TestConvertReservedInstance(t *testing.T) {
 		}
 		if !result.End.IsZero() {
 			t.Errorf("expected zero End time, got %v", result.End)
+		}
+	})
+}
+
+// TestConvertInstance tests the convertInstance function.
+func TestConvertInstance(t *testing.T) {
+	// Test with complete instance data (Linux on-demand)
+	t.Run("complete Linux on-demand instance", func(t *testing.T) {
+		launchTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+		awsInst := types.Instance{
+			InstanceId:        aws.String("i-abc123def456"),
+			InstanceType:      types.InstanceTypeM5Xlarge,
+			LaunchTime:        &launchTime,
+			InstanceLifecycle: "", // Empty for on-demand
+			Placement: &types.Placement{
+				AvailabilityZone: aws.String("us-west-2a"),
+			},
+			State: &types.InstanceState{
+				Name: types.InstanceStateNameRunning,
+			},
+			PrivateDnsName:   aws.String("ip-10-0-1-100.us-west-2.compute.internal"),
+			PrivateIpAddress: aws.String("10.0.1.100"),
+			Tags: []types.Tag{
+				{Key: aws.String("Name"), Value: aws.String("test-instance")},
+				{Key: aws.String("Environment"), Value: aws.String("production")},
+			},
+		}
+
+		result := convertInstance(awsInst, testRegion, "123456789012")
+
+		if result.InstanceID != "i-abc123def456" {
+			t.Errorf("expected InstanceID i-abc123def456, got %s", result.InstanceID)
+		}
+		if result.InstanceType != "m5.xlarge" {
+			t.Errorf("expected InstanceType m5.xlarge, got %s", result.InstanceType)
+		}
+		if result.AvailabilityZone != "us-west-2a" {
+			t.Errorf("expected AvailabilityZone us-west-2a, got %s", result.AvailabilityZone)
+		}
+		if result.Region != testRegion {
+			t.Errorf("expected Region us-west-2, got %s", result.Region)
+		}
+		if result.Lifecycle != "on-demand" {
+			t.Errorf("expected Lifecycle on-demand, got %s", result.Lifecycle)
+		}
+		if result.State != "running" {
+			t.Errorf("expected State running, got %s", result.State)
+		}
+		if !result.LaunchTime.Equal(launchTime) {
+			t.Errorf("expected LaunchTime %v, got %v", launchTime, result.LaunchTime)
+		}
+		if result.AccountID != "123456789012" {
+			t.Errorf("expected AccountID 123456789012, got %s", result.AccountID)
+		}
+		if result.PrivateDNSName != "ip-10-0-1-100.us-west-2.compute.internal" {
+			t.Errorf("expected PrivateDNSName ip-10-0-1-100.us-west-2.compute.internal, got %s", result.PrivateDNSName)
+		}
+		if result.PrivateIPAddress != "10.0.1.100" {
+			t.Errorf("expected PrivateIPAddress 10.0.1.100, got %s", result.PrivateIPAddress)
+		}
+		if result.Platform != "linux" {
+			t.Errorf("expected Platform linux, got %s", result.Platform)
+		}
+		if len(result.Tags) != 2 {
+			t.Errorf("expected 2 tags, got %d", len(result.Tags))
+		}
+		if result.Tags["Name"] != "test-instance" {
+			t.Errorf("expected Name tag 'test-instance', got %s", result.Tags["Name"])
+		}
+		if result.Tags["Environment"] != "production" {
+			t.Errorf("expected Environment tag 'production', got %s", result.Tags["Environment"])
+		}
+	})
+
+	// Test with spot instance
+	t.Run("spot instance", func(t *testing.T) {
+		launchTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+		awsInst := types.Instance{
+			InstanceId:            aws.String("i-spot123"),
+			InstanceType:          types.InstanceTypeC5Large,
+			LaunchTime:            &launchTime,
+			InstanceLifecycle:     types.InstanceLifecycleTypeSpot,
+			SpotInstanceRequestId: aws.String("sir-abc123"),
+			Placement: &types.Placement{
+				AvailabilityZone: aws.String("us-east-1b"),
+			},
+			State: &types.InstanceState{
+				Name: types.InstanceStateNameRunning,
+			},
+		}
+
+		result := convertInstance(awsInst, "us-east-1", "987654321098")
+
+		if result.Lifecycle != "spot" {
+			t.Errorf("expected Lifecycle spot, got %s", result.Lifecycle)
+		}
+		if result.SpotInstanceRequestID != "sir-abc123" {
+			t.Errorf("expected SpotInstanceRequestID sir-abc123, got %s", result.SpotInstanceRequestID)
+		}
+	})
+
+	// Test with Windows instance
+	t.Run("Windows instance", func(t *testing.T) {
+		awsInst := types.Instance{
+			InstanceId:   aws.String("i-windows123"),
+			InstanceType: types.InstanceTypeM5Large,
+			Platform:     types.PlatformValuesWindows,
+			Placement: &types.Placement{
+				AvailabilityZone: aws.String("us-west-2b"),
+			},
+			State: &types.InstanceState{
+				Name: types.InstanceStateNameRunning,
+			},
+		}
+
+		result := convertInstance(awsInst, testRegion, "123456789012")
+
+		if result.Platform != "windows" {
+			t.Errorf("expected Platform windows, got %s", result.Platform)
+		}
+	})
+
+	// Test with minimal data (nil pointers)
+	t.Run("minimal data with nil pointers", func(t *testing.T) {
+		awsInst := types.Instance{
+			InstanceId:   nil, // Test nil handling
+			InstanceType: types.InstanceTypeT3Micro,
+			Placement: &types.Placement{
+				AvailabilityZone: nil, // Test nil handling
+			},
+			State: &types.InstanceState{
+				Name: types.InstanceStateNameStopped,
+			},
+		}
+
+		result := convertInstance(awsInst, "us-east-1", "123456789012")
+
+		if result.InstanceID != "" {
+			t.Errorf("expected empty InstanceID, got %s", result.InstanceID)
+		}
+		if result.InstanceType != "t3.micro" {
+			t.Errorf("expected InstanceType t3.micro, got %s", result.InstanceType)
+		}
+		if result.AvailabilityZone != "" {
+			t.Errorf("expected empty AvailabilityZone, got %s", result.AvailabilityZone)
+		}
+		if result.State != "stopped" {
+			t.Errorf("expected State stopped, got %s", result.State)
+		}
+		if result.Lifecycle != "on-demand" {
+			t.Errorf("expected default Lifecycle on-demand, got %s", result.Lifecycle)
+		}
+		if result.Platform != "linux" {
+			t.Errorf("expected default Platform linux, got %s", result.Platform)
+		}
+		// Check zero time for nil LaunchTime
+		if !result.LaunchTime.IsZero() {
+			t.Errorf("expected zero LaunchTime, got %v", result.LaunchTime)
+		}
+	})
+
+	// Test tag handling with nil values
+	t.Run("tags with nil values", func(t *testing.T) {
+		awsInst := types.Instance{
+			InstanceId:   aws.String("i-test123"),
+			InstanceType: types.InstanceTypeM5Large,
+			Placement: &types.Placement{
+				AvailabilityZone: aws.String("us-west-2a"),
+			},
+			State: &types.InstanceState{
+				Name: types.InstanceStateNameRunning,
+			},
+			Tags: []types.Tag{
+				{Key: aws.String("Name"), Value: aws.String("test")},
+				{Key: nil, Value: aws.String("ignored")}, // Should be skipped
+				{Key: aws.String("Empty"), Value: nil},   // Should be skipped
+				{Key: aws.String("Valid"), Value: aws.String("value")},
+			},
+		}
+
+		result := convertInstance(awsInst, testRegion, "123456789012")
+
+		// Should only have 2 valid tags
+		if len(result.Tags) != 2 {
+			t.Errorf("expected 2 tags, got %d", len(result.Tags))
+		}
+		if result.Tags["Name"] != "test" {
+			t.Errorf("expected Name tag 'test', got %s", result.Tags["Name"])
+		}
+		if result.Tags["Valid"] != "value" {
+			t.Errorf("expected Valid tag 'value', got %s", result.Tags["Valid"])
 		}
 	})
 }

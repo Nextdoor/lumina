@@ -92,3 +92,39 @@ data:
 
     echo "IAM roles created successfully:"
     awslocal iam list-roles --path-prefix "/lumina/" --query 'Roles[].RoleName'
+
+  # Script to create EC2 instances for testing
+  02-create-ec2-instances.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Creating EC2 instances for e2e testing..."
+
+    # Create a simple security group (LocalStack requirement)
+    awslocal ec2 create-security-group \
+      --group-name lumina-test-sg \
+      --description "Security group for Lumina e2e testing" \
+      --region us-west-2 || true
+
+    # Run EC2 instances in us-west-2
+    # Note: LocalStack uses fake AMI IDs, any ID will work
+    echo "Creating instances in us-west-2..."
+    awslocal ec2 run-instances \
+      --image-id ami-12345678 \
+      --instance-type m5.xlarge \
+      --count 2 \
+      --region us-west-2 \
+      --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=lumina-test-1},{Key=Environment,Value=test}]'
+
+    awslocal ec2 run-instances \
+      --image-id ami-12345678 \
+      --instance-type c5.large \
+      --count 1 \
+      --region us-west-2 \
+      --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=lumina-test-2},{Key=Environment,Value=production}]'
+
+    # Wait a moment for instances to be created
+    sleep 2
+
+    echo "EC2 instances created successfully"
+    awslocal ec2 describe-instances --region us-west-2 --query 'Reservations[].Instances[].{ID:InstanceId,Type:InstanceType,State:State.Name}'
