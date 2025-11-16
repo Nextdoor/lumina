@@ -71,6 +71,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var secureMetrics bool
+	var metricsAuth bool
 	var enableHTTP2 bool
 	var configFile string
 	var tlsOpts []func(*tls.Config)
@@ -84,6 +85,9 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.BoolVar(&metricsAuth, "metrics-auth", false,
+		"If set, the metrics endpoint requires authentication. "+
+			"Use --metrics-auth=true to enable Kubernetes RBAC authentication.")
 	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
@@ -166,7 +170,7 @@ func main() {
 		TLSOpts:       tlsOpts,
 	}
 
-	if secureMetrics {
+	if metricsAuth {
 		// FilterProvider is used to protect the metrics endpoint with authn/authz.
 		// These configurations ensure that only authorized users and service accounts
 		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:

@@ -58,6 +58,33 @@ type Config struct {
 	// Format: Go duration string (e.g., "5m", "10m")
 	// Default: 5m
 	AccountValidationInterval string `yaml:"accountValidationInterval,omitempty"`
+
+	// TestData contains mock data for E2E testing.
+	// When present, the RISP reconciler will use this data instead of making AWS API calls.
+	// This allows testing without requiring a fully functional AWS environment.
+	// IMPORTANT: This field should only be used in E2E tests, never in production.
+	TestData *TestData `yaml:"testData,omitempty"`
+}
+
+// TestData contains mock data for E2E testing of RISP reconciliation.
+// This allows testing Savings Plans functionality even when LocalStack doesn't support the API.
+type TestData struct {
+	// SavingsPlans contains mock Savings Plans data for testing.
+	// Key format: "accountID"
+	SavingsPlans map[string][]TestSavingsPlan `yaml:"savingsPlans,omitempty"`
+}
+
+// TestSavingsPlan represents a mock Savings Plan for E2E testing.
+// Fields match the aws.SavingsPlan structure so they can be converted directly.
+type TestSavingsPlan struct {
+	SavingsPlanARN  string  `yaml:"savingsPlanArn"`
+	SavingsPlanType string  `yaml:"savingsPlanType"` // "EC2Instance" or "Compute"
+	State           string  `yaml:"state"`           // "active", "payment-pending", etc.
+	Commitment      float64 `yaml:"commitment"`      // Hourly commitment amount ($/hour)
+	Region          string  `yaml:"region,omitempty"`
+	InstanceFamily  string  `yaml:"instanceFamily,omitempty"`
+	Start           string  `yaml:"start"` // ISO 8601 format
+	End             string  `yaml:"end"`   // ISO 8601 format
 }
 
 // AWSAccount represents a single AWS account to monitor.

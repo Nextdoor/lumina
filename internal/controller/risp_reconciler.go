@@ -32,6 +32,8 @@ import (
 	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+
 // RISPReconciler reconciles Reserved Instances and Savings Plans data.
 // It queries AWS APIs hourly to maintain an up-to-date cache of RI/SP inventory.
 type RISPReconciler struct {
@@ -134,6 +136,11 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	r.Metrics.UpdateReservedInstanceMetrics(allRIs)
 	log.V(1).Info("updated RI metrics", "metric_count", len(allRIs))
 
+	// Update Prometheus metrics with latest SP data
+	allSPs := r.Cache.GetAllSavingsPlans()
+	r.Metrics.UpdateSavingsPlansInventoryMetrics(allSPs)
+	log.V(1).Info("updated SP metrics", "metric_count", len(allSPs))
+
 	// Requeue after 1 hour
 	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
 }
@@ -211,6 +218,7 @@ func (r *RISPReconciler) reconcileReservedInstances(
 }
 
 // reconcileSavingsPlans queries SPs for a single account (organization-wide).
+// If testData is configured, uses mock data instead of making AWS API calls.
 func (r *RISPReconciler) reconcileSavingsPlans(
 	ctx context.Context,
 	account config.AWSAccount,
@@ -222,36 +230,50 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 		"data_type", "savings_plans",
 	)
 
-	// Create AWS client for this account
-	accountConfig := aws.AccountConfig{
-		AccountID:     account.AccountID,
-		Name:          account.Name,
-		AssumeRoleARN: account.AssumeRoleARN,
-		Region:        r.Config.DefaultRegion,
-	}
-
-	spClient, err := r.AWSClient.SavingsPlans(ctx, accountConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create Savings Plans client: %w", err)
-	}
-
 	startTime := time.Now()
+	var sps []aws.SavingsPlan
 
-	// Query SPs (organization-wide, not region-specific)
-	sps, err := spClient.DescribeSavingsPlans(ctx)
-	duration := time.Since(startTime)
+	// Check if we have test data for this account
+	if r.Config.TestData != nil && r.Config.TestData.SavingsPlans != nil {
+		testSPs, hasTestData := r.Config.TestData.SavingsPlans[account.AccountID]
+		if hasTestData {
+			log.Info("using test data for savings plans", "count", len(testSPs))
+			sps = convertTestSavingsPlans(testSPs, account.AccountID)
+		} else {
+			// No test data for this account, return empty list
+			log.Info("no test data configured for this account, using empty list")
+			sps = []aws.SavingsPlan{}
+		}
+	} else {
+		// No test data, query AWS API
+		accountConfig := aws.AccountConfig{
+			AccountID:     account.AccountID,
+			Name:          account.Name,
+			AssumeRoleARN: account.AssumeRoleARN,
+			Region:        r.Config.DefaultRegion,
+		}
 
-	if err != nil {
-		// Record failure in metrics
-		r.Metrics.DataLastSuccess.WithLabelValues(
-			account.AccountID,
-			"", // SPs are not regional
-			"savings_plans",
-		).Set(0)
+		spClient, err := r.AWSClient.SavingsPlans(ctx, accountConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create Savings Plans client: %w", err)
+		}
 
-		log.Error(err, "failed to describe savings plans")
-		return fmt.Errorf("failed to describe SPs: %w", err)
+		// Query SPs (organization-wide, not region-specific)
+		sps, err = spClient.DescribeSavingsPlans(ctx)
+		if err != nil {
+			// Record failure in metrics
+			r.Metrics.DataLastSuccess.WithLabelValues(
+				account.AccountID,
+				"", // SPs are not regional
+				"savings_plans",
+			).Set(0)
+
+			log.Error(err, "failed to describe savings plans")
+			return fmt.Errorf("failed to describe SPs: %w", err)
+		}
 	}
+
+	duration := time.Since(startTime)
 
 	// Update cache with new data
 	r.Cache.UpdateSavingsPlans(account.AccountID, sps)
@@ -288,6 +310,32 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 	return nil
 }
 
+// convertTestSavingsPlans converts test configuration SPs to aws.SavingsPlan format.
+func convertTestSavingsPlans(testSPs []config.TestSavingsPlan, accountID string) []aws.SavingsPlan {
+	result := make([]aws.SavingsPlan, 0, len(testSPs))
+
+	for _, testSP := range testSPs {
+		// Parse Start and End times
+		start, _ := time.Parse(time.RFC3339, testSP.Start)
+		end, _ := time.Parse(time.RFC3339, testSP.End)
+
+		sp := aws.SavingsPlan{
+			SavingsPlanARN:  testSP.SavingsPlanARN,
+			SavingsPlanType: testSP.SavingsPlanType,
+			State:           testSP.State,
+			Commitment:      testSP.Commitment,
+			Region:          testSP.Region,
+			InstanceFamily:  testSP.InstanceFamily,
+			Start:           start,
+			End:             end,
+			AccountID:       accountID,
+		}
+		result = append(result, sp)
+	}
+
+	return result
+}
+
 // SetupWithManager sets up the reconciler with the Manager.
 // coverage:ignore - controller-runtime boilerplate, tested via E2E
 func (r *RISPReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -296,11 +344,37 @@ func (r *RISPReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// but ignore all events (the actual trigger is the RequeueAfter in Reconcile).
 	//
 	// The predicate filters out all ConfigMap events - we only want timer-based triggers.
-	return ctrl.NewControllerManagedBy(mgr).
+	controller, err := ctrl.NewControllerManagedBy(mgr).
 		Named("risp").
 		For(&corev1.ConfigMap{}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(_ client.Object) bool {
 			return false // Ignore all ConfigMap events
 		})).
-		Complete(r)
+		Build(r)
+	if err != nil {
+		return err
+	}
+
+	// Enqueue an initial reconcile request to start the reconciliation cycle immediately.
+	// We create a dummy ConfigMap request since controller-runtime requires a Request object,
+	// but the actual reconcile logic ignores the Request parameter entirely.
+	// This triggers the first Reconcile() call which then uses RequeueAfter to schedule
+	// subsequent runs every hour.
+	go func() {
+		// Wait a bit for the manager to fully start
+		time.Sleep(2 * time.Second)
+
+		// Enqueue a reconcile request with a dummy object
+		// The reconciler doesn't use the Request parameter, so any non-nil value works
+		dummyRequest := ctrl.Request{
+			NamespacedName: client.ObjectKey{
+				Namespace: "default",
+				Name:      "risp-trigger",
+			},
+		}
+		// Ignore error from initial trigger - if it fails, the periodic timer will retry
+		_, _ = controller.Reconcile(context.Background(), dummyRequest)
+	}()
+
+	return nil
 }

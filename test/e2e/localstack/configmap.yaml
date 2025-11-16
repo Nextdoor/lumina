@@ -5,9 +5,10 @@ metadata:
   namespace: localstack
 data:
   # Script to create IAM roles and policies for testing
+  # This script is idempotent - safe to run multiple times
   01-create-roles.sh: |
     #!/bin/bash
-    set -e
+    # Don't use set -e because we want to continue even if resources already exist
 
     echo "Creating IAM roles for e2e testing..."
 
@@ -26,19 +27,29 @@ data:
       ]
     }'
 
-    # Create IAM role for production account
-    awslocal iam create-role \
-      --role-name LuminaTestRole \
-      --assume-role-policy-document "$TRUST_POLICY" \
-      --path "/lumina/" \
-      --description "Test role for Lumina e2e testing"
+    # Create IAM role for production account (ignore if already exists)
+    if ! awslocal iam get-role --role-name LuminaTestRole >/dev/null 2>&1; then
+      echo "Creating LuminaTestRole..."
+      awslocal iam create-role \
+        --role-name LuminaTestRole \
+        --assume-role-policy-document "$TRUST_POLICY" \
+        --path "/lumina/" \
+        --description "Test role for Lumina e2e testing"
+    else
+      echo "LuminaTestRole already exists, skipping creation"
+    fi
 
-    # Create IAM role for staging account (different account ID)
-    awslocal iam create-role \
-      --role-name LuminaStagingRole \
-      --assume-role-policy-document "$TRUST_POLICY" \
-      --path "/lumina/" \
-      --description "Test role for staging account"
+    # Create IAM role for staging account (ignore if already exists)
+    if ! awslocal iam get-role --role-name LuminaStagingRole >/dev/null 2>&1; then
+      echo "Creating LuminaStagingRole..."
+      awslocal iam create-role \
+        --role-name LuminaStagingRole \
+        --assume-role-policy-document "$TRUST_POLICY" \
+        --path "/lumina/" \
+        --description "Test role for staging account"
+    else
+      echo "LuminaStagingRole already exists, skipping creation"
+    fi
 
     # Create a managed policy with permissions for EC2 and Savings Plans access
     PERMISSIONS_POLICY='{
@@ -58,19 +69,26 @@ data:
       ]
     }'
 
-    awslocal iam create-policy \
-      --policy-name LuminaReadOnlyPolicy \
-      --policy-document "$PERMISSIONS_POLICY" \
-      --description "Read-only access to EC2 and Savings Plans"
+    # Create policy (ignore if already exists)
+    if ! awslocal iam get-policy --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy" >/dev/null 2>&1; then
+      echo "Creating LuminaReadOnlyPolicy..."
+      awslocal iam create-policy \
+        --policy-name LuminaReadOnlyPolicy \
+        --policy-document "$PERMISSIONS_POLICY" \
+        --description "Read-only access to EC2 and Savings Plans"
+    else
+      echo "LuminaReadOnlyPolicy already exists, skipping creation"
+    fi
 
-    # Attach the policy to both roles
+    # Attach the policy to both roles (these commands are idempotent in LocalStack)
+    echo "Attaching policies to roles..."
     awslocal iam attach-role-policy \
       --role-name LuminaTestRole \
-      --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy"
+      --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy" 2>/dev/null || true
 
     awslocal iam attach-role-policy \
       --role-name LuminaStagingRole \
-      --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy"
+      --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy" 2>/dev/null || true
 
     echo "IAM roles created successfully:"
     awslocal iam list-roles --path-prefix "/lumina/" --query 'Roles[].RoleName'

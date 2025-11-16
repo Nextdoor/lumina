@@ -20,17 +20,15 @@ limitations under the License.
 package e2e
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/nextdoor/lumina/test/utils"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // namespace where the project is deployed in
@@ -48,60 +46,8 @@ const metricsRoleBindingName = "lumina-metrics-binding"
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
 
-	// Before running the tests, set up the environment by creating the namespace,
-	// enforce the restricted security policy to the namespace, installing CRDs,
-	// and deploying the controller.
-	BeforeAll(func() {
-		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
-
-		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
-
-		By("installing CRDs")
-		cmd = exec.Command("make", "install")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("deploying the controller-manager with e2e configuration")
-		// Use kubectl apply with e2e kustomization that includes LocalStack config
-		cmd = exec.Command("kubectl", "apply", "-k", "config/e2e")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager with e2e config")
-
-		// Update the image in the deployment to use our test image
-		cmd = exec.Command("kubectl", "set", "image",
-			"deployment/lumina-controller-manager",
-			fmt.Sprintf("manager=%s", projectImage),
-			"-n", namespace)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to set controller-manager image")
-	})
-
-	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
-	// and deleting the namespace.
-	AfterAll(func() {
-		By("cleaning up the curl pod for metrics")
-		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
-		_, _ = utils.Run(cmd)
-
-		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
-
-		By("uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
-		_, _ = utils.Run(cmd)
-
-		By("removing manager namespace")
-		cmd = exec.Command("kubectl", "delete", "ns", namespace)
-		_, _ = utils.Run(cmd)
-	})
+	// Controller deployment is now handled at the suite level (BeforeSuite/AfterSuite)
+	// so it's available to all test Describe blocks without being torn down between them
 
 	// After each test, check for failures and collect logs, events,
 	// and pod descriptions for debugging.
@@ -109,8 +55,7 @@ var _ = Describe("Manager", Ordered, func() {
 		specReport := CurrentSpecReport()
 		if specReport.Failed() {
 			By("Fetching controller manager pod logs")
-			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-			controllerLogs, err := utils.Run(cmd)
+			controllerLogs, err := getPodLogs(controllerPodName, nil)
 			if err == nil {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", controllerLogs)
 			} else {
@@ -118,26 +63,15 @@ var _ = Describe("Manager", Ordered, func() {
 			}
 
 			By("Fetching Kubernetes events")
-			cmd = exec.Command("kubectl", "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
-			eventsOutput, err := utils.Run(cmd)
+			eventsOutput, err := getEvents()
 			if err == nil {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s", eventsOutput)
 			} else {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Kubernetes events: %s", err)
 			}
 
-			By("Fetching curl-metrics logs")
-			cmd = exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
-			metricsOutput, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", metricsOutput)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get curl-metrics logs: %s", err)
-			}
-
 			By("Fetching controller manager pod description")
-			cmd = exec.Command("kubectl", "describe", "pod", controllerPodName, "-n", namespace)
-			podDescription, err := utils.Run(cmd)
+			podDescription, err := getPodDescription(controllerPodName)
 			if err == nil {
 				fmt.Println("Pod description:\n", podDescription)
 			} else {
@@ -154,148 +88,115 @@ var _ = Describe("Manager", Ordered, func() {
 			By("validating that the controller-manager pod is running as expected")
 			verifyControllerUp := func(g Gomega) {
 				// Get the name of the controller-manager pod
-				cmd := exec.Command("kubectl", "get",
-					"pods", "-l", "control-plane=controller-manager",
-					"-o", "go-template={{ range .items }}"+
-						"{{ if not .metadata.deletionTimestamp }}"+
-						"{{ .metadata.name }}"+
-						"{{ \"\\n\" }}{{ end }}{{ end }}",
-					"-n", namespace,
-				)
+				client, err := NewResourceClient(namespace)
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
 
-				podOutput, err := utils.Run(cmd)
+				ctx := context.Background()
+				podList, err := client.GetPodsByLabel(ctx, "control-plane=controller-manager")
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
-				podNames := utils.GetNonEmptyLines(podOutput)
-				g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
-				controllerPodName = podNames[0]
+
+				// Filter out pods that are being deleted
+				var runningPods []string
+				for _, pod := range podList.Items {
+					if pod.DeletionTimestamp == nil {
+						runningPods = append(runningPods, pod.Name)
+					}
+				}
+
+				g.Expect(runningPods).To(HaveLen(1), "expected 1 controller pod running")
+				controllerPodName = runningPods[0]
 				g.Expect(controllerPodName).To(ContainSubstring("controller-manager"))
 
 				// Validate the pod's status
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				output, err := utils.Run(cmd)
+				pod, err := client.GetPod(ctx, controllerPodName)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
+				g.Expect(string(pod.Status.Phase)).To(Equal("Running"), "Incorrect controller-manager pod status")
 			}
 			Eventually(verifyControllerUp).Should(Succeed())
 		})
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
-			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
-			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=lumina-metrics-reader",
-				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
-			)
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
-
 			By("validating that the metrics service is available")
-			cmd = exec.Command("kubectl", "get", "service", metricsServiceName, "-n", namespace)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
+			client, err := NewResourceClient(namespace)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
 
-			By("getting the service account token")
-			token, err := serviceAccountToken()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(token).NotTo(BeEmpty())
+			ctx := context.Background()
+			_, err = client.GetService(ctx, metricsServiceName)
+			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
 
 			By("waiting for the metrics endpoint to be ready")
 			verifyMetricsEndpointReady := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "endpoints", metricsServiceName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				endpoints, err := client.GetEndpoints(ctx, metricsServiceName)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("8443"), "Metrics endpoint is not ready")
+
+				// Check if endpoints has port 8080
+				hasPort8080 := false
+				for _, subset := range endpoints.Subsets {
+					for _, port := range subset.Ports {
+						if port.Port == 8080 {
+							hasPort8080 = true
+							break
+						}
+					}
+					if hasPort8080 {
+						break
+					}
+				}
+				g.Expect(hasPort8080).To(BeTrue(), "Metrics endpoint is not ready")
 			}
 			Eventually(verifyMetricsEndpointReady).Should(Succeed())
 
 			By("verifying that the controller manager is serving the metrics server")
 			verifyMetricsServerStarted := func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				output, err := getPodLogs(controllerPodName, nil)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
 					"Metrics server not yet started")
 			}
 			Eventually(verifyMetricsServerStarted).Should(Succeed())
 
-			By("creating the curl-metrics pod to access the metrics endpoint")
-			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never",
-				"--namespace", namespace,
-				"--image=curlimages/curl:latest",
-				"--overrides",
-				fmt.Sprintf(`{
-					"spec": {
-						"containers": [{
-							"name": "curl",
-							"image": "curlimages/curl:latest",
-							"command": ["/bin/sh", "-c"],
-							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
-							"securityContext": {
-								"readOnlyRootFilesystem": true,
-								"allowPrivilegeEscalation": false,
-								"capabilities": {
-									"drop": ["ALL"]
-								},
-								"runAsNonRoot": true,
-								"runAsUser": 1000,
-								"seccompProfile": {
-									"type": "RuntimeDefault"
-								}
-							}
-						}],
-						"serviceAccountName": "%s"
-					}
-				}`, token, metricsServiceName, namespace, serviceAccountName))
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics pod")
-
-			By("waiting for the curl-metrics pod to complete.")
-			verifyCurlUp := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "pods", "curl-metrics",
-					"-o", "jsonpath={.status.phase}",
-					"-n", namespace)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Succeeded"), "curl pod in wrong status")
-			}
-			Eventually(verifyCurlUp, 5*time.Minute).Should(Succeed())
-
-			By("getting the metrics by checking curl-metrics logs")
+			By("fetching metrics using the Kubernetes API proxy")
 			verifyMetricsAvailable := func(g Gomega) {
 				metricsOutput, err := getMetricsOutput()
-				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-				g.Expect(metricsOutput).NotTo(BeEmpty())
-				g.Expect(metricsOutput).To(ContainSubstring("< HTTP/1.1 200 OK"))
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve metrics")
+				g.Expect(metricsOutput).NotTo(BeEmpty(), "Metrics output should not be empty")
+				// Verify we got valid Prometheus metrics format
+				g.Expect(metricsOutput).To(ContainSubstring("# HELP"), "Should contain Prometheus metrics")
 			}
-			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
+			Eventually(verifyMetricsAvailable, 2*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
 		It("should have AWS configuration for LocalStack", func() {
 			By("checking controller environment variables")
-			cmd := exec.Command("kubectl", "get", "deployment",
-				"lumina-controller-manager", "-n", namespace,
-				"-o", "jsonpath={.spec.template.spec.containers[0].env[*].name}")
-			output, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get controller env vars")
-			Expect(output).To(ContainSubstring("AWS_ENDPOINT_URL"), "AWS_ENDPOINT_URL not configured")
-			Expect(output).To(ContainSubstring("AWS_ACCESS_KEY_ID"), "AWS_ACCESS_KEY_ID not configured")
+			client, err := NewResourceClient(namespace)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+			ctx := context.Background()
+			deployment, err := client.GetDeployment(ctx, "lumina-controller-manager")
+			Expect(err).NotTo(HaveOccurred(), "Failed to get controller deployment")
+
+			// Get the environment variables from the first container
+			var envNames []string
+			var awsEndpointURL string
+			for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+				envNames = append(envNames, env.Name)
+				if env.Name == "AWS_ENDPOINT_URL" {
+					awsEndpointURL = env.Value
+				}
+			}
+
+			envNamesStr := strings.Join(envNames, " ")
+			Expect(envNamesStr).To(ContainSubstring("AWS_ENDPOINT_URL"), "AWS_ENDPOINT_URL not configured")
+			Expect(envNamesStr).To(ContainSubstring("AWS_ACCESS_KEY_ID"), "AWS_ACCESS_KEY_ID not configured")
 
 			By("verifying AWS_ENDPOINT_URL points to LocalStack")
-			cmd = exec.Command("kubectl", "get", "deployment",
-				"lumina-controller-manager", "-n", namespace,
-				"-o", "jsonpath={.spec.template.spec.containers[0].env[?(@.name=='AWS_ENDPOINT_URL')].value}")
-			output, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get AWS_ENDPOINT_URL value")
-			Expect(output).To(ContainSubstring("localstack"), "AWS_ENDPOINT_URL does not point to LocalStack")
+			Expect(awsEndpointURL).To(ContainSubstring("localstack"), "AWS_ENDPOINT_URL does not point to LocalStack")
 		})
 
 		It("should successfully load config from ConfigMap", func() {
 			By("checking controller logs for config loading")
 			verifyConfigLoaded := func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				output, err := getPodLogs(controllerPodName, nil)
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to get controller logs")
 				g.Expect(output).NotTo(ContainSubstring("config file not found"), "Should not have config file error")
 				g.Expect(output).To(And(
@@ -348,19 +249,23 @@ var _ = Describe("Manager", Ordered, func() {
 			if controllerPodName == "" {
 				By("getting controller pod name for health probe tests")
 				Eventually(func(g Gomega) {
-					cmd := exec.Command("kubectl", "get",
-						"pods", "-l", "control-plane=controller-manager",
-						"-o", "go-template={{ range .items }}"+
-							"{{ if not .metadata.deletionTimestamp }}"+
-							"{{ .metadata.name }}"+
-							"{{ \"\\n\" }}{{ end }}{{ end }}",
-						"-n", namespace,
-					)
-					podOutput, err := utils.Run(cmd)
+					client, err := NewResourceClient(namespace)
+					g.Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+					ctx := context.Background()
+					podList, err := client.GetPodsByLabel(ctx, "control-plane=controller-manager")
 					g.Expect(err).NotTo(HaveOccurred())
-					podNames := utils.GetNonEmptyLines(podOutput)
-					g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
-					controllerPodName = podNames[0]
+
+					// Filter out pods that are being deleted
+					var runningPods []string
+					for _, pod := range podList.Items {
+						if pod.DeletionTimestamp == nil {
+							runningPods = append(runningPods, pod.Name)
+						}
+					}
+
+					g.Expect(runningPods).To(HaveLen(1), "expected 1 controller pod running")
+					controllerPodName = runningPods[0]
 				}, 2*time.Minute, 2*time.Second).Should(Succeed())
 			}
 			Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name must be set")
@@ -371,23 +276,36 @@ var _ = Describe("Manager", Ordered, func() {
 			// Since the controller uses a distroless image without curl/wget,
 			// we verify the liveness probe is working by checking the pod hasn't restarted.
 			// If the liveness probe was failing, Kubernetes would restart the pod.
-			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
-				"-n", namespace,
-				"-o", "jsonpath={.status.containerStatuses[0].restartCount}")
-			output, err := utils.Run(cmd)
+			client, err := NewResourceClient(namespace)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+			ctx := context.Background()
+			pod, err := client.GetPod(ctx, controllerPodName)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output).To(Or(Equal("0"), Equal("1")),
+
+			restartCount := int32(0)
+			if len(pod.Status.ContainerStatuses) > 0 {
+				restartCount = pod.Status.ContainerStatuses[0].RestartCount
+			}
+
+			Expect(restartCount).To(Or(Equal(int32(0)), Equal(int32(1))),
 				"Restart count should be low when liveness probe is healthy")
 		})
 
 		It("should have liveness probe configured in pod", func() {
 			By("verifying the liveness probe is configured")
-			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
-				"-n", namespace,
-				"-o", "jsonpath={.spec.containers[0].livenessProbe.httpGet.path}")
-			output, err := utils.Run(cmd)
+			client, err := NewResourceClient(namespace)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+			ctx := context.Background()
+			pod, err := client.GetPod(ctx, controllerPodName)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output).To(Equal("/healthz"), "Liveness probe should be configured for /healthz")
+			Expect(len(pod.Spec.Containers)).To(BeNumerically(">", 0), "Pod should have at least one container")
+
+			livenessProbe := pod.Spec.Containers[0].LivenessProbe
+			Expect(livenessProbe).NotTo(BeNil(), "Liveness probe should be configured")
+			Expect(livenessProbe.HTTPGet).NotTo(BeNil(), "Liveness probe should be HTTP")
+			Expect(livenessProbe.HTTPGet.Path).To(Equal("/healthz"), "Liveness probe should be configured for /healthz")
 		})
 
 		It("should have readiness probe passing (pod marked Ready)", func() {
@@ -396,30 +314,45 @@ var _ = Describe("Manager", Ordered, func() {
 			// we verify the readiness probe is working by checking the pod is Ready.
 			// If the readiness probe was failing, the pod would not be marked Ready.
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
-					"-n", namespace,
-					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
-				output, err := utils.Run(cmd)
+				client, err := NewResourceClient(namespace)
+				g.Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+				ctx := context.Background()
+				pod, err := client.GetPod(ctx, controllerPodName)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("True"), "Pod should be marked as Ready")
+
+				// Find the Ready condition
+				var readyStatus string
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == "Ready" {
+						readyStatus = string(condition.Status)
+						break
+					}
+				}
+				g.Expect(readyStatus).To(Equal("True"), "Pod should be marked as Ready")
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		})
 
 		It("should have readiness probe configured in pod", func() {
 			By("verifying the readiness probe is configured")
-			cmd := exec.Command("kubectl", "get", "pod", controllerPodName,
-				"-n", namespace,
-				"-o", "jsonpath={.spec.containers[0].readinessProbe.httpGet.path}")
-			output, err := utils.Run(cmd)
+			client, err := NewResourceClient(namespace)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+			ctx := context.Background()
+			pod, err := client.GetPod(ctx, controllerPodName)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output).To(Equal("/readyz"), "Readiness probe should be configured for /readyz")
+			Expect(len(pod.Spec.Containers)).To(BeNumerically(">", 0), "Pod should have at least one container")
+
+			readinessProbe := pod.Spec.Containers[0].ReadinessProbe
+			Expect(readinessProbe).NotTo(BeNil(), "Readiness probe should be configured")
+			Expect(readinessProbe.HTTPGet).NotTo(BeNil(), "Readiness probe should be HTTP")
+			Expect(readinessProbe.HTTPGet.Path).To(Equal("/readyz"), "Readiness probe should be configured for /readyz")
 		})
 
 		It("should validate AWS account access in readiness probe", func() {
 			By("checking controller logs for AWS account validation")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				output, err := getPodLogs(controllerPodName, nil)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				// The controller should have successfully validated AWS accounts
@@ -432,73 +365,173 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should have correct probe configuration in deployment", func() {
 			By("checking deployment probe configuration")
-			cmd := exec.Command("kubectl", "get", "deployment",
-				"lumina-controller-manager", "-n", namespace,
-				"-o", "json")
-			output, err := utils.Run(cmd)
+			client, err := NewResourceClient(namespace)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create resource client")
+
+			ctx := context.Background()
+			deployment, err := client.GetDeployment(ctx, "lumina-controller-manager")
 			Expect(err).NotTo(HaveOccurred())
+			Expect(len(deployment.Spec.Template.Spec.Containers)).To(BeNumerically(">", 0), "Deployment should have at least one container")
+
+			container := deployment.Spec.Template.Spec.Containers[0]
 
 			// Verify both probes are configured
-			Expect(output).To(ContainSubstring(`"livenessProbe"`))
-			Expect(output).To(ContainSubstring(`"readinessProbe"`))
-			Expect(output).To(ContainSubstring(`"/healthz"`))
-			Expect(output).To(ContainSubstring(`"/readyz"`))
+			Expect(container.LivenessProbe).NotTo(BeNil(), "Liveness probe should be configured")
+			Expect(container.ReadinessProbe).NotTo(BeNil(), "Readiness probe should be configured")
+
+			// Verify probe paths
+			Expect(container.LivenessProbe.HTTPGet).NotTo(BeNil(), "Liveness probe should be HTTP")
+			Expect(container.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"), "Liveness probe should use /healthz")
+
+			Expect(container.ReadinessProbe.HTTPGet).NotTo(BeNil(), "Readiness probe should be HTTP")
+			Expect(container.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"), "Readiness probe should use /readyz")
 		})
 	})
 })
 
-// serviceAccountToken returns a token for the specified service account in the given namespace.
-// It uses the Kubernetes TokenRequest API to generate a token by directly sending a request
-// and parsing the resulting token from the API response.
-func serviceAccountToken() (string, error) {
-	const tokenRequestRawString = `{
-		"apiVersion": "authentication.k8s.io/v1",
-		"kind": "TokenRequest"
-	}`
-
-	// Temporary file to store the token request
-	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
-	tokenRequestFile := filepath.Join("/tmp", secretName)
-	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o644))
-	if err != nil {
-		return "", err
-	}
-
-	var out string
-	verifyTokenCreation := func(g Gomega) {
-		// Execute kubectl command to create the token
-		cmd := exec.Command("kubectl", "create", "--raw", fmt.Sprintf(
-			"/api/v1/namespaces/%s/serviceaccounts/%s/token",
-			namespace,
-			serviceAccountName,
-		), "-f", tokenRequestFile)
-
-		output, err := cmd.CombinedOutput()
-		g.Expect(err).NotTo(HaveOccurred())
-
-		// Parse the JSON output to extract the token
-		var token tokenRequest
-		err = json.Unmarshal(output, &token)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		out = token.Status.Token
-	}
-	Eventually(verifyTokenCreation).Should(Succeed())
-
-	return out, err
-}
-
-// getMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
+// getMetricsOutput retrieves and returns the metrics from the controller's metrics endpoint
+// using the Kubernetes API proxy pattern. This is cleaner than creating curl pods.
 func getMetricsOutput() (string, error) {
-	By("getting the curl-metrics logs")
-	cmd := exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
-	return utils.Run(cmd)
+	client, err := NewMetricsClient(namespace, metricsServiceName, "http")
+	if err != nil {
+		return "", fmt.Errorf("failed to create metrics client: %w", err)
+	}
+
+	ctx := context.Background()
+	return client.GetMetrics(ctx)
 }
 
-// tokenRequest is a simplified representation of the Kubernetes TokenRequest API response,
-// containing only the token field that we need to extract.
-type tokenRequest struct {
-	Status struct {
-		Token string `json:"token"`
-	} `json:"status"`
+// getPodLogs retrieves logs from a specific pod using the native Kubernetes client.
+// This is cleaner than using kubectl commands.
+func getPodLogs(podName string, tailLines *int64) (string, error) {
+	client, err := NewLogsClient(namespace)
+	if err != nil {
+		return "", fmt.Errorf("failed to create logs client: %w", err)
+	}
+
+	ctx := context.Background()
+	return client.GetPodLogs(ctx, podName, tailLines, "")
+}
+
+// getPodLogsByLabel retrieves logs from all pods matching a label selector
+// using the native Kubernetes client. This is cleaner than using kubectl commands.
+func getPodLogsByLabel(labelSelector string, tailLines *int64) (string, error) {
+	client, err := NewLogsClient(namespace)
+	if err != nil {
+		return "", fmt.Errorf("failed to create logs client: %w", err)
+	}
+
+	ctx := context.Background()
+	return client.GetPodLogsByLabel(ctx, labelSelector, tailLines)
+}
+
+// getEvents retrieves and formats Kubernetes events sorted by timestamp.
+// This mimics the output of `kubectl get events --sort-by=.lastTimestamp`.
+func getEvents() (string, error) {
+	client, err := NewResourceClient(namespace)
+	if err != nil {
+		return "", fmt.Errorf("failed to create resource client: %w", err)
+	}
+
+	ctx := context.Background()
+	events, err := client.GetEvents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get events: %w", err)
+	}
+
+	// Sort events by LastTimestamp
+	sort.Slice(events.Items, func(i, j int) bool {
+		return events.Items[i].LastTimestamp.Before(&events.Items[j].LastTimestamp)
+	})
+
+	// Format events in a human-readable way similar to kubectl
+	var output strings.Builder
+	output.WriteString(fmt.Sprintf("%-10s %-10s %-30s %-10s %s\n",
+		"LAST SEEN", "TYPE", "REASON", "OBJECT", "MESSAGE"))
+
+	for _, event := range events.Items {
+		lastSeen := event.LastTimestamp.Time.Format("15:04:05")
+		eventType := event.Type
+		reason := event.Reason
+		object := fmt.Sprintf("%s/%s", event.InvolvedObject.Kind, event.InvolvedObject.Name)
+		message := event.Message
+
+		// Truncate message if too long
+		if len(message) > 80 {
+			message = message[:77] + "..."
+		}
+
+		output.WriteString(fmt.Sprintf("%-10s %-10s %-30s %-10s %s\n",
+			lastSeen, eventType, reason, object, message))
+	}
+
+	return output.String(), nil
+}
+
+// getPodDescription retrieves and formats pod details in a description format.
+// This mimics the output of `kubectl describe pod`.
+func getPodDescription(podName string) (string, error) {
+	client, err := NewResourceClient(namespace)
+	if err != nil {
+		return "", fmt.Errorf("failed to create resource client: %w", err)
+	}
+
+	ctx := context.Background()
+	pod, err := client.GetPod(ctx, podName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get pod: %w", err)
+	}
+
+	var output strings.Builder
+
+	// Basic pod information
+	output.WriteString(fmt.Sprintf("Name:         %s\n", pod.Name))
+	output.WriteString(fmt.Sprintf("Namespace:    %s\n", pod.Namespace))
+	output.WriteString(fmt.Sprintf("Status:       %s\n", pod.Status.Phase))
+	output.WriteString(fmt.Sprintf("IP:           %s\n", pod.Status.PodIP))
+	output.WriteString(fmt.Sprintf("Node:         %s\n", pod.Spec.NodeName))
+
+	// Container information
+	output.WriteString("\nContainers:\n")
+	for _, container := range pod.Spec.Containers {
+		output.WriteString(fmt.Sprintf("  %s:\n", container.Name))
+		output.WriteString(fmt.Sprintf("    Image:         %s\n", container.Image))
+
+		// Find container status
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.Name == container.Name {
+				output.WriteString(fmt.Sprintf("    State:         %s\n", getContainerState(status)))
+				output.WriteString(fmt.Sprintf("    Ready:         %t\n", status.Ready))
+				output.WriteString(fmt.Sprintf("    Restart Count: %d\n", status.RestartCount))
+				break
+			}
+		}
+	}
+
+	// Conditions
+	output.WriteString("\nConditions:\n")
+	for _, condition := range pod.Status.Conditions {
+		output.WriteString(fmt.Sprintf("  Type:    %s\n", condition.Type))
+		output.WriteString(fmt.Sprintf("  Status:  %s\n", condition.Status))
+		if condition.Message != "" {
+			output.WriteString(fmt.Sprintf("  Message: %s\n", condition.Message))
+		}
+		output.WriteString("\n")
+	}
+
+	return output.String(), nil
+}
+
+// getContainerState returns a string representation of the container state.
+func getContainerState(status corev1.ContainerStatus) string {
+	if status.State.Running != nil {
+		return "Running"
+	}
+	if status.State.Waiting != nil {
+		return fmt.Sprintf("Waiting (%s)", status.State.Waiting.Reason)
+	}
+	if status.State.Terminated != nil {
+		return fmt.Sprintf("Terminated (%s)", status.State.Terminated.Reason)
+	}
+	return "Unknown"
 }

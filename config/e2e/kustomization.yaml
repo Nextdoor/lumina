@@ -26,3 +26,7 @@ patches:
     target:
       kind: Deployment
       name: controller-manager
+  - path: metrics_service_patch.yaml
+    target:
+      kind: Service
+      name: controller-manager-metrics-service
