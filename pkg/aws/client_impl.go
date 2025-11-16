@@ -97,7 +97,7 @@ func (c *RealClient) EC2(ctx context.Context, accountConfig AccountConfig) (EC2C
 	}
 
 	// Create EC2 client with assumed credentials
-	client, err := NewRealEC2Client(ctx, accountConfig.Region, creds, c.endpointURL)
+	client, err := NewRealEC2Client(ctx, accountConfig.AccountID, accountConfig.Region, creds, c.endpointURL)
 	if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 	}
 
 	// Create Savings Plans client with assumed credentials
-	client, err := NewRealSPClient(ctx, accountConfig.Region, creds, c.endpointURL)
+	client, err := NewRealSPClient(ctx, accountConfig.AccountID, accountConfig.Region, creds, c.endpointURL)
 	if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
 		return nil, err
 	}
@@ -165,11 +165,12 @@ func (c *RealClient) getCredentials(
 	// Perform AssumeRole
 	// This path is tested in localstack_integration_test.go with the -tags=localstack build tag
 	// which tests real STS AssumeRole operations against LocalStack.
+	// coverage:ignore - AssumeRole path tested in integration tests with LocalStack
 	result, err := c.stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
 		RoleArn:         &accountConfig.AssumeRoleARN,
 		RoleSessionName: ptrString("lumina-" + accountConfig.AccountID),
 	})
-	if err != nil { // coverage:ignore - error handling tested in integration tests
+	if err != nil {
 		return credentials.StaticCredentialsProvider{}, err
 	}
 
