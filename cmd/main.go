@@ -109,6 +109,10 @@ func runStandalone(
 	rispCache := cache.NewRISPCache()
 	setupLog.Info("initialized RI/SP cache")
 
+	// Initialize EC2 cache
+	ec2Cache := cache.NewEC2Cache()
+	setupLog.Info("initialized EC2 cache")
+
 	// Create RISP reconciler for standalone mode
 	// In standalone mode, we'll run it on a timer instead of K8s reconciliation
 	// Regions will be read from cfg.Regions with account-specific overrides
@@ -121,7 +125,18 @@ func runStandalone(
 		Regions:   cfg.Regions,
 	}
 
-	// Start reconciler in background goroutine
+	// Create EC2 reconciler for standalone mode
+	// EC2 reconciler runs every 5 minutes (more frequent than RI/SP hourly updates)
+	ec2Reconciler := &controller.EC2Reconciler{
+		AWSClient: awsClient,
+		Config:    cfg,
+		Cache:     ec2Cache,
+		Metrics:   luminaMetrics,
+		Log:       ctrl.Log.WithName("ec2-reconciler"),
+		Regions:   cfg.Regions,
+	}
+
+	// Start reconcilers in background goroutines
 	ctx := ctrl.SetupSignalHandler()
 	go func() {
 		if err := rispReconciler.RunStandalone(ctx); err != nil {
@@ -129,6 +144,13 @@ func runStandalone(
 		}
 	}()
 	setupLog.Info("started RISP reconciler in standalone mode")
+
+	go func() {
+		if err := ec2Reconciler.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "EC2 reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started EC2 reconciler in standalone mode")
 
 	// Setup metrics server using standard http package
 	// In standalone mode, we serve Prometheus metrics directly without authentication
@@ -432,6 +454,10 @@ func main() {
 	rispCache := cache.NewRISPCache()
 	setupLog.Info("initialized RI/SP cache")
 
+	// Initialize EC2 cache for Phase 4 data collection
+	ec2Cache := cache.NewEC2Cache()
+	setupLog.Info("initialized EC2 cache")
+
 	// Setup RISP reconciler for hourly data collection
 	// This reconciler queries AWS APIs for Reserved Instances and Savings Plans
 	// and maintains an in-memory cache for cost calculation (future phases)
@@ -448,6 +474,23 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("registered RISP reconciler for hourly data collection")
+
+	// Setup EC2 reconciler for 5-minute data collection
+	// This reconciler queries AWS APIs for EC2 instance inventory
+	// and maintains an in-memory cache for cost calculation and metrics
+	// Regions will be read from cfg.Regions with account-specific overrides
+	if err := (&controller.EC2Reconciler{
+		AWSClient: awsClient,
+		Config:    cfg,
+		Cache:     ec2Cache,
+		Metrics:   luminaMetrics,
+		Log:       ctrl.Log.WithName("ec2-reconciler"),
+		Regions:   cfg.Regions,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "EC2")
+		os.Exit(1)
+	}
+	setupLog.Info("registered EC2 reconciler for 5-minute data collection")
 
 	// +kubebuilder:scaffold:builder
 
