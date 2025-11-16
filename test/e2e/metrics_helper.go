@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -205,5 +206,70 @@ func (l *LogsClient) GetPodLogsByLabel(ctx context.Context, labelSelector string
 	}
 
 	return allLogs.String(), nil
+}
+
+// ResourceClient provides a clean interface to fetch Kubernetes resources
+// using the native Kubernetes client instead of kubectl commands.
+type ResourceClient struct {
+	namespace  string
+	clientset  *kubernetes.Clientset
+	restConfig *rest.Config
+}
+
+// NewResourceClient creates a new resource client.
+func NewResourceClient(namespace string) (*ResourceClient, error) {
+	// Load the kubeconfig from the default location or KUBECONFIG env var
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	config, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	// Create the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	return &ResourceClient{
+		namespace:  namespace,
+		clientset:  clientset,
+		restConfig: config,
+	}, nil
+}
+
+// GetPodsByLabel retrieves pods matching a label selector.
+func (r *ResourceClient) GetPodsByLabel(ctx context.Context, labelSelector string) (*corev1.PodList, error) {
+	return r.clientset.CoreV1().Pods(r.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+}
+
+// GetPod retrieves a specific pod by name.
+func (r *ResourceClient) GetPod(ctx context.Context, name string) (*corev1.Pod, error) {
+	return r.clientset.CoreV1().Pods(r.namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// GetService retrieves a specific service by name.
+func (r *ResourceClient) GetService(ctx context.Context, name string) (*corev1.Service, error) {
+	return r.clientset.CoreV1().Services(r.namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// GetEndpoints retrieves endpoints for a service.
+func (r *ResourceClient) GetEndpoints(ctx context.Context, name string) (*corev1.Endpoints, error) {
+	return r.clientset.CoreV1().Endpoints(r.namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// GetEvents retrieves events, optionally filtered by field selector.
+func (r *ResourceClient) GetEvents(ctx context.Context) (*corev1.EventList, error) {
+	return r.clientset.CoreV1().Events(r.namespace).List(ctx, metav1.ListOptions{})
+}
+
+// GetDeployment retrieves a specific deployment by name.
+func (r *ResourceClient) GetDeployment(ctx context.Context, name string) (*appsv1.Deployment, error) {
+	return r.clientset.AppsV1().Deployments(r.namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
