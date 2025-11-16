@@ -1,0 +1,13 @@
+# Patch for e2e testing to use HTTP instead of HTTPS for metrics
+# This makes testing simpler since the Kubernetes API proxy doesn't handle HTTPS backends well
+apiVersion: v1
+kind: Service
+metadata:
+  name: controller-manager-metrics-service
+  namespace: system
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080

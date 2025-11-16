@@ -372,7 +372,8 @@ func (r *RISPReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				Name:      "risp-trigger",
 			},
 		}
-		controller.Reconcile(context.Background(), dummyRequest)
+		// Ignore error from initial trigger - if it fails, the periodic timer will retry
+		_, _ = controller.Reconcile(context.Background(), dummyRequest)
 	}()
 
 	return nil

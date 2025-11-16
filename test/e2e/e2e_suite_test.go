@@ -174,12 +174,8 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	// Teardown controller before tearing down dependencies
-	By("cleaning up the curl-metrics pod if it exists")
-	cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found=true")
-	_, _ = utils.Run(cmd)
-
 	By("undeploying the controller-manager")
-	cmd = exec.Command("make", "undeploy")
+	cmd := exec.Command("make", "undeploy")
 	_, _ = utils.Run(cmd)
 
 	By("uninstalling CRDs")
