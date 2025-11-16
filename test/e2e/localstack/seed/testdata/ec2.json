@@ -1,0 +1,43 @@
+{
+  "security_groups": [
+    {
+      "group_name": "lumina-test-sg",
+      "description": "Security group for Lumina e2e testing",
+      "region": "us-west-2"
+    }
+  ],
+  "instances": [
+    {
+      "image_id": "ami-12345678",
+      "instance_type": "m5.xlarge",
+      "count": 2,
+      "region": "us-west-2",
+      "tags": [
+        {
+          "Key": "Name",
+          "Value": "lumina-test-1"
+        },
+        {
+          "Key": "Environment",
+          "Value": "test"
+        }
+      ]
+    },
+    {
+      "image_id": "ami-12345678",
+      "instance_type": "c5.large",
+      "count": 1,
+      "region": "us-west-2",
+      "tags": [
+        {
+          "Key": "Name",
+          "Value": "lumina-test-2"
+        },
+        {
+          "Key": "Environment",
+          "Value": "production"
+        }
+      ]
+    }
+  ]
+}

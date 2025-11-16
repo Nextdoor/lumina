@@ -25,12 +25,25 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/nextdoor/lumina/test/e2e/localstack/seed"
 )
 
 const (
@@ -214,6 +227,148 @@ func InstallLocalStack() error {
 	}
 
 	return nil
+}
+
+// SeedLocalStack seeds test data into LocalStack using native AWS SDK calls through
+// the Kubernetes API proxy. This function should be called after InstallLocalStack()
+// and after LocalStack is ready.
+//
+// Uses the Kubernetes REST client to proxy AWS SDK HTTP requests to LocalStack's
+// localhost:4566, following the pattern from metrics_helper.go.
+func SeedLocalStack() error {
+	// Load kubeconfig to get Kubernetes REST client
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	restConfig, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	// Create an HTTP client that proxies through the Kubernetes API to LocalStack
+	// Pattern: /api/v1/namespaces/localstack/services/localstack:4566/proxy/
+	proxyHTTPClient := &kubeProxyRoundTripper{
+		restConfig: restConfig,
+		namespace:  "localstack",
+		service:    "localstack",
+		port:       "4566",
+	}
+
+	// Configure AWS SDK to use the Kubernetes proxy as the HTTP client
+	// The kubeProxyRoundTripper handles all routing, so we just need a dummy base URL
+	ctx := context.Background()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion("us-west-2"),
+		awsconfig.WithHTTPClient(&http.Client{
+			Transport: proxyHTTPClient,
+		}),
+		awsconfig.WithCredentialsProvider(aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+			return aws.Credentials{
+				AccessKeyID:     "test",
+				SecretAccessKey: "test",
+			}, nil
+		})),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Call the seed package which makes native AWS SDK calls
+	if err := seed.SeedAll(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to seed LocalStack: %w", err)
+	}
+
+	return nil
+}
+
+// kubeProxyRoundTripper implements http.RoundTripper to proxy AWS SDK HTTP requests
+// through the Kubernetes API server to LocalStack's localhost:4566.
+type kubeProxyRoundTripper struct {
+	restConfig *rest.Config
+	namespace  string
+	service    string
+	port       string
+}
+
+// RoundTrip proxies the HTTP request through the Kubernetes API to LocalStack.
+func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Create a copy of the config and set required fields for the core v1 API
+	// This matches the pattern from metrics_helper.go
+	configCopy := *k.restConfig
+	configCopy.APIPath = "/api"
+	configCopy.GroupVersion = &schema.GroupVersion{Group: "", Version: "v1"}
+
+	// Create a scheme and codec factory for the core API
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	configCopy.NegotiatedSerializer = serializer.NewCodecFactory(scheme)
+
+	// Create REST client with the updated config
+	restClient, err := rest.RESTClientFor(&configCopy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create REST client: %w", err)
+	}
+
+	// Build the proxy path through kube-apiserver to LocalStack
+	// Pattern: /api/v1/namespaces/{ns}/services/{name}:{port}/proxy{path}
+	proxyPath := fmt.Sprintf("/api/v1/namespaces/%s/services/%s:%s/proxy%s",
+		k.namespace, k.service, k.port, req.URL.Path)
+
+	// Forward the request through the proxy
+	proxyReq := restClient.Verb(req.Method).
+		AbsPath(proxyPath)
+
+	// Copy headers from the original request
+	for key, values := range req.Header {
+		for _, value := range values {
+			proxyReq = proxyReq.SetHeader(key, value)
+		}
+	}
+
+	// Add query parameters
+	for key, values := range req.URL.Query() {
+		for _, value := range values {
+			proxyReq = proxyReq.Param(key, value)
+		}
+	}
+
+	// Set request body if present
+	if req.Body != nil {
+		bodyBytes, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
+		_ = req.Body.Close() // Best effort close
+		if len(bodyBytes) > 0 {
+			proxyReq = proxyReq.Body(bodyBytes)
+		}
+	}
+
+	// Execute the request
+	result := proxyReq.Do(req.Context())
+
+	// Get the response
+	statusCode := 0
+	result.StatusCode(&statusCode)
+
+	body, err := result.Raw()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build HTTP response
+	resp := &http.Response{
+		StatusCode: statusCode,
+		Body:       io.NopCloser(bytes.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    req,
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+	}
+
+	return resp, nil
 }
 
 // UninstallLocalStack uninstalls LocalStack from the cluster.

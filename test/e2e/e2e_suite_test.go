@@ -134,6 +134,14 @@ var _ = BeforeSuite(func() {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Completed: %s\n", result.name)
 	}
 
+	// Seed LocalStack with test data if it was just installed
+	if !skipLocalStackInstall && !isLocalStackAlreadyInstalled {
+		By("seeding LocalStack with test data")
+		err := utils.SeedLocalStack()
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to seed LocalStack")
+		_, _ = fmt.Fprintf(GinkgoWriter, "LocalStack seeded successfully\n")
+	}
+
 	// Deploy the controller once for all tests to use
 	// This runs after CertManager and LocalStack are installed
 	By("creating manager namespace")
