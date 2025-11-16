@@ -43,8 +43,6 @@ import (
 // - Controller handles multi-account data collection
 // - Cache is populated with collected data
 var _ = Describe("RISP Reconciler", Ordered, func() {
-	// controllerPodName is a package-level variable set by the Manager tests
-
 	// Setup test data in LocalStack before running reconciler tests.
 	// We create Reserved Instances and Savings Plans that the controller should discover.
 	BeforeAll(func() {
@@ -72,12 +70,13 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 	Context("Initial reconciliation", func() {
 		It("should start RISP reconciliation on controller startup", func() {
-			By("verifying controller pod name is available from Manager tests")
-			Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name should be set by Manager tests")
-
 			By("checking controller logs for RISP reconciliation start")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				// Use label selector to get logs from controller pods
+				cmd := exec.Command("kubectl", "logs",
+					"-l", "control-plane=controller-manager",
+					"-n", namespace,
+					"--tail=-1") // Get all logs
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("starting RI/SP reconciliation cycle"),
@@ -88,7 +87,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should complete initial reconciliation cycle", func() {
 			By("checking controller logs for reconciliation completion")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("reconciliation cycle completed"),
@@ -99,7 +98,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query Reserved Instances from configured regions", func() {
 			By("checking logs for RI queries in us-west-2")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("updated reserved instances"),
@@ -110,7 +109,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 			By("checking logs for RI queries in us-east-1")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring(`"region": "us-east-1"`),
@@ -121,7 +120,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query Savings Plans from configured accounts", func() {
 			By("checking logs for SP queries")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("updated savings plans"),
@@ -132,7 +131,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query data from both test accounts", func() {
 			By("checking logs for test-production account")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring(`"account_id": "000000000000"`),
@@ -141,7 +140,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 			By("checking logs for test-staging account")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring(`"account_id": "111111111111"`),
@@ -152,7 +151,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should log cache statistics after reconciliation", func() {
 			By("checking logs for cache statistics")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("cache statistics"),
@@ -338,7 +337,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 	Context("Error handling and resilience", func() {
 		It("should not have errors in reconciliation logs", func() {
 			By("checking for error messages in controller logs")
-			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+			cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -363,7 +362,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should schedule hourly reconciliation", func() {
 			By("checking logs for requeue scheduling")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -383,7 +382,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query accounts in parallel", func() {
 			By("verifying logs show concurrent account processing")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -412,7 +411,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 			By("verifying reconciliation completes successfully")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("reconciliation cycle completed"),
