@@ -59,7 +59,25 @@ var (
 )
 
 // runStandalone runs the controller in standalone mode without Kubernetes integration.
-// This mode only collects AWS data and exposes metrics - no K8s reconciliation loops.
+//
+// This mode is designed for local development and testing, enabling developers to run
+// the controller on their local machine without requiring a Kubernetes cluster. It provides
+// the same AWS data collection and metrics exposure as the full Kubernetes mode, but
+// uses simple HTTP servers instead of the controller-runtime manager.
+//
+// Key differences from Kubernetes mode:
+//   - No controller-runtime manager - uses standard http.Server instead
+//   - No RBAC or authentication on metrics endpoint (local development only)
+//   - RISP reconciler runs on a simple hourly timer instead of K8s reconciliation
+//   - Metrics served on configurable HTTP port (default :8080)
+//   - Health checks on configurable HTTP port (default :8081)
+//
+// This mode is activated by the --no-kubernetes command-line flag and is ideal for:
+//   - Local development and debugging
+//   - Testing AWS API integration without Kubernetes
+//   - Quick validation of configuration changes
+//   - Exploring metrics output during development
+//
 // coverage:ignore - standalone mode, tested manually or via E2E
 func runStandalone(
 	cfg *config.Config,
