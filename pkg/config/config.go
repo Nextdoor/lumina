@@ -41,6 +41,12 @@ type Config struct {
 	// Can be overridden per-account if needed.
 	DefaultRegion string `yaml:"defaultRegion,omitempty"`
 
+	// Regions is the list of AWS regions to query for Reserved Instances.
+	// RIs are regional resources, so we need to query each region separately.
+	// If empty, defaults to common US regions: ["us-west-2", "us-east-1"]
+	// Can be overridden per-account via AWSAccount.Regions.
+	Regions []string `yaml:"regions,omitempty"`
+
 	// LogLevel controls the verbosity of logs.
 	// Valid values: debug, info, warn, error
 	// Default: info
@@ -103,6 +109,11 @@ type AWSAccount struct {
 	// Region is the AWS region for this account (optional).
 	// If not set, uses the default region from Config.DefaultRegion.
 	Region string `yaml:"region,omitempty"`
+
+	// Regions is the list of AWS regions to query for Reserved Instances for this account.
+	// If empty, uses Config.Regions (the global default).
+	// This allows per-account region overrides (e.g., some accounts only use us-west-2).
+	Regions []string `yaml:"regions,omitempty"`
 }
 
 // Load loads configuration from a YAML file and validates it.

@@ -20,14 +20,28 @@ awsAccounts:
     assumeRoleArn: "arn:aws:iam::987654321098:role/lumina-controller"
 
   # Additional accounts can be added as needed
+  # Example: Account with custom region list (overrides global 'regions')
   # - accountId: "111111111111"
   #   name: "Development"
   #   assumeRoleArn: "arn:aws:iam::111111111111:role/lumina-controller"
+  #   regions:
+  #     - "us-west-2"  # This account only uses us-west-2
 
 # Default AWS region for API calls
 # Can be overridden by LUMINA_DEFAULT_REGION environment variable
 # Default: us-west-2
 defaultRegion: "us-west-2"
+
+# List of AWS regions to query for Reserved Instances
+# RIs are regional resources, so each region must be queried separately
+# Can be overridden per-account (see awsAccounts[].regions below)
+# Default: ["us-west-2", "us-east-1"]
+regions:
+  - "us-west-2"
+  - "us-east-1"
+  # Add more regions as needed:
+  # - "eu-west-1"
+  # - "ap-southeast-1"
 
 # Log level: debug, info, warn, error
 # Can be overridden by LUMINA_LOG_LEVEL environment variable
