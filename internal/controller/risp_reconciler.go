@@ -66,12 +66,22 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	// Track cycle timing
 	startTime := time.Now()
 
-	// Get regions to query (use defaults if not configured)
-	regions := r.Regions
-	if len(regions) == 0 {
-		// Default to common US regions
-		// TODO: Make this configurable or discover dynamically
-		regions = []string{"us-west-2", "us-east-1"}
+	// Determine default regions to query for Reserved Instances.
+	// Uses a fallback chain to ensure we always have regions to query:
+	//  1. Config.Regions (from config file 'regions' field)
+	//  2. r.Regions (from reconciler initialization)
+	//  3. config.DefaultRegions (common US regions) as final fallback
+	//
+	// Individual accounts can override this default by setting their own
+	// 'regions' field in the awsAccounts configuration.
+	defaultRegions := r.Config.Regions
+	if len(defaultRegions) == 0 {
+		// Config didn't specify regions, try reconciler default
+		defaultRegions = r.Regions
+	}
+	if len(defaultRegions) == 0 {
+		// No regions configured anywhere, use the default fallback regions
+		defaultRegions = config.DefaultRegions
 	}
 
 	// Query all accounts in parallel
@@ -83,6 +93,18 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 		wg.Add(1)
 		go func(acc config.AWSAccount) {
 			defer wg.Done()
+
+			// Determine regions to query for this specific account.
+			// Account-specific regions (if configured) override the global default.
+			// This allows flexibility for accounts that only operate in certain regions.
+			//
+			// Example: Account A might use all regions, but Account B only uses us-west-2
+			regions := acc.Regions
+			if len(regions) == 0 {
+				// No account-specific override, use global default
+				regions = defaultRegions
+			}
+
 			if err := r.reconcileReservedInstances(ctx, acc, regions); err != nil {
 				log.Error(err, "failed to reconcile RIs",
 					"account_id", acc.AccountID,
@@ -136,7 +158,9 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	r.Metrics.UpdateReservedInstanceMetrics(allRIs)
 	log.V(1).Info("updated RI metrics", "metric_count", len(allRIs))
 
-	// Update Prometheus metrics with latest SP data
+	// Update Prometheus metrics with latest Savings Plans data
+	// Phase 3: SP inventory metrics (hourly commitment, remaining hours)
+	// Note: SP utilization metrics (current usage, remaining capacity) come in Phase 6
 	allSPs := r.Cache.GetAllSavingsPlans()
 	r.Metrics.UpdateSavingsPlansInventoryMetrics(allSPs)
 	log.V(1).Info("updated SP metrics", "metric_count", len(allSPs))
@@ -193,6 +217,17 @@ func (r *RISPReconciler) reconcileReservedInstances(
 
 		// Update cache with new data
 		r.Cache.UpdateReservedInstances(region, account.AccountID, ris)
+
+		// Log details about each RI for observability
+		for _, ri := range ris {
+			log.V(1).Info("reserved instance details",
+				"region", region,
+				"ri_id", ri.ReservedInstanceID,
+				"instance_type", ri.InstanceType,
+				"availability_zone", ri.AvailabilityZone,
+				"instance_count", ri.InstanceCount,
+				"state", ri.State)
+		}
 
 		// Record success in metrics
 		r.Metrics.DataLastSuccess.WithLabelValues(
@@ -334,6 +369,55 @@ func convertTestSavingsPlans(testSPs []config.TestSavingsPlan, accountID string)
 	}
 
 	return result
+}
+
+// RunStandalone runs the reconciler in standalone mode without Kubernetes.
+//
+// This method is designed for local development and testing, allowing the reconciler
+// to run without a Kubernetes cluster. It executes the same reconciliation logic as
+// Reconcile() but uses a simple time.Ticker instead of controller-runtime's requeue mechanism.
+//
+// Behavior:
+//   - Runs initial reconciliation immediately on startup
+//   - Sets up hourly ticker for periodic reconciliation
+//   - Continues running even if individual reconciliation cycles fail
+//   - Stops gracefully when context is cancelled (SIGTERM/SIGINT)
+//
+// This is used when the controller is run with the --no-kubernetes flag via:
+//
+//	go run ./cmd/main.go --no-kubernetes --config=config.yaml
+//
+// or via the convenience Make target:
+//
+//	make run-local
+func (r *RISPReconciler) RunStandalone(ctx context.Context) error {
+	log := r.Log.WithValues("mode", "standalone")
+	log.Info("starting RISP reconciler in standalone mode")
+
+	// Run immediately on startup
+	log.Info("running initial reconciliation")
+	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
+		log.Error(err, "initial reconciliation failed")
+		// Don't exit - continue with periodic reconciliation
+	}
+
+	// Setup hourly ticker
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("shutting down RISP reconciler")
+			return ctx.Err()
+		case <-ticker.C:
+			log.Info("running scheduled reconciliation")
+			if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
+				log.Error(err, "scheduled reconciliation failed")
+				// Don't exit - continue with next cycle
+			}
+		}
+	}
 }
 
 // SetupWithManager sets up the reconciler with the Manager.

@@ -121,6 +121,18 @@ build: manifests generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
+.PHONY: run-local
+run-local: ## Run controller locally in standalone mode with config.yaml (must exist in current directory)
+	@test -f config.yaml || (echo "ERROR: config.yaml not found in current directory. Create one based on config.example.yaml" && exit 1)
+	@echo "Running controller in standalone mode with config.yaml..."
+	go run ./cmd/main.go \
+		--config=config.yaml \
+		--no-kubernetes \
+		--metrics-bind-address=:8080 \
+		--health-probe-bind-address=:8081 \
+		--metrics-secure=false \
+		--zap-log-level=debug
+
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
