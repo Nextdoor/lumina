@@ -43,7 +43,7 @@ import (
 // - Controller handles multi-account data collection
 // - Cache is populated with collected data
 var _ = Describe("RISP Reconciler", Ordered, func() {
-	var controllerPodName string
+	// controllerPodName is a package-level variable set by the Manager tests
 
 	// Setup test data in LocalStack before running reconciler tests.
 	// We create Reserved Instances and Savings Plans that the controller should discover.
@@ -72,35 +72,8 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 	Context("Initial reconciliation", func() {
 		It("should start RISP reconciliation on controller startup", func() {
-			By("validating that the controller-manager pod is running")
-			verifyControllerUp := func(g Gomega) {
-				// Get the name of the controller-manager pod
-				cmd := exec.Command("kubectl", "get",
-					"pods", "-l", "control-plane=controller-manager",
-					"-o", "go-template={{ range .items }}"+
-						"{{ if not .metadata.deletionTimestamp }}"+
-						"{{ .metadata.name }}"+
-						"{{ \"\\n\" }}{{ end }}{{ end }}",
-					"-n", namespace,
-				)
-
-				podOutput, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
-				podNames := utils.GetNonEmptyLines(podOutput)
-				g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
-				controllerPodName = podNames[0]
-				g.Expect(controllerPodName).To(ContainSubstring("controller-manager"))
-
-				// Validate the pod's status
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
-			}
-			Eventually(verifyControllerUp).Should(Succeed())
+			By("verifying controller pod name is available from Manager tests")
+			Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name should be set by Manager tests")
 
 			By("checking controller logs for RISP reconciliation start")
 			Eventually(func(g Gomega) {
