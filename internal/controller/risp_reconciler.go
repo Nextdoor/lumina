@@ -21,7 +21,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/nextdoor/lumina/internal/cache"
 	"github.com/nextdoor/lumina/pkg/aws"
@@ -281,11 +284,16 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 // SetupWithManager sets up the reconciler with the Manager.
 // coverage:ignore - controller-runtime boilerplate, tested via E2E
 func (r *RISPReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Use a simple timer-based reconciliation (hourly)
-	// We don't watch any Kubernetes resources - this is purely time-driven
+	// This is a timer-based controller that requeues itself every hour.
+	// Controller-runtime requires at least one watch, so we watch ConfigMaps
+	// but ignore all events (the actual trigger is the RequeueAfter in Reconcile).
+	//
+	// The predicate filters out all ConfigMap events - we only want timer-based triggers.
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("risp").
-		// Trigger immediate reconciliation on startup, then hourly
-		// We use a dummy "trigger" mechanism since we don't watch resources
+		For(&corev1.ConfigMap{}).
+		WithEventFilter(predicate.NewPredicateFuncs(func(_ client.Object) bool {
+			return false // Ignore all ConfigMap events
+		})).
 		Complete(r)
 }
