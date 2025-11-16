@@ -62,50 +62,82 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	By("building the manager(Operator) image")
-	// Use simple docker build for E2E tests to avoid slow multi-platform builds
-	cmd := exec.Command("docker", "build", "-t", projectImage, ".")
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
-
-	// TODO(user): If you want to change the e2e test vendor from Kind, ensure the image is
-	// built and available before running the tests. Also, remove the following block.
-	By("loading the manager(Operator) image on Kind")
-	err = utils.LoadImageToKindClusterWithName(projectImage)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
-
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.
 	// To prevent errors when tests run in environments with dependencies already installed,
 	// we check for their presence before execution.
 
-	// Setup CertManager before the suite if not skipped and if not already installed
+	// Run Docker build, CertManager install, and LocalStack install in parallel for faster setup
+	type setupResult struct {
+		name string
+		err  error
+	}
+	resultsChan := make(chan setupResult, 3)
+	setupsNeeded := 0
+
+	// Build and load Docker image in parallel
+	By("starting parallel setup: docker build, CertManager, LocalStack")
+	go func() {
+		By("building the manager(Operator) image")
+		// Use simple docker build for E2E tests to avoid slow multi-platform builds
+		cmd := exec.Command("docker", "build", "-t", projectImage, ".")
+		_, err := utils.Run(cmd)
+		if err != nil {
+			resultsChan <- setupResult{name: "Docker build", err: err}
+			return
+		}
+
+		// TODO(user): If you want to change the e2e test vendor from Kind, ensure the image is
+		// built and available before running the tests. Also, remove the following block.
+		By("loading the manager(Operator) image on Kind")
+		err = utils.LoadImageToKindClusterWithName(projectImage)
+		resultsChan <- setupResult{name: "Docker build+load", err: err}
+	}()
+	setupsNeeded++
+
+	// Setup CertManager in parallel if not skipped and if not already installed
 	if !skipCertManagerInstall {
 		By("checking if cert manager is installed already")
 		isCertManagerAlreadyInstalled = utils.IsCertManagerCRDsInstalled()
 		if !isCertManagerAlreadyInstalled {
-			_, _ = fmt.Fprintf(GinkgoWriter, "Installing CertManager...\n")
-			Expect(utils.InstallCertManager()).To(Succeed(), "Failed to install CertManager")
+			go func() {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Installing CertManager...\n")
+				err := utils.InstallCertManager()
+				resultsChan <- setupResult{name: "CertManager", err: err}
+			}()
+			setupsNeeded++
 		} else {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
 		}
 	}
 
-	// Setup LocalStack before the suite if not skipped and if not already installed
+	// Setup LocalStack in parallel if not skipped and if not already installed
 	if !skipLocalStackInstall {
 		By("checking if LocalStack is installed already")
 		isLocalStackAlreadyInstalled = utils.IsLocalStackInstalled()
 		if !isLocalStackAlreadyInstalled {
-			_, _ = fmt.Fprintf(GinkgoWriter, "Installing LocalStack...\n")
-			Expect(utils.InstallLocalStack()).To(Succeed(), "Failed to install LocalStack")
+			go func() {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Installing LocalStack...\n")
+				err := utils.InstallLocalStack()
+				resultsChan <- setupResult{name: "LocalStack", err: err}
+			}()
+			setupsNeeded++
 		} else {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: LocalStack is already installed. Skipping installation...\n")
 		}
 	}
 
+	// Wait for all parallel setups to complete
+	By(fmt.Sprintf("waiting for %d parallel setup tasks to complete", setupsNeeded))
+	for i := 0; i < setupsNeeded; i++ {
+		result := <-resultsChan
+		ExpectWithOffset(1, result.err).NotTo(HaveOccurred(), fmt.Sprintf("Failed: %s", result.name))
+		_, _ = fmt.Fprintf(GinkgoWriter, "Completed: %s\n", result.name)
+	}
+
 	// Deploy the controller once for all tests to use
 	// This runs after CertManager and LocalStack are installed
 	By("creating manager namespace")
-	cmd = exec.Command("kubectl", "create", "ns", namespace, "--dry-run=client", "-o", "yaml")
+	cmd := exec.Command("kubectl", "create", "ns", namespace, "--dry-run=client", "-o", "yaml")
 	yamlOutput, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to generate namespace YAML")
 
