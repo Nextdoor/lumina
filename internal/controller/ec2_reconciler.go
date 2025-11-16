@@ -163,6 +163,9 @@ func (r *EC2Reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Res
 		}
 	}
 
+	// Log the configured interval (helpful for verifying configuration)
+	log.V(1).Info("reconciliation interval configured", "next_run_in", requeueAfter.String())
+
 	// Requeue after configured interval
 	// This creates the periodic reconciliation loop without requiring external triggers
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil

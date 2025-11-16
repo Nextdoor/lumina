@@ -178,6 +178,9 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 		}
 	}
 
+	// Log the configured interval (helpful for verifying configuration)
+	log.V(1).Info("reconciliation interval configured", "next_run_in", requeueAfter.String())
+
 	// Requeue after configured interval
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
