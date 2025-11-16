@@ -47,6 +47,20 @@ This package provides operational metrics that enable monitoring and alerting fo
 - Values: 1 = success, 0 = failed
 - Status: Structure defined, not yet populated
 
+### Reserved Instances (Phase 3)
+
+**`ec2_reserved_instance`** (gauge)
+- Indicates presence of a Reserved Instance
+- Labels: `account_id`, `region`, `instance_type`, `availability_zone`
+- Value: 1 = RI exists, metric absent = RI does not exist
+- Use: Track RI inventory, identify specific RIs
+
+**`ec2_reserved_instance_count`** (gauge)
+- Count of Reserved Instances by instance family
+- Labels: `account_id`, `region`, `instance_family`
+- Value: Number of RIs in this family
+- Use: High-level RI inventory view, capacity planning
+
 ## Usage
 
 ### Initialization
@@ -84,6 +98,20 @@ m.RecordAccountValidation(
 m.DeleteAccountMetrics(accountID, accountName)
 ```
 
+### Updating RI Metrics (Phase 3)
+
+```go
+// Called by RISP reconciler after cache update (hourly)
+allRIs := rispCache.GetAllReservedInstances()
+m.UpdateReservedInstanceMetrics(allRIs)
+```
+
+This function:
+- Resets all existing RI metrics (clean slate approach)
+- Sets new values for all currently active RIs
+- Automatically removes metrics for expired/deleted RIs
+- Aggregates counts by instance family
+
 ## Example Prometheus Queries
 
 ```promql
@@ -103,6 +131,21 @@ rate(lumina_account_validation_duration_seconds_sum[5m])
 # P95 validation latency
 histogram_quantile(0.95,
   rate(lumina_account_validation_duration_seconds_bucket[5m]))
+
+# Total RI count across all accounts
+count(ec2_reserved_instance)
+
+# RI count by account
+sum by (account_id) (ec2_reserved_instance)
+
+# RI count by instance family
+sum by (instance_family) (ec2_reserved_instance_count)
+
+# Total RIs in m5 family across all accounts
+sum(ec2_reserved_instance_count{instance_family="m5"})
+
+# Alert if RI count drops unexpectedly (possible expiration)
+rate(ec2_reserved_instance_count[1h]) < -5
 ```
 
 ## Testing
