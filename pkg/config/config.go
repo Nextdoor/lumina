@@ -43,7 +43,7 @@ type Config struct {
 
 	// Regions is the list of AWS regions to query for Reserved Instances.
 	// RIs are regional resources, so we need to query each region separately.
-	// If empty, defaults to common US regions: ["us-west-2", "us-east-1"]
+	// If empty, defaults to config.DefaultRegions (["us-west-2", "us-east-1"])
 	// Can be overridden per-account via AWSAccount.Regions.
 	Regions []string `yaml:"regions,omitempty"`
 

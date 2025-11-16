@@ -66,7 +66,6 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	// Track cycle timing
 	startTime := time.Now()
 
-<<<<<<< HEAD
 	// Determine default regions to query for Reserved Instances.
 	// Uses a fallback chain to ensure we always have regions to query:
 	//  1. Config.Regions (from config file 'regions' field)
@@ -83,18 +82,6 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	if len(defaultRegions) == 0 {
 		// No regions configured anywhere, use the default fallback regions
 		defaultRegions = config.DefaultRegions
-=======
-	// Get default regions from config
-	// These will be used unless an account specifies its own regions
-	defaultRegions := r.Config.Regions
-	if len(defaultRegions) == 0 {
-		// Fallback to r.Regions if config doesn't specify
-		defaultRegions = r.Regions
-	}
-	if len(defaultRegions) == 0 {
-		// Final fallback to common US regions
-		defaultRegions = []string{"us-west-2", "us-east-1"}
->>>>>>> a56abc6 (feat(metrics): implement Phase 3 Savings Plans inventory metrics and configurable regions)
 	}
 
 	// Query all accounts in parallel
@@ -107,7 +94,6 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 		go func(acc config.AWSAccount) {
 			defer wg.Done()
 
-<<<<<<< HEAD
 			// Determine regions to query for this specific account.
 			// Account-specific regions (if configured) override the global default.
 			// This allows flexibility for accounts that only operate in certain regions.
@@ -116,11 +102,6 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 			regions := acc.Regions
 			if len(regions) == 0 {
 				// No account-specific override, use global default
-=======
-			// Use account-specific regions if configured, otherwise use default
-			regions := acc.Regions
-			if len(regions) == 0 {
->>>>>>> a56abc6 (feat(metrics): implement Phase 3 Savings Plans inventory metrics and configurable regions)
 				regions = defaultRegions
 			}
 
