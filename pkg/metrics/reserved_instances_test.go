@@ -498,6 +498,7 @@ func TestExtractInstanceFamily(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test data structures are intentionally similar
 func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 	// Simulate a real-world scenario with mixed RIs across accounts and regions
 	reg := prometheus.NewRegistry()

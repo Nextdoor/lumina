@@ -134,6 +134,11 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	r.Metrics.UpdateReservedInstanceMetrics(allRIs)
 	log.V(1).Info("updated RI metrics", "metric_count", len(allRIs))
 
+	// Update Prometheus metrics with latest SP data
+	allSPs := r.Cache.GetAllSavingsPlans()
+	r.Metrics.UpdateSavingsPlansInventoryMetrics(allSPs)
+	log.V(1).Info("updated SP metrics", "metric_count", len(allSPs))
+
 	// Requeue after 1 hour
 	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
 }

@@ -61,6 +61,27 @@ This package provides operational metrics that enable monitoring and alerting fo
 - Value: Number of RIs in this family
 - Use: High-level RI inventory view, capacity planning
 
+### Savings Plans Inventory (Phase 3)
+
+**`savings_plan_hourly_commitment`** (gauge)
+- Fixed hourly commitment amount ($/hour) for a Savings Plan
+- Labels: `savings_plan_arn`, `account_id`, `type`, `region`, `instance_family`
+- Value: Commitment amount in dollars per hour
+- Use: Track SP inventory, identify commitments
+
+**`savings_plan_remaining_hours`** (gauge)
+- Number of hours remaining until Savings Plan expires
+- Labels: `savings_plan_arn`, `account_id`, `type`
+- Value: Hours until expiration
+- Use: Alert on upcoming expirations for renewal planning
+
+**Label Values:**
+- `type`: `ec2_instance` or `compute`
+- `region`: Specific region (e.g., `us-west-2`) for EC2 Instance SPs, `all` for Compute SPs
+- `instance_family`: Specific family (e.g., `m5`) for EC2 Instance SPs, `all` for Compute SPs
+
+**Note:** SP utilization metrics (current usage, remaining capacity, utilization %) will be added in Phase 6 after cost calculation is implemented.
+
 ## Usage
 
 ### Initialization
@@ -112,6 +133,21 @@ This function:
 - Automatically removes metrics for expired/deleted RIs
 - Aggregates counts by instance family
 
+### Updating SP Inventory Metrics (Phase 3)
+
+```go
+// Called by RISP reconciler after cache update (hourly)
+allSPs := rispCache.GetAllSavingsPlans()
+m.UpdateSavingsPlansInventoryMetrics(allSPs)
+```
+
+This function:
+- Resets all existing SP metrics (clean slate approach)
+- Sets new values for all currently active SPs
+- Automatically removes metrics for expired/deleted SPs
+- Calculates remaining hours until expiration
+- Handles EC2 Instance vs Compute SP type differences
+
 ## Example Prometheus Queries
 
 ```promql
@@ -146,6 +182,30 @@ sum(ec2_reserved_instance_count{instance_family="m5"})
 
 # Alert if RI count drops unexpectedly (possible expiration)
 rate(ec2_reserved_instance_count[1h]) < -5
+
+# Total SP commitment across all accounts ($/hour)
+sum(savings_plan_hourly_commitment)
+
+# SP commitment by account
+sum by (account_id) (savings_plan_hourly_commitment)
+
+# SP commitment by type
+sum by (type) (savings_plan_hourly_commitment)
+
+# Total Compute SP commitment (global)
+sum(savings_plan_hourly_commitment{type="compute"})
+
+# EC2 Instance SPs by region and family
+sum by (region, instance_family) (savings_plan_hourly_commitment{type="ec2_instance"})
+
+# SPs expiring within 30 days (720 hours)
+count(savings_plan_remaining_hours < 720)
+
+# SPs expiring within 7 days (168 hours) - critical
+count(savings_plan_remaining_hours < 168)
+
+# SP commitment expiring within 30 days
+sum(savings_plan_hourly_commitment and savings_plan_remaining_hours < 720)
 ```
 
 ## Testing

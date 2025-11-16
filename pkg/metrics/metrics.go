@@ -72,6 +72,17 @@ type Metrics struct {
 	// This provides a higher-level view of RI inventory without per-type granularity.
 	// Labels: account_id, region, instance_family
 	ReservedInstanceCount *prometheus.GaugeVec
+
+	// SavingsPlanCommitment tracks the hourly commitment amount ($/hour) for each Savings Plan.
+	// Value is the fixed hourly commitment. When the SP expires or is removed, the metric
+	// is deleted entirely.
+	// Labels: savings_plan_arn, account_id, type, region, instance_family
+	SavingsPlanCommitment *prometheus.GaugeVec
+
+	// SavingsPlanRemainingHours tracks the number of hours remaining until the SP expires.
+	// This enables alerting on upcoming expirations for renewal planning.
+	// Labels: savings_plan_arn, account_id, type
+	SavingsPlanRemainingHours *prometheus.GaugeVec
 }
 
 // NewMetrics creates and registers all Prometheus metrics with the provided
@@ -126,6 +137,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "ec2_reserved_instance_count",
 			Help: "Count of Reserved Instances by instance family",
 		}, []string{"account_id", "region", "instance_family"}),
+
+		SavingsPlanCommitment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "savings_plan_hourly_commitment",
+			Help: "Hourly commitment amount ($/hour) for a Savings Plan",
+		}, []string{"savings_plan_arn", "account_id", "type", "region", "instance_family"}),
+
+		SavingsPlanRemainingHours: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "savings_plan_remaining_hours",
+			Help: "Number of hours remaining until Savings Plan expires",
+		}, []string{"savings_plan_arn", "account_id", "type"}),
 	}
 
 	// Register all metrics with the provided registry
@@ -138,6 +159,8 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.DataLastSuccess,
 		m.ReservedInstance,
 		m.ReservedInstanceCount,
+		m.SavingsPlanCommitment,
+		m.SavingsPlanRemainingHours,
 	)
 
 	return m
