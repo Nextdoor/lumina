@@ -61,6 +61,17 @@ type Metrics struct {
 	// succeeded (1) or failed (0). This metric will be populated in Phase 2+.
 	// Labels: account_id, region, data_type
 	DataLastSuccess *prometheus.GaugeVec
+
+	// ReservedInstance indicates the presence of a Reserved Instance.
+	// Value is always 1 when the RI exists. When the RI expires or is removed,
+	// the metric is deleted entirely (not set to 0).
+	// Labels: account_id, region, instance_type, availability_zone
+	ReservedInstance *prometheus.GaugeVec
+
+	// ReservedInstanceCount tracks the count of RIs by instance family.
+	// This provides a higher-level view of RI inventory without per-type granularity.
+	// Labels: account_id, region, instance_family
+	ReservedInstanceCount *prometheus.GaugeVec
 }
 
 // NewMetrics creates and registers all Prometheus metrics with the provided
@@ -105,6 +116,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "lumina_data_last_success",
 			Help: "Indicator of whether last data collection succeeded (1 = success, 0 = failed, Phase 2+)",
 		}, []string{"account_id", "region", "data_type"}),
+
+		ReservedInstance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ec2_reserved_instance",
+			Help: "Indicates presence of a Reserved Instance (1 = exists, metric absent = does not exist)",
+		}, []string{"account_id", "region", "instance_type", "availability_zone"}),
+
+		ReservedInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ec2_reserved_instance_count",
+			Help: "Count of Reserved Instances by instance family",
+		}, []string{"account_id", "region", "instance_family"}),
 	}
 
 	// Register all metrics with the provided registry
@@ -115,6 +136,8 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.AccountValidationDuration,
 		m.DataFreshness,
 		m.DataLastSuccess,
+		m.ReservedInstance,
+		m.ReservedInstanceCount,
 	)
 
 	return m

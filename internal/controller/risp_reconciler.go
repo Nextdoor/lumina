@@ -127,6 +127,13 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 		"regions", stats.RegionCount,
 		"accounts", stats.AccountCount)
 
+	// Update Prometheus metrics with latest RI data
+	// This should happen after all accounts/regions have been queried
+	// so metrics reflect the complete current state
+	allRIs := r.Cache.GetAllReservedInstances()
+	r.Metrics.UpdateReservedInstanceMetrics(allRIs)
+	log.V(1).Info("updated RI metrics", "metric_count", len(allRIs))
+
 	// Requeue after 1 hour
 	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
 }
