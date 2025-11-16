@@ -4,127 +4,14 @@ metadata:
   name: localstack-init-scripts
   namespace: localstack
 data:
-  # Script to create IAM roles and policies for testing
-  # This script is idempotent - safe to run multiple times
-  01-create-roles.sh: |
-    #!/bin/bash
-    # Don't use set -e because we want to continue even if resources already exist
+  # Note: LocalStack init scripts have been replaced with Go-based seeding.
+  # Test data is now seeded programmatically using the seed package.
+  # See test/e2e/localstack/seed/ for implementation details.
+  #
+  # The seeding is triggered by the E2E test suite after LocalStack is ready,
+  # ensuring type-safe, maintainable test data creation.
 
-    echo "Creating IAM roles for e2e testing..."
-
-    # Create a trust policy that allows any principal to assume the role
-    # (LocalStack doesn't enforce strict IAM policies, making testing easier)
-    TRUST_POLICY='{
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Principal": {
-            "AWS": "*"
-          },
-          "Action": "sts:AssumeRole"
-        }
-      ]
-    }'
-
-    # Create IAM role for production account (ignore if already exists)
-    if ! awslocal iam get-role --role-name LuminaTestRole >/dev/null 2>&1; then
-      echo "Creating LuminaTestRole..."
-      awslocal iam create-role \
-        --role-name LuminaTestRole \
-        --assume-role-policy-document "$TRUST_POLICY" \
-        --path "/lumina/" \
-        --description "Test role for Lumina e2e testing"
-    else
-      echo "LuminaTestRole already exists, skipping creation"
-    fi
-
-    # Create IAM role for staging account (ignore if already exists)
-    if ! awslocal iam get-role --role-name LuminaStagingRole >/dev/null 2>&1; then
-      echo "Creating LuminaStagingRole..."
-      awslocal iam create-role \
-        --role-name LuminaStagingRole \
-        --assume-role-policy-document "$TRUST_POLICY" \
-        --path "/lumina/" \
-        --description "Test role for staging account"
-    else
-      echo "LuminaStagingRole already exists, skipping creation"
-    fi
-
-    # Create a managed policy with permissions for EC2 and Savings Plans access
-    PERMISSIONS_POLICY='{
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action": [
-            "ec2:DescribeInstances",
-            "ec2:DescribeReservedInstances",
-            "ec2:DescribeSpotPriceHistory",
-            "savingsplans:DescribeSavingsPlans",
-            "pricing:GetProducts"
-          ],
-          "Resource": "*"
-        }
-      ]
-    }'
-
-    # Create policy (ignore if already exists)
-    if ! awslocal iam get-policy --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy" >/dev/null 2>&1; then
-      echo "Creating LuminaReadOnlyPolicy..."
-      awslocal iam create-policy \
-        --policy-name LuminaReadOnlyPolicy \
-        --policy-document "$PERMISSIONS_POLICY" \
-        --description "Read-only access to EC2 and Savings Plans"
-    else
-      echo "LuminaReadOnlyPolicy already exists, skipping creation"
-    fi
-
-    # Attach the policy to both roles (these commands are idempotent in LocalStack)
-    echo "Attaching policies to roles..."
-    awslocal iam attach-role-policy \
-      --role-name LuminaTestRole \
-      --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy" 2>/dev/null || true
-
-    awslocal iam attach-role-policy \
-      --role-name LuminaStagingRole \
-      --policy-arn "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy" 2>/dev/null || true
-
-    echo "IAM roles created successfully:"
-    awslocal iam list-roles --path-prefix "/lumina/" --query 'Roles[].RoleName'
-
-  # Script to create EC2 instances for testing
-  02-create-ec2-instances.sh: |
-    #!/bin/bash
-    set -e
-
-    echo "Creating EC2 instances for e2e testing..."
-
-    # Create a simple security group (LocalStack requirement)
-    awslocal ec2 create-security-group \
-      --group-name lumina-test-sg \
-      --description "Security group for Lumina e2e testing" \
-      --region us-west-2 || true
-
-    # Run EC2 instances in us-west-2
-    # Note: LocalStack uses fake AMI IDs, any ID will work
-    echo "Creating instances in us-west-2..."
-    awslocal ec2 run-instances \
-      --image-id ami-12345678 \
-      --instance-type m5.xlarge \
-      --count 2 \
-      --region us-west-2 \
-      --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=lumina-test-1},{Key=Environment,Value=test}]'
-
-    awslocal ec2 run-instances \
-      --image-id ami-12345678 \
-      --instance-type c5.large \
-      --count 1 \
-      --region us-west-2 \
-      --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=lumina-test-2},{Key=Environment,Value=production}]'
-
-    # Wait a moment for instances to be created
-    sleep 2
-
-    echo "EC2 instances created successfully"
-    awslocal ec2 describe-instances --region us-west-2 --query 'Reservations[].Instances[].{ID:InstanceId,Type:InstanceType,State:State.Name}'
+  # Placeholder to keep ConfigMap valid (LocalStack doesn't require scripts anymore)
+  README.txt: |
+    LocalStack test data is seeded programmatically using Go.
+    See test/e2e/localstack/seed/ for implementation.

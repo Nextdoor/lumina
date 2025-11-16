@@ -1,0 +1,42 @@
+{
+  "roles": [
+    {
+      "role_name": "LuminaTestRole",
+      "path": "/lumina/",
+      "description": "Test role for Lumina e2e testing",
+      "attached_policies": [
+        "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy"
+      ]
+    },
+    {
+      "role_name": "LuminaStagingRole",
+      "path": "/lumina/",
+      "description": "Test role for staging account",
+      "attached_policies": [
+        "arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy"
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "policy_name": "LuminaReadOnlyPolicy",
+      "description": "Read-only access to EC2 and Savings Plans",
+      "policy_document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "ec2:DescribeInstances",
+              "ec2:DescribeReservedInstances",
+              "ec2:DescribeSpotPriceHistory",
+              "savingsplans:DescribeSavingsPlans",
+              "pricing:GetProducts"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    }
+  ]
+}
