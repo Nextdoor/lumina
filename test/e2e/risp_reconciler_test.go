@@ -21,15 +21,12 @@ package e2e
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/nextdoor/lumina/test/utils"
 )
 
 // RISPReconciler tests validate Phase 2 functionality: Reserved Instance
@@ -334,7 +331,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 			// Check that there are no critical RISP reconciliation errors
 			// Note: We might see other benign errors/warnings, so we're specific about RISP
-			lines := strings.Split(output, "\n")
+			lines := strings.Split(logs, "\n")
 			for _, line := range lines {
 				if strings.Contains(line, "reconciler\": \"risp\"") && strings.Contains(line, "ERROR") {
 					// Allow "expected" LocalStack errors like missing services,

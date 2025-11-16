@@ -63,7 +63,7 @@ var _ = Describe("Manager", Ordered, func() {
 			}
 
 			By("Fetching Kubernetes events")
-			cmd = exec.Command("kubectl", "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
+			cmd := exec.Command("kubectl", "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
 			eventsOutput, err := utils.Run(cmd)
 			if err == nil {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s", eventsOutput)
