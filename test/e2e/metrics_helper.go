@@ -20,13 +20,17 @@ limitations under the License.
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -100,5 +104,106 @@ func (m *MetricsClient) GetMetrics(ctx context.Context) (string, error) {
 	}
 
 	return string(raw), nil
+}
+
+// LogsClient provides a clean interface to fetch logs from pods
+// using the native Kubernetes client instead of kubectl commands.
+type LogsClient struct {
+	namespace  string
+	clientset  *kubernetes.Clientset
+	restConfig *rest.Config
+}
+
+// NewLogsClient creates a new logs client.
+func NewLogsClient(namespace string) (*LogsClient, error) {
+	// Load the kubeconfig from the default location or KUBECONFIG env var
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	config, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	// Create the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	return &LogsClient{
+		namespace:  namespace,
+		clientset:  clientset,
+		restConfig: config,
+	}, nil
+}
+
+// GetPodLogs retrieves logs from a specific pod by name.
+//
+// Options:
+// - tailLines: Number of lines from the end of the logs (nil = all logs)
+// - container: Specific container name (empty = default container)
+func (l *LogsClient) GetPodLogs(ctx context.Context, podName string, tailLines *int64, container string) (string, error) {
+	opts := &corev1.PodLogOptions{
+		TailLines: tailLines,
+	}
+	if container != "" {
+		opts.Container = container
+	}
+
+	req := l.clientset.CoreV1().Pods(l.namespace).GetLogs(podName, opts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to stream logs: %w", err)
+	}
+	defer podLogs.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, podLogs)
+	if err != nil {
+		return "", fmt.Errorf("failed to copy logs: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
+// GetPodLogsByLabel retrieves logs from pods matching a label selector.
+// Returns logs from all matching pods concatenated together.
+//
+// Options:
+// - labelSelector: Kubernetes label selector (e.g., "control-plane=controller-manager")
+// - tailLines: Number of lines from the end of the logs (nil = all logs)
+func (l *LogsClient) GetPodLogsByLabel(ctx context.Context, labelSelector string, tailLines *int64) (string, error) {
+	// List pods matching the label selector
+	podList, err := l.clientset.CoreV1().Pods(l.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	if len(podList.Items) == 0 {
+		return "", fmt.Errorf("no pods found matching label selector: %s", labelSelector)
+	}
+
+	// Get logs from all matching pods
+	var allLogs bytes.Buffer
+	for i, pod := range podList.Items {
+		if i > 0 {
+			allLogs.WriteString("\n") // Separate logs from different pods
+		}
+
+		logs, err := l.GetPodLogs(ctx, pod.Name, tailLines, "")
+		if err != nil {
+			// Continue to next pod if one fails
+			allLogs.WriteString(fmt.Sprintf("# Failed to get logs from pod %s: %v\n", pod.Name, err))
+			continue
+		}
+
+		allLogs.WriteString(logs)
+	}
+
+	return allLogs.String(), nil
 }
 

@@ -72,14 +72,9 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should start RISP reconciliation on controller startup", func() {
 			By("checking controller logs for RISP reconciliation start")
 			Eventually(func(g Gomega) {
-				// Use label selector to get logs from controller pods
-				cmd := exec.Command("kubectl", "logs",
-					"-l", "control-plane=controller-manager",
-					"-n", namespace,
-					"--tail=-1") // Get all logs
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("starting RI/SP reconciliation cycle"),
+				g.Expect(logs).To(ContainSubstring("starting RI/SP reconciliation cycle"),
 					"Controller should have started RISP reconciliation")
 			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -87,10 +82,9 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should complete initial reconciliation cycle", func() {
 			By("checking controller logs for reconciliation completion")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("reconciliation cycle completed"),
+				g.Expect(logs).To(ContainSubstring("reconciliation cycle completed"),
 					"RISP reconciliation should complete")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -98,21 +92,19 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query Reserved Instances from configured regions", func() {
 			By("checking logs for RI queries in us-west-2")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("updated reserved instances"),
+				g.Expect(logs).To(ContainSubstring("updated reserved instances"),
 					"Controller should query Reserved Instances")
-				g.Expect(output).To(ContainSubstring(`"region": "us-west-2"`),
+				g.Expect(logs).To(ContainSubstring(`"region": "us-west-2"`),
 					"Controller should query us-west-2 region")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("checking logs for RI queries in us-east-1")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring(`"region": "us-east-1"`),
+				g.Expect(logs).To(ContainSubstring(`"region": "us-east-1"`),
 					"Controller should query us-east-1 region")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -120,10 +112,9 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query Savings Plans from configured accounts", func() {
 			By("checking logs for SP queries")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("updated savings plans"),
+				g.Expect(logs).To(ContainSubstring("updated savings plans"),
 					"Controller should query Savings Plans")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -131,19 +122,17 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query data from both test accounts", func() {
 			By("checking logs for test-production account")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring(`"account_id": "000000000000"`),
+				g.Expect(logs).To(ContainSubstring(`"account_id": "000000000000"`),
 					"Controller should query test-production account")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("checking logs for test-staging account")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring(`"account_id": "111111111111"`),
+				g.Expect(logs).To(ContainSubstring(`"account_id": "111111111111"`),
 					"Controller should query test-staging account")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -151,16 +140,15 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should log cache statistics after reconciliation", func() {
 			By("checking logs for cache statistics")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("cache statistics"),
+				g.Expect(logs).To(ContainSubstring("cache statistics"),
 					"Controller should log cache statistics")
 				// In LocalStack, we expect 0 RIs/SPs since we can't actually create them,
 				// but the cache statistics log should still appear
-				g.Expect(output).To(ContainSubstring("reserved_instances"),
+				g.Expect(logs).To(ContainSubstring("reserved_instances"),
 					"Cache stats should include RI count")
-				g.Expect(output).To(ContainSubstring("savings_plans"),
+				g.Expect(logs).To(ContainSubstring("savings_plans"),
 					"Cache stats should include SP count")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -337,12 +325,11 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 	Context("Error handling and resilience", func() {
 		It("should not have errors in reconciliation logs", func() {
 			By("checking for error messages in controller logs")
-			cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-			output, err := utils.Run(cmd)
+			logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			// We don't expect fatal errors or panics during RISP reconciliation
-			Expect(output).NotTo(ContainSubstring("panic:"),
+			Expect(logs).NotTo(ContainSubstring("panic:"),
 				"Controller should not panic during RISP reconciliation")
 
 			// Check that there are no critical RISP reconciliation errors
@@ -362,13 +349,12 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should schedule hourly reconciliation", func() {
 			By("checking logs for requeue scheduling")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				// The reconciler should log completion and schedule next run
 				// We look for the completion message which happens before requeuing
-				g.Expect(output).To(ContainSubstring("reconciliation cycle completed"),
+				g.Expect(logs).To(ContainSubstring("reconciliation cycle completed"),
 					"Reconciler should complete cycles")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
@@ -382,21 +368,20 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 		It("should query accounts in parallel", func() {
 			By("verifying logs show concurrent account processing")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				// Both accounts should be processed (logs may be interleaved due to goroutines)
-				g.Expect(output).To(ContainSubstring(`"account_id": "000000000000"`),
+				g.Expect(logs).To(ContainSubstring(`"account_id": "000000000000"`),
 					"Should process test-production account")
-				g.Expect(output).To(ContainSubstring(`"account_id": "111111111111"`),
+				g.Expect(logs).To(ContainSubstring(`"account_id": "111111111111"`),
 					"Should process test-staging account")
 
 				// Look for log messages that indicate parallel execution
 				// (multiple account messages within a short time span)
-				g.Expect(output).To(ContainSubstring("updated reserved instances"),
+				g.Expect(logs).To(ContainSubstring("updated reserved instances"),
 					"Should have RI updates")
-				g.Expect(output).To(ContainSubstring("updated savings plans"),
+				g.Expect(logs).To(ContainSubstring("updated savings plans"),
 					"Should have SP updates")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -411,10 +396,9 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 
 			By("verifying reconciliation completes successfully")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1")
-				output, err := utils.Run(cmd)
+				logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("reconciliation cycle completed"),
+				g.Expect(logs).To(ContainSubstring("reconciliation cycle completed"),
 					"Reconciliation should complete even with partial failures")
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})

@@ -58,8 +58,7 @@ var _ = Describe("Manager", Ordered, func() {
 		specReport := CurrentSpecReport()
 		if specReport.Failed() {
 			By("Fetching controller manager pod logs")
-			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-			controllerLogs, err := utils.Run(cmd)
+			controllerLogs, err := getPodLogs(controllerPodName, nil)
 			if err == nil {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", controllerLogs)
 			} else {
@@ -139,8 +138,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			By("verifying that the controller manager is serving the metrics server")
 			verifyMetricsServerStarted := func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				output, err := getPodLogs(controllerPodName, nil)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
 					"Metrics server not yet started")
@@ -180,8 +178,7 @@ var _ = Describe("Manager", Ordered, func() {
 		It("should successfully load config from ConfigMap", func() {
 			By("checking controller logs for config loading")
 			verifyConfigLoaded := func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				output, err := getPodLogs(controllerPodName, nil)
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to get controller logs")
 				g.Expect(output).NotTo(ContainSubstring("config file not found"), "Should not have config file error")
 				g.Expect(output).To(And(
@@ -304,8 +301,7 @@ var _ = Describe("Manager", Ordered, func() {
 		It("should validate AWS account access in readiness probe", func() {
 			By("checking controller logs for AWS account validation")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
+				output, err := getPodLogs(controllerPodName, nil)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				// The controller should have successfully validated AWS accounts
@@ -384,6 +380,30 @@ func getMetricsOutput() (string, error) {
 
 	ctx := context.Background()
 	return client.GetMetrics(ctx)
+}
+
+// getPodLogs retrieves logs from a specific pod using the native Kubernetes client.
+// This is cleaner than using kubectl commands.
+func getPodLogs(podName string, tailLines *int64) (string, error) {
+	client, err := NewLogsClient(namespace)
+	if err != nil {
+		return "", fmt.Errorf("failed to create logs client: %w", err)
+	}
+
+	ctx := context.Background()
+	return client.GetPodLogs(ctx, podName, tailLines, "")
+}
+
+// getPodLogsByLabel retrieves logs from all pods matching a label selector
+// using the native Kubernetes client. This is cleaner than using kubectl commands.
+func getPodLogsByLabel(labelSelector string, tailLines *int64) (string, error) {
+	client, err := NewLogsClient(namespace)
+	if err != nil {
+		return "", fmt.Errorf("failed to create logs client: %w", err)
+	}
+
+	ctx := context.Background()
+	return client.GetPodLogsByLabel(ctx, labelSelector, tailLines)
 }
 
 // tokenRequest is a simplified representation of the Kubernetes TokenRequest API response,
