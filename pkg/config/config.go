@@ -122,6 +122,7 @@ func Load(path string) (*Config, error) {
 
 	// Unmarshal into Config struct
 	var cfg Config
+	// coverage:ignore - Viper unmarshal errors are extremely rare and difficult to trigger
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}

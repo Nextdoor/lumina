@@ -84,6 +84,7 @@ func (c *RealEC2Client) DescribeInstances(_ context.Context, _ []string) ([]Inst
 //
 // Reserved Instances are queried per-region because they are regional resources.
 // This method handles pagination automatically to retrieve all RIs.
+// coverage:ignore - requires real AWS credentials, tested via E2E with LocalStack
 func (c *RealEC2Client) DescribeReservedInstances(ctx context.Context, regions []string) ([]ReservedInstance, error) {
 	// If no regions specified, we should query all regions
 	// For now, just query the client's configured region

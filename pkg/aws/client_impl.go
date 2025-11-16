@@ -165,11 +165,12 @@ func (c *RealClient) getCredentials(
 	// Perform AssumeRole
 	// This path is tested in localstack_integration_test.go with the -tags=localstack build tag
 	// which tests real STS AssumeRole operations against LocalStack.
+	// coverage:ignore - AssumeRole path tested in integration tests with LocalStack
 	result, err := c.stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
 		RoleArn:         &accountConfig.AssumeRoleARN,
 		RoleSessionName: ptrString("lumina-" + accountConfig.AccountID),
 	})
-	if err != nil { // coverage:ignore - error handling tested in integration tests
+	if err != nil {
 		return credentials.StaticCredentialsProvider{}, err
 	}
 
