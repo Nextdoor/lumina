@@ -279,6 +279,7 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 }
 
 // SetupWithManager sets up the reconciler with the Manager.
+// coverage:ignore - controller-runtime boilerplate, tested via E2E
 func (r *RISPReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Use a simple timer-based reconciliation (hourly)
 	// We don't watch any Kubernetes resources - this is purely time-driven

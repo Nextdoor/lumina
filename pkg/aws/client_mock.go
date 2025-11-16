@@ -134,6 +134,12 @@ type MockEC2Client struct {
 	// SpotPrices is the mock spot price data
 	SpotPrices []SpotPrice
 
+	// Error injection for testing error paths
+	DescribeInstancesError         error
+	DescribeReservedInstancesError error
+	DescribeSpotPriceHistoryError  error
+	GetInstanceByIDError           error
+
 	// CallCounts tracks method call counts
 	DescribeInstancesCallCount         int
 	DescribeReservedInstancesCallCount int
@@ -181,6 +187,11 @@ func (m *MockEC2Client) DescribeReservedInstances(ctx context.Context, regions [
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.DescribeReservedInstancesCallCount++
+
+	// Return error if set (for testing error paths)
+	if m.DescribeReservedInstancesError != nil {
+		return nil, m.DescribeReservedInstancesError
+	}
 
 	// Filter by region if specified
 	if len(regions) == 0 {
@@ -273,6 +284,10 @@ type MockSavingsPlansClient struct {
 	// SavingsPlans is the mock Savings Plans data
 	SavingsPlans []SavingsPlan
 
+	// Error injection for testing error paths
+	DescribeSavingsPlansError error
+	GetSavingsPlanByARNError  error
+
 	// CallCounts tracks method call counts
 	DescribeSavingsPlansCallCount int
 	GetSavingsPlanByARNCallCount  int
@@ -290,6 +305,11 @@ func (m *MockSavingsPlansClient) DescribeSavingsPlans(ctx context.Context) ([]Sa
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	m.DescribeSavingsPlansCallCount++
+
+	// Return error if set (for testing error paths)
+	if m.DescribeSavingsPlansError != nil {
+		return nil, m.DescribeSavingsPlansError
+	}
 
 	return m.SavingsPlans, nil
 }

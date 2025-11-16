@@ -498,3 +498,183 @@ func TestRISPReconciler_Reconcile_UpdatesExistingData(t *testing.T) {
 	ris := rispCache.GetReservedInstances("us-west-2", "123456789012")
 	assert.Len(t, ris, 2, "should have both RIs")
 }
+
+// TestRISPReconciler_Reconcile_EC2ClientError tests error handling when EC2 client creation fails.
+func TestRISPReconciler_Reconcile_EC2ClientError(t *testing.T) {
+	// Create mock client that returns error for EC2
+	mockClient := aws.NewMockClient()
+	mockClient.EC2Error = assert.AnError
+
+	// Create config
+	cfg := &config.Config{
+		AWSAccounts: []config.AWSAccount{
+			{AccountID: "123456789012", Name: "test-account"},
+		},
+		DefaultRegion: "us-west-2",
+	}
+
+	// Create cache and metrics
+	rispCache := cache.NewRISPCache()
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+
+	// Create reconciler
+	reconciler := &RISPReconciler{
+		AWSClient: mockClient,
+		Config:    cfg,
+		Cache:     rispCache,
+		Metrics:   m,
+		Log:       logr.Discard(),
+		Regions:   []string{"us-west-2"},
+	}
+
+	// Run reconciliation - should complete but log error
+	ctx := context.Background()
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+
+	// Should not return error (graceful degradation)
+	require.NoError(t, err)
+	assert.Equal(t, 1*time.Hour, result.RequeueAfter)
+}
+
+// TestRISPReconciler_Reconcile_SavingsPlansClientError tests error handling when SavingsPlans client creation fails.
+func TestRISPReconciler_Reconcile_SavingsPlansClientError(t *testing.T) {
+	// Create mock client that returns error for SavingsPlans
+	mockClient := aws.NewMockClient()
+	mockClient.SavingsPlansError = assert.AnError
+
+	// Create config
+	cfg := &config.Config{
+		AWSAccounts: []config.AWSAccount{
+			{AccountID: "123456789012", Name: "test-account"},
+		},
+		DefaultRegion: "us-west-2",
+	}
+
+	// Create cache and metrics
+	rispCache := cache.NewRISPCache()
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+
+	// Create reconciler
+	reconciler := &RISPReconciler{
+		AWSClient: mockClient,
+		Config:    cfg,
+		Cache:     rispCache,
+		Metrics:   m,
+		Log:       logr.Discard(),
+		Regions:   []string{"us-west-2"},
+	}
+
+	// Run reconciliation - should complete but log error
+	ctx := context.Background()
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+
+	// Should not return error (graceful degradation)
+	require.NoError(t, err)
+	assert.Equal(t, 1*time.Hour, result.RequeueAfter)
+}
+
+// TestRISPReconciler_Reconcile_DescribeReservedInstancesError tests error handling when DescribeReservedInstances API call fails.
+func TestRISPReconciler_Reconcile_DescribeReservedInstancesError(t *testing.T) {
+	// Create mock client
+	mockClient := aws.NewMockClient()
+	ctx := context.Background()
+
+	// Setup EC2 client that will return error on DescribeReservedInstances
+	ec2Client, err := mockClient.EC2(ctx, aws.AccountConfig{
+		AccountID: "123456789012",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	mockEC2 := ec2Client.(*aws.MockEC2Client)
+	mockEC2.DescribeReservedInstancesError = assert.AnError // This will cause DescribeReservedInstances to fail
+
+	// Setup SavingsPlans client with empty data
+	spClient, err := mockClient.SavingsPlans(ctx, aws.AccountConfig{
+		AccountID: "123456789012",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	_ = spClient // Empty data, no setup needed
+
+	// Create config
+	cfg := &config.Config{
+		AWSAccounts: []config.AWSAccount{
+			{AccountID: "123456789012", Name: "test-account"},
+		},
+		DefaultRegion: "us-west-2",
+	}
+
+	// Create cache and metrics
+	rispCache := cache.NewRISPCache()
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+
+	// Create reconciler
+	reconciler := &RISPReconciler{
+		AWSClient: mockClient,
+		Config:    cfg,
+		Cache:     rispCache,
+		Metrics:   m,
+		Log:       logr.Discard(),
+		Regions:   []string{"us-west-2"},
+	}
+
+	// Run reconciliation - should complete but log error
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+
+	// Should not return error (graceful degradation)
+	require.NoError(t, err)
+	assert.Equal(t, 1*time.Hour, result.RequeueAfter)
+}
+
+// TestRISPReconciler_Reconcile_DescribeSavingsPlansError tests error handling when DescribeSavingsPlans API call fails.
+func TestRISPReconciler_Reconcile_DescribeSavingsPlansError(t *testing.T) {
+	// Create mock client
+	mockClient := aws.NewMockClient()
+	ctx := context.Background()
+
+	// Setup EC2 client with empty data
+	ec2Client, err := mockClient.EC2(ctx, aws.AccountConfig{
+		AccountID: "123456789012",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	_ = ec2Client // Empty data, no setup needed
+
+	// Setup SavingsPlans client that will return error on DescribeSavingsPlans
+	spClient, err := mockClient.SavingsPlans(ctx, aws.AccountConfig{
+		AccountID: "123456789012",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	mockSP := spClient.(*aws.MockSavingsPlansClient)
+	mockSP.DescribeSavingsPlansError = assert.AnError // This will cause DescribeSavingsPlans to fail
+
+	// Create config
+	cfg := &config.Config{
+		AWSAccounts: []config.AWSAccount{
+			{AccountID: "123456789012", Name: "test-account"},
+		},
+		DefaultRegion: "us-west-2",
+	}
+
+	// Create cache and metrics
+	rispCache := cache.NewRISPCache()
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+
+	// Create reconciler
+	reconciler := &RISPReconciler{
+		AWSClient: mockClient,
+		Config:    cfg,
+		Cache:     rispCache,
+		Metrics:   m,
+		Log:       logr.Discard(),
+		Regions:   []string{"us-west-2"},
+	}
+
+	// Run reconciliation - should complete but log error
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+
+	// Should not return error (graceful degradation)
+	require.NoError(t, err)
+	assert.Equal(t, 1*time.Hour, result.RequeueAfter)
+}
