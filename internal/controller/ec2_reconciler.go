@@ -35,12 +35,14 @@ import (
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 
 // EC2Reconciler reconciles EC2 instance data across all AWS accounts.
-// It queries AWS APIs every 5 minutes to maintain fresh instance inventory.
+// It queries AWS APIs at a configurable interval to maintain fresh instance inventory.
 //
 // EC2 instances change frequently due to autoscaling, spot interruptions, and manual
-// changes. The 5-minute refresh cycle provides timely data for cost calculations while
-// respecting AWS API rate limits (DescribeInstances allows 200 requests/second, well
-// above our typical 0.2 requests/second usage).
+// changes. The default 5-minute refresh cycle provides timely data for cost calculations
+// while respecting AWS API rate limits (DescribeInstances allows 200 requests/second,
+// well above our typical 0.2 requests/second usage).
+//
+// The reconciliation interval can be configured via config.Reconciliation.EC2.
 type EC2Reconciler struct {
 	// AWS client for making API calls
 	AWSClient aws.Client
@@ -63,7 +65,7 @@ type EC2Reconciler struct {
 }
 
 // Reconcile performs a single reconciliation cycle.
-// This is called by controller-runtime on a timer (every 5 minutes).
+// This is called by controller-runtime on a timer at the configured interval.
 //
 // The reconciler queries all account+region combinations in parallel for performance.
 // Individual failures are logged but don't stop the entire reconciliation cycle,
@@ -148,9 +150,22 @@ func (r *EC2Reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Res
 		"total_instances", len(allInstances),
 		"running_instances", len(runningInstances))
 
-	// Requeue after 5 minutes
+	// Parse reconciliation interval from config, with default fallback to 5 minutes
+	// The interval determines how often we refresh EC2 instance inventory data
+	requeueAfter := 5 * time.Minute // Default
+	if r.Config.Reconciliation.EC2 != "" {
+		if duration, err := time.ParseDuration(r.Config.Reconciliation.EC2); err == nil {
+			requeueAfter = duration
+		} else {
+			log.Error(err, "invalid EC2 reconciliation interval, using default",
+				"configured_interval", r.Config.Reconciliation.EC2,
+				"default", "5m")
+		}
+	}
+
+	// Requeue after configured interval
 	// This creates the periodic reconciliation loop without requiring external triggers
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 // reconcileAccountRegion queries EC2 instances for a single account+region combination.
@@ -245,7 +260,7 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 //
 // Behavior:
 //   - Runs initial reconciliation immediately on startup
-//   - Sets up 5-minute ticker for periodic reconciliation
+//   - Sets up ticker for periodic reconciliation at configured interval (default: 5 minutes)
 //   - Continues running even if individual reconciliation cycles fail
 //   - Stops gracefully when context is cancelled (SIGTERM/SIGINT)
 //
@@ -256,6 +271,7 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 // or via the convenience Make target:
 //
 //	make run-local
+//
 // coverage:ignore - standalone mode, tested manually
 func (r *EC2Reconciler) RunStandalone(ctx context.Context) error {
 	log := r.Log.WithValues("mode", "standalone")
@@ -268,8 +284,21 @@ func (r *EC2Reconciler) RunStandalone(ctx context.Context) error {
 		// Don't exit - continue with periodic reconciliation
 	}
 
-	// Setup 5-minute ticker for EC2 data (more frequent than RI/SP hourly updates)
-	ticker := time.NewTicker(5 * time.Minute)
+	// Parse reconciliation interval from config, with default fallback to 5 minutes
+	interval := 5 * time.Minute // Default
+	if r.Config.Reconciliation.EC2 != "" {
+		if duration, err := time.ParseDuration(r.Config.Reconciliation.EC2); err == nil {
+			interval = duration
+		} else {
+			log.Error(err, "invalid EC2 reconciliation interval, using default",
+				"configured_interval", r.Config.Reconciliation.EC2,
+				"default", "5m")
+		}
+	}
+
+	// Setup ticker for EC2 data
+	log.Info("configured reconciliation interval", "interval", interval.String())
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

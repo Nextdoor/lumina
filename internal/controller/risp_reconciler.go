@@ -165,8 +165,21 @@ func (r *RISPReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	r.Metrics.UpdateSavingsPlansInventoryMetrics(allSPs)
 	log.V(1).Info("updated SP metrics", "metric_count", len(allSPs))
 
-	// Requeue after 1 hour
-	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
+	// Parse reconciliation interval from config, with default fallback to 1 hour
+	// The interval determines how often we refresh RI/SP data
+	requeueAfter := 1 * time.Hour // Default
+	if r.Config.Reconciliation.RISP != "" {
+		if duration, err := time.ParseDuration(r.Config.Reconciliation.RISP); err == nil {
+			requeueAfter = duration
+		} else {
+			log.Error(err, "invalid RISP reconciliation interval, using default",
+				"configured_interval", r.Config.Reconciliation.RISP,
+				"default", "1h")
+		}
+	}
+
+	// Requeue after configured interval
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 // reconcileReservedInstances queries RIs for a single account across all regions.
@@ -401,8 +414,21 @@ func (r *RISPReconciler) RunStandalone(ctx context.Context) error {
 		// Don't exit - continue with periodic reconciliation
 	}
 
-	// Setup hourly ticker
-	ticker := time.NewTicker(1 * time.Hour)
+	// Parse reconciliation interval from config, with default fallback to 1 hour
+	interval := 1 * time.Hour // Default
+	if r.Config.Reconciliation.RISP != "" {
+		if duration, err := time.ParseDuration(r.Config.Reconciliation.RISP); err == nil {
+			interval = duration
+		} else {
+			log.Error(err, "invalid RISP reconciliation interval, using default",
+				"configured_interval", r.Config.Reconciliation.RISP,
+				"default", "1h")
+		}
+	}
+
+	// Setup ticker for RISP data
+	log.Info("configured reconciliation interval", "interval", interval.String())
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

@@ -544,3 +544,96 @@ func TestAWSAccountValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestReconciliationIntervalValidation tests validation of reconciliation interval fields.
+func TestReconciliationIntervalValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		reconciliation ReconciliationConfig
+		wantErr        bool
+		errMsg         string
+	}{
+		{
+			name: "valid RISP interval",
+			reconciliation: ReconciliationConfig{
+				RISP: "1h",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid EC2 interval",
+			reconciliation: ReconciliationConfig{
+				EC2: "5m",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid both intervals",
+			reconciliation: ReconciliationConfig{
+				RISP: "30m",
+				EC2:  "2m",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty intervals (use defaults)",
+			reconciliation: ReconciliationConfig{
+				RISP: "",
+				EC2:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid RISP interval",
+			reconciliation: ReconciliationConfig{
+				RISP: "invalid",
+			},
+			wantErr: true,
+			errMsg:  "invalid RISP reconciliation interval",
+		},
+		{
+			name: "invalid EC2 interval",
+			reconciliation: ReconciliationConfig{
+				EC2: "not-a-duration",
+			},
+			wantErr: true,
+			errMsg:  "invalid EC2 reconciliation interval",
+		},
+		{
+			name: "negative RISP interval",
+			reconciliation: ReconciliationConfig{
+				RISP: "-1h",
+			},
+			wantErr: false, // time.ParseDuration accepts negative values
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				AWSAccounts: []AWSAccount{
+					{
+						AccountID:     "123456789012",
+						Name:          "test-account",
+						AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+					},
+				},
+				Reconciliation: tt.reconciliation,
+			}
+			err := cfg.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Validate() expected error containing %q, got nil", tt.errMsg)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Validate() error = %q, want error containing %q", err.Error(), tt.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Validate() unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
