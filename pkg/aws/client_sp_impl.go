@@ -27,6 +27,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 )
 
+const (
+	// RegionAll represents region scope for Compute Savings Plans that apply organization-wide
+	RegionAll = "all"
+)
+
 // RealSPClient is a production implementation of SavingsPlansClient that makes
 // real API calls to AWS Savings Plans using the AWS SDK v2.
 type RealSPClient struct {
@@ -73,6 +78,7 @@ func NewRealSPClient(
 // DescribeSavingsPlans returns all active Savings Plans for the account.
 // This API is not region-specific - it returns all Savings Plans for the account.
 // The method handles pagination automatically to retrieve all Savings Plans.
+// coverage:ignore - requires real AWS credentials, tested via E2E with LocalStack
 func (c *RealSPClient) DescribeSavingsPlans(ctx context.Context) ([]SavingsPlan, error) {
 	var allSPs []SavingsPlan
 
@@ -109,6 +115,7 @@ func (c *RealSPClient) DescribeSavingsPlans(ctx context.Context) ([]SavingsPlan,
 }
 
 // GetSavingsPlanByARN returns a specific Savings Plan by ARN.
+// coverage:ignore - requires real AWS credentials, tested via E2E with LocalStack
 func (c *RealSPClient) GetSavingsPlanByARN(ctx context.Context, arn string) (*SavingsPlan, error) {
 	input := &savingsplans.DescribeSavingsPlansInput{
 		SavingsPlanArns: []string{arn},
@@ -155,7 +162,7 @@ func convertSavingsPlan(sp types.SavingsPlan, accountID string) SavingsPlan {
 	region := aws.ToString(sp.Region)
 	savingsPlanType := string(sp.SavingsPlanType)
 	if savingsPlanType == "Compute" || savingsPlanType == "ComputeSP" {
-		region = "all" // Compute SPs apply across all regions
+		region = RegionAll // Compute SPs apply across all regions
 	}
 
 	// Extract instance family for EC2 Instance Savings Plans

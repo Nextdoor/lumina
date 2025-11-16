@@ -55,6 +55,7 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// coverage:ignore - initialization code, tested via E2E
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
@@ -62,6 +63,7 @@ func init() {
 }
 
 // nolint:gocyclo
+// coverage:ignore - main entrypoint, tested via E2E
 func main() {
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
