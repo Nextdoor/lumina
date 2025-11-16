@@ -30,3 +30,7 @@ go.work
 
 # Kubeconfig might contain secrets
 *.kubeconfig
+
+# When testing the controller locally, allow the user to create a config file
+# that we don'tt check in.
+config.yaml

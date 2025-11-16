@@ -25,12 +25,15 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"net/http"
 	"os"
+	"path/filepath"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -55,6 +58,149 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// runStandalone runs the controller in standalone mode without Kubernetes integration.
+// This mode only collects AWS data and exposes metrics - no K8s reconciliation loops.
+// coverage:ignore - standalone mode, tested manually or via E2E
+func runStandalone(
+	cfg *config.Config,
+	metricsAddr string,
+	probeAddr string,
+	secureMetrics bool,
+	metricsCertPath, metricsCertName, metricsCertKey string,
+	tlsOpts []func(*tls.Config),
+) error {
+	setupLog.Info("starting in standalone mode (no Kubernetes integration)")
+
+	// Create AWS client
+	awsClient, err := aws.NewClient(aws.ClientConfig{
+		DefaultRegion: cfg.DefaultRegion,
+	})
+	if err != nil {
+		return err
+	}
+	setupLog.Info("created AWS client")
+
+	// Initialize Prometheus metrics without controller-runtime manager
+	// We'll create our own HTTP server for metrics
+	metricsRegistry := ctrlmetrics.Registry
+	luminaMetrics := metrics.NewMetrics(metricsRegistry)
+	luminaMetrics.ControllerRunning.Set(1)
+	setupLog.Info("metrics initialized")
+
+	// Initialize RI/SP cache
+	rispCache := cache.NewRISPCache()
+	setupLog.Info("initialized RI/SP cache")
+
+	// Create RISP reconciler for standalone mode
+	// In standalone mode, we'll run it on a timer instead of K8s reconciliation
+	rispReconciler := &controller.RISPReconciler{
+		AWSClient: awsClient,
+		Config:    cfg,
+		Cache:     rispCache,
+		Metrics:   luminaMetrics,
+		Log:       ctrl.Log.WithName("risp-reconciler"),
+		Regions:   cfg.Regions,
+	}
+
+	// Start reconciler in background goroutine
+	ctx := ctrl.SetupSignalHandler()
+	go func() {
+		if err := rispReconciler.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "RISP reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started RISP reconciler in standalone mode")
+
+	// Setup metrics server using standard http package
+	// In standalone mode, we serve Prometheus metrics directly without authentication
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.HandlerFor(metricsRegistry, promhttp.HandlerOpts{}))
+
+	var metricsServer *http.Server
+	if secureMetrics {
+		setupLog.Info("metrics server running with TLS but no authentication (standalone mode)")
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		for _, opt := range tlsOpts {
+			opt(tlsConfig)
+		}
+
+		if len(metricsCertPath) > 0 {
+			certFile := filepath.Join(metricsCertPath, metricsCertName)
+			keyFile := filepath.Join(metricsCertPath, metricsCertKey)
+			metricsServer = &http.Server{
+				Addr:      metricsAddr,
+				Handler:   metricsMux,
+				TLSConfig: tlsConfig,
+			}
+			go func() {
+				setupLog.Info("starting metrics server with TLS", "address", metricsAddr)
+				if err := metricsServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+					setupLog.Error(err, "metrics server stopped with error")
+				}
+			}()
+		} else {
+			setupLog.Info("TLS requested but no certificates provided, using HTTP instead")
+			metricsServer = &http.Server{
+				Addr:    metricsAddr,
+				Handler: metricsMux,
+			}
+			go func() {
+				setupLog.Info("starting metrics server", "address", metricsAddr)
+				if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					setupLog.Error(err, "metrics server stopped with error")
+				}
+			}()
+		}
+	} else {
+		metricsServer = &http.Server{
+			Addr:    metricsAddr,
+			Handler: metricsMux,
+		}
+		go func() {
+			setupLog.Info("starting metrics server", "address", metricsAddr)
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				setupLog.Error(err, "metrics server stopped with error")
+			}
+		}()
+	}
+	setupLog.Info("metrics server ready")
+
+	// Setup health check server
+	healthHandler := &healthz.Handler{
+		Checks: map[string]healthz.Checker{
+			"healthz": healthz.Ping,
+			"readyz": aws.NewHealthChecker(
+				aws.NewAccountValidator(awsClient),
+				cfg.AWSAccounts,
+			).Check,
+		},
+	}
+
+	healthMux := http.NewServeMux()
+	healthMux.Handle("/healthz", http.StripPrefix("/healthz", healthHandler))
+	healthMux.Handle("/readyz", http.StripPrefix("/readyz", healthHandler))
+
+	healthServer := &http.Server{
+		Addr:    probeAddr,
+		Handler: healthMux,
+	}
+
+	go func() {
+		setupLog.Info("starting health server", "address", probeAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			setupLog.Error(err, "health server stopped with error")
+		}
+	}()
+	setupLog.Info("health server ready")
+
+	// Wait for shutdown signal
+	<-ctx.Done()
+	setupLog.Info("shutting down standalone mode")
+	return nil
+}
+
 // coverage:ignore - initialization code, tested via E2E
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -74,6 +220,7 @@ func main() {
 	var metricsAuth bool
 	var enableHTTP2 bool
 	var configFile string
+	var noKubernetes bool
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&configFile, "config", "/etc/lumina/config.yaml",
 		"Path to the controller configuration file. Can be overridden with LUMINA_CONFIG_PATH environment variable.")
@@ -88,6 +235,9 @@ func main() {
 	flag.BoolVar(&metricsAuth, "metrics-auth", false,
 		"If set, the metrics endpoint requires authentication. "+
 			"Use --metrics-auth=true to enable Kubernetes RBAC authentication.")
+	flag.BoolVar(&noKubernetes, "no-kubernetes", false,
+		"Run in standalone mode without Kubernetes integration. "+
+			"Only AWS data collection and metrics will be available.")
 	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
@@ -142,6 +292,19 @@ func main() {
 	if !enableHTTP2 {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
+
+	// If running in standalone mode, skip Kubernetes manager setup
+	if noKubernetes {
+		if err := runStandalone(cfg, metricsAddr, probeAddr, secureMetrics,
+			metricsCertPath, metricsCertName, metricsCertKey, tlsOpts); err != nil {
+			setupLog.Error(err, "standalone mode failed")
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Normal Kubernetes mode continues below...
+	setupLog.Info("starting in Kubernetes mode")
 
 	// Initial webhook TLS options
 	webhookTLSOpts := tlsOpts
@@ -253,13 +416,14 @@ func main() {
 	// Setup RISP reconciler for hourly data collection
 	// This reconciler queries AWS APIs for Reserved Instances and Savings Plans
 	// and maintains an in-memory cache for cost calculation (future phases)
+	// Regions will be read from cfg.Regions with account-specific overrides
 	if err := (&controller.RISPReconciler{
 		AWSClient: awsClient,
 		Config:    cfg,
 		Cache:     rispCache,
 		Metrics:   luminaMetrics,
 		Log:       ctrl.Log.WithName("risp-reconciler"),
-		Regions:   []string{"us-west-2", "us-east-1"}, // TODO: Make configurable
+		Regions:   cfg.Regions,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RISP")
 		os.Exit(1)
