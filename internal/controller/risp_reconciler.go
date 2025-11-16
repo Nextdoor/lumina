@@ -32,6 +32,8 @@ import (
 	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+
 // RISPReconciler reconciles Reserved Instances and Savings Plans data.
 // It queries AWS APIs hourly to maintain an up-to-date cache of RI/SP inventory.
 type RISPReconciler struct {

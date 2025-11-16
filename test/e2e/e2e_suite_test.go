@@ -100,9 +100,58 @@ var _ = BeforeSuite(func() {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: LocalStack is already installed. Skipping installation...\n")
 		}
 	}
+
+	// Deploy the controller once for all tests to use
+	// This runs after CertManager and LocalStack are installed
+	By("creating manager namespace")
+	cmd = exec.Command("kubectl", "create", "ns", namespace)
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create namespace")
+
+	By("labeling the namespace to enforce the restricted security policy")
+	cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+		"pod-security.kubernetes.io/enforce=restricted")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+
+	By("installing CRDs")
+	cmd = exec.Command("make", "install")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install CRDs")
+
+	By("deploying the controller-manager with e2e configuration")
+	// Use kubectl apply with e2e kustomization that includes LocalStack config
+	cmd = exec.Command("kubectl", "apply", "-k", "config/e2e")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager with e2e config")
+
+	// Update the image in the deployment to use our test image
+	cmd = exec.Command("kubectl", "set", "image",
+		"deployment/lumina-controller-manager",
+		fmt.Sprintf("manager=%s", projectImage),
+		"-n", namespace)
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to set controller-manager image")
 })
 
 var _ = AfterSuite(func() {
+	// Teardown controller before tearing down dependencies
+	By("cleaning up the curl-metrics pod if it exists")
+	cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found=true")
+	_, _ = utils.Run(cmd)
+
+	By("undeploying the controller-manager")
+	cmd = exec.Command("make", "undeploy")
+	_, _ = utils.Run(cmd)
+
+	By("uninstalling CRDs")
+	cmd = exec.Command("make", "uninstall")
+	_, _ = utils.Run(cmd)
+
+	By("removing manager namespace")
+	cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found=true")
+	_, _ = utils.Run(cmd)
+
 	// Teardown LocalStack after the suite if not skipped and if it was not already installed
 	if !skipLocalStackInstall && !isLocalStackAlreadyInstalled {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling LocalStack...\n")
