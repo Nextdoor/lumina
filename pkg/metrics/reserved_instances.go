@@ -77,12 +77,6 @@ func (m *Metrics) UpdateReservedInstanceMetrics(ris []aws.ReservedInstance) {
 	// Set aggregated family counts
 	for key, count := range familyCounts {
 		parts := strings.Split(key, ":")
-		// coverage:ignore - Defensive check for internal data consistency, key format is controlled by us
-		if len(parts) != 3 {
-			// Should never happen, but skip malformed keys
-			continue
-		}
-
 		m.ReservedInstanceCount.With(prometheus.Labels{
 			"account_id":      parts[0],
 			"region":          parts[1],
