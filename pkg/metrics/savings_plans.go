@@ -23,79 +23,103 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// UpdateSavingsPlansMetrics updates Savings Plans inventory metrics from the
-// provided list of Savings Plans. This implements Phase 3 of the RFC, which
-// covers SP inventory metrics only (not utilization metrics - those come in Phase 6).
-//
+const (
+	// spLabelAll is used for Compute SPs which apply globally
+	spLabelAll = "all"
+)
+
+// UpdateSavingsPlansInventoryMetrics updates SP inventory metrics from the provided list of Savings Plans.
 // This function implements proper metric lifecycle management:
 //  1. Resets all existing SP metrics (clean slate approach)
 //  2. Sets new values for all currently active SPs
 //  3. Deleted/expired SPs are automatically removed by the reset
 //
-// The function emits two types of metrics per RFC Phase 3 (lines 1774-1778):
+// The function handles two types of metrics:
 //   - savings_plan_hourly_commitment: Fixed hourly commitment amount ($/hour)
 //   - savings_plan_remaining_hours: Hours until SP expires
 //
-// Note: SP utilization metrics (current_utilization_rate, remaining_capacity,
-// utilization_percent) are NOT emitted here. Per RFC lines 1779-1784, these
-// are "added after Phase 6 when cost calculation works."
-//
 // This should be called by the RISP reconciler after successfully updating
-// the Savings Plans cache (typically hourly).
+// the SP cache (typically hourly).
+//
+// Note: This function handles INVENTORY metrics only. Utilization metrics
+// (current usage, remaining capacity, utilization %) will be added in Phase 6
+// after cost calculation is implemented.
 //
 // Example usage:
 //
 //	sps := rispCache.GetAllSavingsPlans()
-//	metrics.UpdateSavingsPlansMetrics(sps)
-func (m *Metrics) UpdateSavingsPlansMetrics(sps []aws.SavingsPlan) {
+//	metrics.UpdateSavingsPlansInventoryMetrics(sps)
+func (m *Metrics) UpdateSavingsPlansInventoryMetrics(sps []aws.SavingsPlan) {
 	// Reset all existing SP metrics to ensure deleted/expired SPs are removed.
 	// This is more reliable than trying to track which specific SPs were deleted.
-	m.SavingsPlanHourlyCommitment.Reset()
+	m.SavingsPlanCommitment.Reset()
 	m.SavingsPlanRemainingHours.Reset()
+
+	now := time.Now()
 
 	// Process each Savings Plan
 	for _, sp := range sps {
-		// Skip inactive Savings Plans (expired, queued, etc.)
-		// Only emit metrics for active SPs
+		// Skip inactive SPs (expired, retired, etc.)
 		if sp.State != "active" {
 			continue
 		}
 
-		// Determine region label value
-		// EC2 Instance SPs are regional, Compute SPs apply to all regions
+		// Determine type label: "ec2_instance" or "compute"
+		// AWS uses PascalCase, we normalize to snake_case for consistency
+		spType := normalizeSPType(sp.SavingsPlanType)
+
+		// Determine region and instance_family labels based on SP type
 		region := sp.Region
-		if region == "" {
-			region = "all"
-		}
-
-		// Determine instance family label value
-		// EC2 Instance SPs are specific to a family, Compute SPs apply to all
 		instanceFamily := sp.InstanceFamily
-		if instanceFamily == "" {
-			instanceFamily = "all"
+
+		// For Compute SPs: apply globally to all regions and families
+		if spType == "compute" {
+			region = spLabelAll
+			instanceFamily = spLabelAll
 		}
 
-		// Set hourly commitment metric
-		// This is the fixed $/hour amount the customer committed to spend
-		m.SavingsPlanHourlyCommitment.With(prometheus.Labels{
+		// Set commitment metric
+		m.SavingsPlanCommitment.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
-			"type":             sp.SavingsPlanType,
 			"account_id":       sp.AccountID,
+			"type":             spType,
 			"region":           region,
 			"instance_family":  instanceFamily,
 		}).Set(sp.Commitment)
 
-		// Calculate remaining hours until SP expires
-		remainingHours := time.Until(sp.End).Hours()
-		if remainingHours < 0 {
-			// SP has expired (shouldn't happen if State is "active", but defensive)
-			remainingHours = 0
-		}
+		// Calculate remaining hours until expiration
+		remainingHours := calculateRemainingHours(sp.End, now)
 
 		// Set remaining hours metric
 		m.SavingsPlanRemainingHours.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
 			"account_id":       sp.AccountID,
+			"type":             spType,
 		}).Set(remainingHours)
 	}
+}
+
+// normalizeSPType converts AWS SavingsPlan type to normalized form.
+// AWS API returns: "EC2Instance" or "Compute"
+// We normalize to: "ec2_instance" or "compute"
+func normalizeSPType(spType string) string {
+	switch spType {
+	case "EC2Instance":
+		return "ec2_instance"
+	case "Compute":
+		return "compute"
+	default:
+		// Unknown type - return as-is (defensive programming)
+		return spType
+	}
+}
+
+// calculateRemainingHours calculates the number of hours remaining until expiration.
+// Returns 0 if the SP has already expired.
+func calculateRemainingHours(endTime time.Time, now time.Time) float64 {
+	remaining := endTime.Sub(now)
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining.Hours()
 }
