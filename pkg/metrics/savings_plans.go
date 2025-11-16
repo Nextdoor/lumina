@@ -80,6 +80,7 @@ func (m *Metrics) UpdateSavingsPlansInventoryMetrics(sps []aws.SavingsPlan) {
 
 		// For EC2 Instance SPs: if InstanceFamily is empty, use "all"
 		// (defensive - should not happen in practice)
+		// coverage:ignore - Defensive check for data consistency, AWS API always provides InstanceFamily for EC2 Instance SPs
 		if spType == "ec2_instance" && instanceFamily == "" {
 			instanceFamily = spLabelAll
 		}
