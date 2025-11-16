@@ -93,6 +93,7 @@ func runStandalone(
 
 	// Create RISP reconciler for standalone mode
 	// In standalone mode, we'll run it on a timer instead of K8s reconciliation
+	// Regions will be read from cfg.Regions with account-specific overrides
 	rispReconciler := &controller.RISPReconciler{
 		AWSClient: awsClient,
 		Config:    cfg,
