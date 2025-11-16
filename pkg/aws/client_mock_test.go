@@ -732,3 +732,35 @@ func TestMockPricingClient_GetOnDemandPrices(t *testing.T) {
 		})
 	}
 }
+
+// TestMockEC2Client_DescribeReservedInstances_ErrorInjection tests error injection.
+func TestMockEC2Client_DescribeReservedInstances_ErrorInjection(t *testing.T) {
+	mockEC2 := NewMockEC2Client()
+	mockEC2.DescribeReservedInstancesError = errors.New("mock error")
+
+	ctx := context.Background()
+	result, err := mockEC2.DescribeReservedInstances(ctx, []string{"us-west-2"})
+
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if result != nil {
+		t.Errorf("expected nil result, got %v", result)
+	}
+}
+
+// TestMockSavingsPlansClient_DescribeSavingsPlans_ErrorInjection tests error injection.
+func TestMockSavingsPlansClient_DescribeSavingsPlans_ErrorInjection(t *testing.T) {
+	mockSP := NewMockSavingsPlansClient()
+	mockSP.DescribeSavingsPlansError = errors.New("mock error")
+
+	ctx := context.Background()
+	result, err := mockSP.DescribeSavingsPlans(ctx)
+
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if result != nil {
+		t.Errorf("expected nil result, got %v", result)
+	}
+}
