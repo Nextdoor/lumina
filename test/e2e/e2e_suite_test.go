@@ -173,6 +173,15 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	// Print controller logs before teardown for debugging
+	By("fetching controller logs before teardown")
+	logs, err := getPodLogsByLabel("control-plane=controller-manager", nil)
+	if err == nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "\n========== Controller Manager Logs ==========\n%s\n========================================\n", logs)
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Failed to fetch controller logs: %v\n", err)
+	}
+
 	// Teardown controller before tearing down dependencies
 	By("undeploying the controller-manager")
 	cmd := exec.Command("make", "undeploy")
