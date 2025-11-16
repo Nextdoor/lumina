@@ -14,3 +14,34 @@ awsAccounts:
     name: "test-staging"
     assumeRoleArn: "arn:aws:iam::111111111111:role/lumina/LuminaStagingRole"
     region: "us-east-1"
+
+# Test data for E2E tests
+# LocalStack's free tier doesn't support Savings Plans API, so we inject test data
+testData:
+  savingsPlans:
+    # Test data for test-production account
+    "000000000000":
+      - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/12345678-1234-1234-1234-123456789012"
+        savingsPlanType: "Compute"
+        state: "active"
+        commitment: 10.0  # $10/hour
+        start: "2024-01-01T00:00:00Z"
+        end: "2027-01-01T00:00:00Z"
+
+      - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/87654321-4321-4321-4321-210987654321"
+        savingsPlanType: "EC2Instance"
+        state: "active"
+        commitment: 5.0  # $5/hour
+        region: "us-west-2"
+        instanceFamily: "m5"
+        start: "2024-06-01T00:00:00Z"
+        end: "2027-06-01T00:00:00Z"
+
+    # Test data for test-staging account
+    "111111111111":
+      - savingsPlanArn: "arn:aws:savingsplans::111111111111:savingsplan/11111111-2222-3333-4444-555555555555"
+        savingsPlanType: "Compute"
+        state: "active"
+        commitment: 3.0  # $3/hour
+        start: "2024-03-01T00:00:00Z"
+        end: "2027-03-01T00:00:00Z"
