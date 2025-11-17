@@ -19,10 +19,6 @@ import (
 	"testing"
 )
 
-const (
-	testCredentialValue = "test"
-)
-
 // TestNewRealClient tests that NewRealClient creates a valid client instance.
 // This test ensures the basic client initialization works without errors.
 func TestNewRealClient(t *testing.T) {
@@ -104,20 +100,6 @@ func TestRealClientPricing(t *testing.T) {
 	pricingClient2 := client.Pricing(ctx)
 	if pricingClient != pricingClient2 {
 		t.Error("expected same cached pricing client instance")
-	}
-}
-
-// TestPtrString tests the ptrString helper function.
-func TestPtrString(t *testing.T) {
-	str := testCredentialValue
-	ptr := ptrString(str)
-
-	if ptr == nil {
-		t.Fatal("expected non-nil pointer")
-	}
-
-	if *ptr != str {
-		t.Errorf("expected %s, got %s", str, *ptr)
 	}
 }
 
@@ -242,6 +224,9 @@ func TestRealClientSavingsPlans(t *testing.T) {
 }
 
 // TestRealClientGetCredentialsWithoutAssumeRole tests getCredentials without AssumeRole.
+// When no AssumeRoleARN is provided, getCredentials should return the default
+// credential provider from the AWS SDK credential chain (environment variables,
+// shared credentials file, IAM role, etc.).
 func TestRealClientGetCredentialsWithoutAssumeRole(t *testing.T) {
 	ctx := context.Background()
 	cfg := ClientConfig{
@@ -259,23 +244,28 @@ func TestRealClientGetCredentialsWithoutAssumeRole(t *testing.T) {
 		Name:      "Test",
 	}
 
-	// Get credentials - should return test credentials
-	creds, err := client.getCredentials(ctx, accountConfig)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
+	// Get credentials - should return the default credential provider
+	credsProvider := client.getCredentials(accountConfig)
 
-	// Verify test credentials
-	credValue, err := creds.Retrieve(ctx)
+	// Verify we can retrieve credentials (they should come from environment/config)
+	// We don't check specific values since they depend on the test environment,
+	// but we verify that the provider is functional and returns non-empty credentials.
+	credValue, err := credsProvider.Retrieve(ctx)
 	if err != nil {
 		t.Fatalf("failed to retrieve credentials: %v", err)
 	}
 
-	if credValue.AccessKeyID != testCredentialValue {
-		t.Errorf("expected AccessKeyID 'test', got %s", credValue.AccessKeyID)
+	// Verify credentials are not empty (actual values depend on test environment)
+	if credValue.AccessKeyID == "" {
+		t.Error("expected non-empty AccessKeyID from default credential provider")
 	}
 
-	if credValue.SecretAccessKey != testCredentialValue {
-		t.Errorf("expected SecretAccessKey 'test', got %s", credValue.SecretAccessKey)
+	if credValue.SecretAccessKey == "" {
+		t.Error("expected non-empty SecretAccessKey from default credential provider")
+	}
+
+	// Verify the returned provider is the same as the client's default provider
+	if credsProvider != client.defaultCredsProvider {
+		t.Error("expected getCredentials to return the same default credential provider instance")
 	}
 }

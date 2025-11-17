@@ -21,7 +21,6 @@ import (
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
@@ -34,20 +33,22 @@ type RealEC2Client struct {
 	accountID string
 }
 
-// NewRealEC2Client creates a new EC2 client with the specified credentials.
-// The credentials should come from either the default credential chain or
-// from an STS AssumeRole operation.
+// NewRealEC2Client creates a new EC2 client with the specified credential provider.
+// The credential provider should come from either the default credential chain or
+// from an AssumeRoleProvider that automatically refreshes credentials.
 func NewRealEC2Client(
 	ctx context.Context,
 	accountID string,
 	region string,
-	creds credentials.StaticCredentialsProvider,
+	credsProvider aws.CredentialsProvider,
 	endpointURL string,
 ) (*RealEC2Client, error) {
-	// Load AWS configuration with the provided credentials
+	// Load AWS configuration with the provided credential provider.
+	// The provider handles credential refresh automatically, preventing
+	// expiration issues that occurred with static credentials.
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(region),
-		awsconfig.WithCredentialsProvider(creds),
+		awsconfig.WithCredentialsProvider(credsProvider),
 	)
 	if err != nil { // coverage:ignore - AWS SDK config loading errors are difficult to trigger in unit tests
 		return nil, err

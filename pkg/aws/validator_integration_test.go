@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/aws/testdata"
@@ -156,14 +157,19 @@ func TestHealthChecker_Integration(t *testing.T) {
 				})
 			}
 
-			// Create validator and health checker
+			// Create validator, monitor, and health checker
 			validator := aws.NewAccountValidator(client)
-			healthChecker := aws.NewHealthChecker(validator, configAccounts)
+			monitor := aws.NewCredentialMonitor(validator, configAccounts, 10*time.Minute)
+
+			// Run initial check (instead of starting background monitor)
+			monitor.CheckAllAccounts()
+
+			healthChecker := aws.NewHealthChecker(monitor)
 
 			// Create test HTTP request
 			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 
-			// Run health check
+			// Run health check (reads from monitor cache)
 			err := healthChecker.Check(req)
 
 			// Check results

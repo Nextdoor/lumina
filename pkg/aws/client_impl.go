@@ -20,7 +20,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
@@ -35,13 +35,14 @@ import (
 //
 // For testing, use MockClient instead.
 type RealClient struct {
-	config       ClientConfig
-	stsClient    *sts.Client
-	mu           sync.RWMutex              // Protects ec2Clients and spClients maps
-	ec2Clients   map[string]*RealEC2Client // Cached per-account EC2 clients
-	spClients    map[string]*RealSPClient  // Cached per-account Savings Plans clients
-	pricingCache *RealPricingClient        // Shared pricing client (region-independent)
-	endpointURL  string                    // Optional endpoint URL (for LocalStack testing)
+	config               ClientConfig
+	stsClient            *sts.Client
+	defaultCredsProvider aws.CredentialsProvider   // Default credential provider from credential chain
+	mu                   sync.RWMutex              // Protects ec2Clients and spClients maps
+	ec2Clients           map[string]*RealEC2Client // Cached per-account EC2 clients
+	spClients            map[string]*RealSPClient  // Cached per-account Savings Plans clients
+	pricingCache         *RealPricingClient        // Shared pricing client (region-independent)
+	endpointURL          string                    // Optional endpoint URL (for LocalStack testing)
 }
 
 // NewRealClient creates a new RealClient with the specified configuration.
@@ -73,12 +74,13 @@ func NewRealClient(ctx context.Context, cfg ClientConfig, endpointURL string) (*
 	stsClient := sts.NewFromConfig(awsCfg, stsOpts...)
 
 	return &RealClient{
-		config:       cfg,
-		stsClient:    stsClient,
-		ec2Clients:   make(map[string]*RealEC2Client),
-		spClients:    make(map[string]*RealSPClient),
-		pricingCache: nil, // Will be initialized on first Pricing() call
-		endpointURL:  endpointURL,
+		config:               cfg,
+		stsClient:            stsClient,
+		defaultCredsProvider: awsCfg.Credentials,
+		ec2Clients:           make(map[string]*RealEC2Client),
+		spClients:            make(map[string]*RealSPClient),
+		pricingCache:         nil, // Will be initialized on first Pricing() call
+		endpointURL:          endpointURL,
 	}, nil
 }
 
@@ -96,10 +98,7 @@ func (c *RealClient) EC2(ctx context.Context, accountConfig AccountConfig) (EC2C
 	c.mu.RUnlock()
 
 	// Get credentials (potentially via AssumeRole)
-	creds, err := c.getCredentials(ctx, accountConfig)
-	if err != nil { // coverage:ignore - error path tested in LocalStack integration tests
-		return nil, err
-	}
+	creds := c.getCredentials(accountConfig)
 
 	// Create EC2 client with assumed credentials
 	client, err := NewRealEC2Client(ctx, accountConfig.AccountID, accountConfig.Region, creds, c.endpointURL)
@@ -128,10 +127,7 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 	c.mu.RUnlock()
 
 	// Get credentials (potentially via AssumeRole)
-	creds, err := c.getCredentials(ctx, accountConfig)
-	if err != nil { // coverage:ignore - error path tested in LocalStack integration tests
-		return nil, err
-	}
+	creds := c.getCredentials(accountConfig)
 
 	// Create Savings Plans client with assumed credentials
 	client, err := NewRealSPClient(ctx, accountConfig.AccountID, accountConfig.Region, creds, c.endpointURL)
@@ -203,48 +199,42 @@ func (b *BrokenPricingClient) LoadAllPricing(
 	return nil, b.err
 }
 
-// getCredentials returns credentials for the specified account.
-// If AssumeRoleARN is set, it performs an STS AssumeRole operation.
-// Otherwise, it returns the default credentials from the credential chain.
-func (c *RealClient) getCredentials(
-	ctx context.Context,
-	accountConfig AccountConfig,
-) (credentials.StaticCredentialsProvider, error) {
-	// If no AssumeRoleARN, use default credentials
-	// (Note: For production use, we'd need to support default credentials better.
-	// For now, this is primarily for testing with LocalStack where we use static credentials)
+// getCredentials returns a credential provider for the specified account.
+// If AssumeRoleARN is set, it returns an AssumeRoleProvider that automatically
+// refreshes credentials before expiration. Otherwise, it returns the default
+// credential provider from the AWS SDK credential chain.
+//
+// The returned provider is wrapped in a CredentialsCache which handles:
+//   - Automatic credential refresh before expiration
+//   - Thread-safe credential caching
+//   - Exponential backoff on errors
+//
+// This approach follows AWS SDK best practices and prevents credential
+// expiration issues that would occur with manual AssumeRole calls.
+func (c *RealClient) getCredentials(accountConfig AccountConfig) aws.CredentialsProvider {
+	// If no AssumeRoleARN, use default credentials from the credential chain
 	if accountConfig.AssumeRoleARN == "" {
-		return credentials.StaticCredentialsProvider{
-			Value: aws.Credentials{
-				AccessKeyID:     "test",
-				SecretAccessKey: "test",
-			},
-		}, nil
+		return c.defaultCredsProvider
 	}
 
-	// Perform AssumeRole
+	// Use AWS SDK's AssumeRoleProvider for automatic credential refresh.
+	// This provider handles:
+	// - Automatic refresh before credentials expire (typically ~1 hour)
+	// - Thread-safe credential caching
+	// - Retry logic with exponential backoff
+	// - Proper session naming for AWS CloudTrail audit logs
+	//
 	// This path is tested in localstack_integration_test.go with the -tags=localstack build tag
 	// which tests real STS AssumeRole operations against LocalStack.
 	// coverage:ignore - AssumeRole path tested in integration tests with LocalStack
-	result, err := c.stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
-		RoleArn:         &accountConfig.AssumeRoleARN,
-		RoleSessionName: ptrString("lumina-" + accountConfig.AccountID),
-	})
-	if err != nil {
-		return credentials.StaticCredentialsProvider{}, err
-	}
+	provider := stscreds.NewAssumeRoleProvider(c.stsClient, accountConfig.AssumeRoleARN,
+		func(o *stscreds.AssumeRoleOptions) {
+			// Set session name for CloudTrail audit logging
+			o.RoleSessionName = "lumina-" + accountConfig.AccountID
+		})
 
-	// Return static credentials from the assumed role
-	return credentials.StaticCredentialsProvider{
-		Value: aws.Credentials{
-			AccessKeyID:     *result.Credentials.AccessKeyId,
-			SecretAccessKey: *result.Credentials.SecretAccessKey,
-			SessionToken:    *result.Credentials.SessionToken,
-		},
-	}, nil
-}
-
-// ptrString returns a pointer to the given string.
-func ptrString(s string) *string {
-	return &s
+	// Wrap in CredentialsCache for automatic refresh before expiration.
+	// The cache will transparently refresh credentials when they're close to expiring,
+	// preventing the "Request has expired" errors that plagued the previous implementation.
+	return aws.NewCredentialsCache(provider)
 }
