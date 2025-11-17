@@ -18,14 +18,22 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 )
 
 // TestNewRealPricingClient tests that NewRealPricingClient creates a valid client.
 func TestNewRealPricingClient(t *testing.T) {
 	ctx := context.Background()
 
+	// Load default credential provider for testing
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		t.Fatalf("failed to load AWS config: %v", err)
+	}
+
 	// Test successful creation with default region
-	client, err := NewRealPricingClient(ctx, "")
+	client, err := NewRealPricingClient(ctx, cfg.Credentials, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -43,6 +51,12 @@ func TestNewRealPricingClient(t *testing.T) {
 // TestNewRealPricingClientWithRegion tests region validation.
 func TestNewRealPricingClientWithRegion(t *testing.T) {
 	ctx := context.Background()
+
+	// Load default credential provider for testing
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		t.Fatalf("failed to load AWS config: %v", err)
+	}
 
 	tests := []struct {
 		name           string
@@ -76,7 +90,7 @@ func TestNewRealPricingClientWithRegion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewRealPricingClientWithRegion(ctx, tt.region, "")
+			client, err := NewRealPricingClientWithRegion(ctx, tt.region, cfg.Credentials, "")
 
 			if tt.expectError {
 				if err == nil {
@@ -378,8 +392,14 @@ func TestBrokenPricingClient(t *testing.T) {
 func TestRealPricingClientCaching(t *testing.T) {
 	ctx := context.Background()
 
+	// Load default credential provider for testing
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		t.Fatalf("failed to load AWS config: %v", err)
+	}
+
 	// Create a client with short TTL for testing
-	client, err := NewRealPricingClient(ctx, "")
+	client, err := NewRealPricingClient(ctx, cfg.Credentials, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -433,8 +453,14 @@ func TestRealPricingClientCaching(t *testing.T) {
 func TestRealPricingClientGetOnDemandPrices(t *testing.T) {
 	ctx := context.Background()
 
+	// Load default credential provider for testing
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+	if err != nil {
+		t.Fatalf("failed to load AWS config: %v", err)
+	}
+
 	// Create client
-	client, err := NewRealPricingClient(ctx, "")
+	client, err := NewRealPricingClient(ctx, cfg.Credentials, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

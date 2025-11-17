@@ -142,16 +142,21 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 	return client, nil
 }
 
-// Pricing returns a PricingClient. Pricing API is not account-specific
-// and does not require AssumeRole operations.
+// Pricing returns a PricingClient. Pricing data is shared across all accounts,
+// but we use the default credential provider to ensure consistent authentication.
 //
 // The pricing client is lazily initialized on first call and then cached
 // for subsequent requests. This avoids AWS SDK configuration overhead
 // during client initialization.
+//
+// Note: Unlike EC2 and SavingsPlans clients which are per-account, the pricing
+// client is shared because pricing data is the same for all accounts. We use
+// the default credential provider (which may be from an assumed role if configured)
+// to make the API calls.
 func (c *RealClient) Pricing(ctx context.Context) PricingClient {
 	if c.pricingCache == nil {
-		// Initialize pricing client (uses us-east-1 for pricing API)
-		client, err := NewRealPricingClient(ctx, c.endpointURL)
+		// Initialize pricing client with default credentials (uses us-east-1 for pricing API)
+		client, err := NewRealPricingClient(ctx, c.defaultCredsProvider, c.endpointURL)
 		if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
 			// Return a client that will error on every call
 			// This is better than panicking, and allows the controller to continue
