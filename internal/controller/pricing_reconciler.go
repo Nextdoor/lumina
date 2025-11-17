@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -31,7 +32,7 @@ import (
 	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create
 
 // PricingReconciler reconciles AWS pricing data by bulk-loading all on-demand
 // pricing for EC2 instances across configured regions and operating systems.
@@ -303,41 +304,52 @@ func (r *PricingReconciler) RunStandalone(ctx context.Context) error {
 // SetupWithManager sets up the reconciler with the Manager.
 // coverage:ignore - controller-runtime boilerplate, tested via E2E
 func (r *PricingReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// This is a timer-based controller that requeues itself every 24 hours.
-	// Controller-runtime requires at least one watch, so we watch ConfigMaps
-	// but ignore all events (the actual trigger is the RequeueAfter in Reconcile).
-	//
-	// The predicate filters out all ConfigMap events - we only want timer-based triggers.
-	controller, err := ctrl.NewControllerManagedBy(mgr).
+	// This is a timer-based controller that requeues itself every 24 hours using RequeueAfter.
+	// Controller-runtime requires at least one watch, so we watch ConfigMaps but filter
+	// to only watch a specific dummy ConfigMap that we'll create to trigger the reconciler.
+	// Once triggered, the Reconcile() method returns RequeueAfter which causes controller-runtime
+	// to automatically schedule subsequent reconciliations.
+	err := ctrl.NewControllerManagedBy(mgr).
 		Named("pricing").
 		For(&corev1.ConfigMap{}).
-		WithEventFilter(predicate.NewPredicateFuncs(func(_ client.Object) bool {
-			return false // Ignore all ConfigMap events
+		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			// Only reconcile for our specific trigger ConfigMap
+			return obj.GetNamespace() == "lumina-system" && obj.GetName() == "pricing-reconciler-trigger"
 		})).
-		Build(r)
+		Complete(r)
 	if err != nil {
 		return err
 	}
 
-	// Enqueue an initial reconcile request to start the reconciliation cycle immediately.
-	// We create a dummy ConfigMap request since controller-runtime requires a Request object,
-	// but the actual reconcile logic ignores the Request parameter entirely.
-	// This triggers the first Reconcile() call which then uses RequeueAfter to schedule
-	// subsequent runs every 24 hours.
+	// Create a dummy ConfigMap to trigger the initial reconciliation.
+	// This ConfigMap doesn't need any real data - it just needs to exist so the controller
+	// sees a "create" event and calls Reconcile() once. After that, Reconcile() uses
+	// RequeueAfter to schedule all subsequent runs automatically.
 	go func() {
-		// Wait a bit for the manager to fully start
-		time.Sleep(2 * time.Second)
+		// Wait for the manager to start and the cache to sync
+		<-mgr.Elected()
 
-		// Enqueue a reconcile request with a dummy object
-		// The reconciler doesn't use the Request parameter, so any non-nil value works
-		dummyRequest := ctrl.Request{
-			NamespacedName: client.ObjectKey{
-				Namespace: "default",
-				Name:      "pricing-trigger",
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Create the trigger ConfigMap in the controller's namespace
+		triggerCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pricing-reconciler-trigger",
+				Namespace: "lumina-system",
+			},
+			Data: map[string]string{
+				"purpose": "Trigger initial pricing reconciliation. Do not delete.",
 			},
 		}
-		// Ignore error from initial trigger - if it fails, the periodic timer will retry
-		_, _ = controller.Reconcile(context.Background(), dummyRequest)
+
+		// Try to create it (ignore error if it already exists)
+		if err := mgr.GetClient().Create(ctx, triggerCM); err != nil {
+			// If it already exists, that's fine - the reconciler will trigger anyway
+			r.Log.V(1).Info("trigger ConfigMap already exists or failed to create", "error", err)
+		} else {
+			r.Log.Info("created trigger ConfigMap to start reconciliation cycle")
+		}
 	}()
 
 	return nil
