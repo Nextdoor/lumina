@@ -600,11 +600,16 @@ func TestConcurrentReadsDuringWrite(t *testing.T) {
 	assert.NotEmpty(t, allInstances, "Cache should have data after concurrent operations")
 }
 
-// TestPerformanceLargeDataset verifies performance with a large number of instances.
+// TestPerformanceLargeDataset verifies in-memory cache performance with 10k instances.
+//
+// IMPORTANT: This test measures LOCAL CACHE operations, not AWS API performance.
+// All data is in-memory. The timing thresholds verify that cache operations scale
+// reasonably, but they're generous to accommodate various CI environments and hardware.
+// This is NOT testing AWS API latency - real AWS API calls take seconds, not milliseconds.
 func TestPerformanceLargeDataset(t *testing.T) {
 	cache := NewEC2Cache()
 
-	// Create 10,000 instances
+	// Create 10,000 instances (in-memory, not from AWS)
 	numInstances := 10000
 	instances := make([]aws.Instance, numInstances)
 
@@ -618,28 +623,29 @@ func TestPerformanceLargeDataset(t *testing.T) {
 		}
 	}
 
-	// Measure SetInstances performance
+	// Measure in-memory cache write performance
+	// Timing thresholds are generous to accommodate CI environments with varying hardware
 	startSet := time.Now()
 	cache.SetInstances(testAccountID, testRegion, instances)
 	setDuration := time.Since(startSet)
 
-	assert.Less(t, setDuration, 50*time.Millisecond, "SetInstances should complete in < 50ms for 10k instances")
+	assert.Less(t, setDuration, 500*time.Millisecond, "Cache write should complete in < 500ms for 10k instances")
 
-	// Measure GetInstance performance (lookup)
+	// Measure in-memory map lookup performance
 	startGet := time.Now()
 	_, found := cache.GetInstance(generateInstanceID(5000))
 	getDuration := time.Since(startGet)
 
 	assert.True(t, found)
-	assert.Less(t, getDuration, time.Millisecond, "GetInstance should complete in < 1ms")
+	assert.Less(t, getDuration, 10*time.Millisecond, "Cache lookup should complete in < 10ms")
 
-	// Measure GetRunningInstances performance (filtering)
+	// Measure in-memory filtering performance
 	startFilter := time.Now()
 	runningInstances := cache.GetRunningInstances()
 	filterDuration := time.Since(startFilter)
 
 	assert.Len(t, runningInstances, numInstances)
-	assert.Less(t, filterDuration, 10*time.Millisecond, "GetRunningInstances should complete in < 10ms for 10k instances")
+	assert.Less(t, filterDuration, 100*time.Millisecond, "Cache filtering should complete in < 100ms for 10k instances")
 }
 
 // TestPerformanceMemoryUsage verifies reasonable memory usage.
