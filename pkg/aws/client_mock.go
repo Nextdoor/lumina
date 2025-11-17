@@ -396,6 +396,71 @@ func (m *MockPricingClient) GetOnDemandPrices(
 	return prices, nil
 }
 
+// LoadAllPricing is a mock implementation that returns all prices currently in the cache.
+func (m *MockPricingClient) LoadAllPricing(
+	_ context.Context,
+	regions []string,
+	operatingSystems []string,
+) (map[string]float64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string]float64)
+
+	// Filter cached prices by requested regions/OS
+	for key, price := range m.OnDemandPrices {
+		// Key format: "region:instanceType:os"
+		parts := splitCacheKey(key)
+		if len(parts) != 3 {
+			continue
+		}
+
+		region, _, os := parts[0], parts[1], parts[2]
+
+		// Check if this price matches requested filters
+		matchesRegion := false
+		for _, r := range regions {
+			if r == region {
+				matchesRegion = true
+				break
+			}
+		}
+
+		matchesOS := false
+		for _, o := range operatingSystems {
+			if o == os {
+				matchesOS = true
+				break
+			}
+		}
+
+		if matchesRegion && matchesOS {
+			result[key] = price.PricePerHour
+		}
+	}
+
+	return result, nil
+}
+
+// splitCacheKey splits a cache key into its components.
+func splitCacheKey(key string) []string {
+	// Simple split by colon
+	parts := []string{}
+	current := ""
+	for _, ch := range key {
+		if ch == ':' {
+			parts = append(parts, current)
+			current = ""
+		} else {
+			current += string(ch)
+		}
+	}
+	if current != "" {
+		parts = append(parts, current)
+	}
+	return parts
+}
+
 // SetOnDemandPrice sets a mock on-demand price (helper for tests).
 func (m *MockPricingClient) SetOnDemandPrice(
 	region string,

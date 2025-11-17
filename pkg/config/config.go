@@ -69,6 +69,9 @@ type Config struct {
 	// Reconciliation contains settings for data collection reconciliation loops.
 	Reconciliation ReconciliationConfig `yaml:"reconciliation,omitempty"`
 
+	// Pricing contains settings for AWS pricing data collection.
+	Pricing PricingConfig `yaml:"pricing,omitempty"`
+
 	// TestData contains mock data for E2E testing.
 	// When present, the RISP reconciler will use this data instead of making AWS API calls.
 	// This allows testing without requiring a fully functional AWS environment.
@@ -89,14 +92,39 @@ type ReconciliationConfig struct {
 	// Default: 5m
 	// Recommended: 5m - EC2 instances change frequently due to autoscaling
 	EC2 string `yaml:"ec2,omitempty"`
+
+	// Pricing is how often to reconcile AWS pricing data.
+	// Format: Go duration string (e.g., "24h", "12h", "48h")
+	// Default: 24h
+	// Recommended: 24h (daily) - AWS pricing changes monthly, daily refresh is sufficient
+	Pricing string `yaml:"pricing,omitempty"`
 }
 
-// TestData contains mock data for E2E testing of RISP reconciliation.
-// This allows testing Savings Plans functionality even when LocalStack doesn't support the API.
+// PricingConfig contains settings for AWS pricing data collection.
+type PricingConfig struct {
+	// OperatingSystems is the list of operating systems to load pricing data for.
+	// Valid values: "Linux", "Windows", "RHEL", "SUSE"
+	// Default: ["Linux", "Windows"]
+	// Examples:
+	//   - ["Linux"] - Only load Linux pricing (fastest, lowest memory)
+	//   - ["Linux", "Windows"] - Load both Linux and Windows pricing
+	//   - [] - Empty list defaults to ["Linux", "Windows"]
+	OperatingSystems []string `yaml:"operatingSystems,omitempty"`
+}
+
+// TestData contains mock data for E2E testing.
+// This allows testing functionality when LocalStack doesn't support certain APIs.
+// IMPORTANT: This should only be used in E2E tests, never in production.
 type TestData struct {
 	// SavingsPlans contains mock Savings Plans data for testing.
 	// Key format: "accountID"
 	SavingsPlans map[string][]TestSavingsPlan `yaml:"savingsPlans,omitempty"`
+
+	// Pricing contains mock pricing data for testing.
+	// Key format: "region:instanceType:operatingSystem"
+	// Example: "us-west-2:m5.large:Linux" -> 0.096
+	// This allows E2E tests to run without calling the real AWS Pricing API.
+	Pricing map[string]float64 `yaml:"pricing,omitempty"`
 }
 
 // TestSavingsPlan represents a mock Savings Plan for E2E testing.
@@ -238,6 +266,26 @@ func (c *Config) Validate() error {
 	if c.Reconciliation.EC2 != "" {
 		if _, err := time.ParseDuration(c.Reconciliation.EC2); err != nil {
 			return fmt.Errorf("invalid EC2 reconciliation interval %q: %w", c.Reconciliation.EC2, err)
+		}
+	}
+	if c.Reconciliation.Pricing != "" {
+		if _, err := time.ParseDuration(c.Reconciliation.Pricing); err != nil {
+			return fmt.Errorf("invalid Pricing reconciliation interval %q: %w", c.Reconciliation.Pricing, err)
+		}
+	}
+
+	// Validate pricing configuration
+	if len(c.Pricing.OperatingSystems) > 0 {
+		validOSes := map[string]bool{
+			"Linux":   true,
+			"Windows": true,
+			"RHEL":    true,
+			"SUSE":    true,
+		}
+		for _, os := range c.Pricing.OperatingSystems {
+			if !validOSes[os] {
+				return fmt.Errorf("invalid operating system %q in pricing config, must be one of: Linux, Windows, RHEL, SUSE", os)
+			}
 		}
 	}
 
