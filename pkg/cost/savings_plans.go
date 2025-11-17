@@ -187,7 +187,11 @@ func applyEC2InstanceSavingsPlan(
 			return eligible[i].SavingsPercent > eligible[j].SavingsPercent
 		}
 		// Tie-breaker: lowest SP rate first
-		return eligible[i].SPRate < eligible[j].SPRate
+		if eligible[i].SPRate != eligible[j].SPRate {
+			return eligible[i].SPRate < eligible[j].SPRate
+		}
+		// Final tie-breaker: instance ID (for deterministic sort)
+		return eligible[i].Instance.InstanceID < eligible[j].Instance.InstanceID
 	})
 
 	// STEP 3: Apply SP coverage to instances in priority order until commitment exhausted
@@ -387,13 +391,18 @@ func applyComputeSavingsPlan(
 	// Uses the same prioritization algorithm as EC2 Instance SPs:
 	// 1. Highest savings percentage first
 	// 2. Tie-breaker: lowest SP rate first
+	// 3. Final tie-breaker: instance ID (for deterministic sort)
 	//
 	// See detailed comments in applyEC2InstanceSavingsPlan() for the rationale.
 	sort.Slice(eligible, func(i, j int) bool {
 		if eligible[i].SavingsPercent != eligible[j].SavingsPercent {
 			return eligible[i].SavingsPercent > eligible[j].SavingsPercent
 		}
-		return eligible[i].SPRate < eligible[j].SPRate
+		if eligible[i].SPRate != eligible[j].SPRate {
+			return eligible[i].SPRate < eligible[j].SPRate
+		}
+		// Final tie-breaker: instance ID (for deterministic sort)
+		return eligible[i].Instance.InstanceID < eligible[j].Instance.InstanceID
 	})
 
 	// STEP 3: Apply SP coverage in priority order until commitment exhausted
