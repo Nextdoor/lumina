@@ -17,6 +17,8 @@ limitations under the License.
 package cost
 
 import (
+	"sort"
+
 	"github.com/nextdoor/lumina/pkg/aws"
 )
 
@@ -33,9 +35,9 @@ import (
 //
 // Algorithm:
 //  1. For each Reserved Instance:
-//     a. Find an uncovered instance matching instance type + AZ/region + account
-//     b. If found, mark instance as RI-covered (EffectiveCost = $0)
-//     c. Mark RI as utilized
+//     a. Find all uncovered instances matching instance type + AZ/region + account
+//     b. Sort eligible instances by launch time (oldest first) for stable assignment
+//     c. Apply RI coverage to oldest instances first until RI capacity exhausted
 //  2. Move to next RI
 //
 // Reference: AWS Savings Plans documentation
@@ -51,53 +53,71 @@ func applyReservedInstances(
 
 	// Process each Reserved Instance
 	for _, ri := range reservedInstances {
-		// Get the count of instances this RI can cover
-		// RIs can cover multiple instances of the same type
+		// STEP 1: Find all eligible instances for this RI
+		//
+		// Build a list of instances that match this RI's criteria and aren't
+		// already covered. We'll sort them to ensure stable, deterministic assignment.
+		var eligible []*aws.Instance
+		for idx := range instances {
+			inst := &instances[idx]
+
+			// Skip if instance doesn't match RI criteria
+			if !matchesReservedInstance(inst, &ri) {
+				continue
+			}
+
+			// Get the cost object for this instance
+			cost, exists := costs[inst.InstanceID]
+			if !exists {
+				continue
+			}
+
+			// Skip if instance is already RI-covered
+			if cost.RICoverage > 0 {
+				continue
+			}
+
+			eligible = append(eligible, inst)
+		}
+
+		// STEP 2: Sort eligible instances by launch time (oldest first)
+		//
+		// This provides stable discount assignment:
+		// - Older instances keep their RI coverage across reconciliation loops
+		// - Newer instances only get coverage if there's unused RI capacity
+		// - Prevents discounts from "jumping" between instances
+		//
+		// Tie-breaker: Instance ID (for complete determinism)
+		sort.Slice(eligible, func(i, j int) bool {
+			if !eligible[i].LaunchTime.Equal(eligible[j].LaunchTime) {
+				return eligible[i].LaunchTime.Before(eligible[j].LaunchTime)
+			}
+			return eligible[i].InstanceID < eligible[j].InstanceID
+		})
+
+		// STEP 3: Apply RI coverage to eligible instances in order
+		//
+		// RIs can cover multiple instances (based on InstanceCount).
+		// Apply coverage to the oldest instances first until RI capacity is exhausted.
 		riCount := ri.InstanceCount
+		appliedCount := 0
 
-		// Try to match this RI to uncovered instances
-		for i := 0; i < int(riCount); i++ {
-			matched := false
-
-			// Search for an uncovered instance that matches this RI
-			for idx := range instances {
-				inst := &instances[idx]
-
-				// Skip if instance doesn't match RI criteria
-				if !matchesReservedInstance(inst, &ri) {
-					continue
-				}
-
-				// Get the cost object for this instance
-				cost, exists := costs[inst.InstanceID]
-				if !exists {
-					continue
-				}
-
-				// Skip if instance is already RI-covered
-				// (another RI already matched this instance)
-				if cost.RICoverage > 0 {
-					continue
-				}
-
-				// Match found! Apply RI coverage
-				cost.RICoverage = cost.ShelfPrice
-				cost.EffectiveCost = 0 // RIs are pre-paid, so effective cost is $0
-				cost.CoverageType = CoverageReservedInstance
-
-				// Track that we used one instance worth of this RI
-				riKey := riIdentifier(&ri)
-				utilizedRIs[riKey]++
-
-				matched = true
-				break
+		for _, inst := range eligible {
+			if appliedCount >= int(riCount) {
+				break // RI capacity exhausted
 			}
 
-			// If we couldn't find a matching instance for this RI unit,
-			// the RI is unutilized (wasted capacity)
-			if !matched {
-				break
-			}
+			cost := costs[inst.InstanceID]
+
+			// Apply RI coverage
+			cost.RICoverage = cost.ShelfPrice
+			cost.EffectiveCost = 0 // RIs are pre-paid, so effective cost is $0
+			cost.CoverageType = CoverageReservedInstance
+
+			// Track utilization
+			riKey := riIdentifier(&ri)
+			utilizedRIs[riKey]++
+			appliedCount++
 		}
 	}
 }

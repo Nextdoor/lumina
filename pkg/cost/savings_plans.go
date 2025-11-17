@@ -172,6 +172,15 @@ func applyEC2InstanceSavingsPlan(
 	//    - This is a secondary optimization to prefer covering cheaper instances
 	//    - Helps the SP commitment stretch to cover more instances
 	//
+	// 3. STABILITY TIE-BREAKER: Oldest instances first (by launch time)
+	//    - When instances have identical savings % and SP rates, prioritize older instances
+	//    - This provides stable, predictable discount assignment across reconciliation loops
+	//    - Prevents discounts from "jumping" between instances when they come and go
+	//    - Older instances keep their discounts; new instances only get coverage if capacity remains
+	//
+	// 4. FINAL TIE-BREAKER: Instance ID (for complete determinism)
+	//    - Handles edge case where instances launched at exactly the same time
+	//
 	// Example scenario:
 	//   - Instance A: m5.2xlarge, on-demand $0.384/hr, SP rate $0.107/hr (72% savings)
 	//   - Instance B: m5.xlarge, on-demand $0.192/hr, SP rate $0.054/hr (72% savings)
@@ -189,6 +198,10 @@ func applyEC2InstanceSavingsPlan(
 		// Tie-breaker: lowest SP rate first
 		if eligible[i].SPRate != eligible[j].SPRate {
 			return eligible[i].SPRate < eligible[j].SPRate
+		}
+		// Stability tie-breaker: older instances first (by launch time)
+		if !eligible[i].Instance.LaunchTime.Equal(eligible[j].Instance.LaunchTime) {
+			return eligible[i].Instance.LaunchTime.Before(eligible[j].Instance.LaunchTime)
 		}
 		// Final tie-breaker: instance ID (for deterministic sort)
 		return eligible[i].Instance.InstanceID < eligible[j].Instance.InstanceID
@@ -391,7 +404,8 @@ func applyComputeSavingsPlan(
 	// Uses the same prioritization algorithm as EC2 Instance SPs:
 	// 1. Highest savings percentage first
 	// 2. Tie-breaker: lowest SP rate first
-	// 3. Final tie-breaker: instance ID (for deterministic sort)
+	// 3. Stability tie-breaker: oldest instances first (by launch time)
+	// 4. Final tie-breaker: instance ID (for deterministic sort)
 	//
 	// See detailed comments in applyEC2InstanceSavingsPlan() for the rationale.
 	sort.Slice(eligible, func(i, j int) bool {
@@ -400,6 +414,10 @@ func applyComputeSavingsPlan(
 		}
 		if eligible[i].SPRate != eligible[j].SPRate {
 			return eligible[i].SPRate < eligible[j].SPRate
+		}
+		// Stability tie-breaker: older instances first (by launch time)
+		if !eligible[i].Instance.LaunchTime.Equal(eligible[j].Instance.LaunchTime) {
+			return eligible[i].Instance.LaunchTime.Before(eligible[j].Instance.LaunchTime)
 		}
 		// Final tie-breaker: instance ID (for deterministic sort)
 		return eligible[i].Instance.InstanceID < eligible[j].Instance.InstanceID

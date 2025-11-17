@@ -24,10 +24,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// testBaseTime returns a fixed time for test determinism
+func testBaseTime() time.Time {
+	return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+}
+
 // TestCalculatorBasicFlow tests the basic happy path: on-demand instances
 // with no RIs or Savings Plans.
 func TestCalculatorBasicFlow(t *testing.T) {
 	calc := NewCalculator()
+	baseTime := testBaseTime()
 
 	input := CalculationInput{
 		Instances: []aws.Instance{
@@ -39,6 +45,7 @@ func TestCalculatorBasicFlow(t *testing.T) {
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
 				Lifecycle:        "on-demand",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 			{
 				InstanceID:       "i-002",
@@ -48,6 +55,7 @@ func TestCalculatorBasicFlow(t *testing.T) {
 				AvailabilityZone: "us-west-2b",
 				State:            "running",
 				Lifecycle:        "on-demand",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{},
@@ -90,6 +98,8 @@ func TestCalculatorBasicFlow(t *testing.T) {
 func TestCalculatorWithReservedInstances(t *testing.T) {
 	calc := NewCalculator()
 
+	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	input := CalculationInput{
 		Instances: []aws.Instance{
 			{
@@ -99,6 +109,7 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 			{
 				InstanceID:       "i-002",
@@ -107,6 +118,7 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{
@@ -127,24 +139,15 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 
 	result := calc.Calculate(input)
 
-	// One instance should be RI-covered
-	riCoveredCount := 0
-	onDemandCount := 0
+	// The older instance (i-001) should be RI-covered, newer instance (i-002) stays on-demand
+	assert.Equal(t, CoverageReservedInstance, result.InstanceCosts["i-001"].CoverageType,
+		"Older instance should get RI coverage")
+	assert.Equal(t, 0.192, result.InstanceCosts["i-001"].RICoverage)
+	assert.Equal(t, 0.0, result.InstanceCosts["i-001"].EffectiveCost)
 
-	for _, cost := range result.InstanceCosts {
-		switch cost.CoverageType {
-		case CoverageReservedInstance:
-			riCoveredCount++
-			assert.Equal(t, 0.192, cost.RICoverage)
-			assert.Equal(t, 0.0, cost.EffectiveCost)
-		case CoverageOnDemand:
-			onDemandCount++
-			assert.Equal(t, 0.192, cost.EffectiveCost)
-		}
-	}
-
-	assert.Equal(t, 1, riCoveredCount, "Expected 1 RI-covered instance")
-	assert.Equal(t, 1, onDemandCount, "Expected 1 on-demand instance")
+	assert.Equal(t, CoverageOnDemand, result.InstanceCosts["i-002"].CoverageType,
+		"Newer instance should stay on-demand when RI is exhausted")
+	assert.Equal(t, 0.192, result.InstanceCosts["i-002"].EffectiveCost)
 
 	// Check aggregates
 	assert.Equal(t, 0.384, result.TotalShelfPrice)    // 2 * 0.192
@@ -155,6 +158,7 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 // TestCalculatorWithEC2InstanceSavingsPlan tests EC2 Instance SP application.
 func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 	calc := NewCalculator()
+	baseTime := testBaseTime()
 
 	input := CalculationInput{
 		Instances: []aws.Instance{
@@ -165,6 +169,7 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 			{
 				InstanceID:       "i-002",
@@ -173,6 +178,7 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2b",
 				State:            "running",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{},
@@ -211,6 +217,7 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 // TestCalculatorSpotPricing tests that spot instances use spot market prices.
 func TestCalculatorSpotPricing(t *testing.T) {
 	calc := NewCalculator()
+	baseTime := testBaseTime()
 
 	input := CalculationInput{
 		Instances: []aws.Instance{
@@ -222,6 +229,7 @@ func TestCalculatorSpotPricing(t *testing.T) {
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
 				Lifecycle:        "spot",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{},
@@ -252,6 +260,9 @@ func TestCalculatorSpotPricing(t *testing.T) {
 func TestCalculatorPriorityOrder(t *testing.T) {
 	calc := NewCalculator()
 
+	// Use fixed launch times to ensure deterministic ordering
+	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	input := CalculationInput{
 		Instances: []aws.Instance{
 			// Instance 1: Will be covered by RI
@@ -262,6 +273,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 			// Instance 2: Will be covered by EC2 Instance SP
 			{
@@ -271,8 +283,9 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2b",
 				State:            "running",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
 			},
-			// Instance 3: Will be covered by Compute SP
+			// Instance 3: Will be covered by Compute SP (launched before i-ondemand)
 			{
 				InstanceID:       "i-compsp",
 				InstanceType:     "c5.xlarge",
@@ -280,8 +293,9 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(3 * time.Hour),
 			},
-			// Instance 4: Will be on-demand (no coverage)
+			// Instance 4: Will be on-demand (launched after i-compsp, gets no coverage)
 			{
 				InstanceID:       "i-ondemand",
 				InstanceType:     "r5.xlarge",
@@ -289,6 +303,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(4 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{
@@ -361,6 +376,7 @@ func TestCalculatorEmptyInput(t *testing.T) {
 // calculated correctly.
 func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 	calc := NewCalculator()
+	baseTime := testBaseTime()
 
 	endTime := time.Now().Add(365 * 24 * time.Hour) // SP expires in 1 year
 
@@ -373,6 +389,7 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 				AccountID:        "123456789012",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{},
@@ -403,9 +420,76 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 	assert.Equal(t, endTime, spUtil.EndTime)
 }
 
+// TestCalculatorLaunchTimeStability tests that older instances get SP coverage first,
+// providing stable discount assignment when instances have identical savings characteristics.
+func TestCalculatorLaunchTimeStability(t *testing.T) {
+	calc := NewCalculator()
+
+	// Create a scenario where two m5.xlarge instances have identical:
+	// - Instance type (same savings %, same SP rate)
+	// - Account, region, AZ
+	// The only difference is launch time. The older instance should get coverage.
+
+	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	olderInstance := baseTime.Add(1 * time.Hour)  // Launched first
+	newerInstance := baseTime.Add(10 * time.Hour) // Launched later
+
+	input := CalculationInput{
+		Instances: []aws.Instance{
+			{
+				InstanceID:       "i-newer",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       newerInstance,
+			},
+			{
+				InstanceID:       "i-older",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       olderInstance,
+			},
+		},
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans: []aws.SavingsPlan{
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-001",
+				SavingsPlanType: "EC2Instance",
+				Region:          "us-west-2",
+				InstanceFamily:  "m5",
+				Commitment:      0.138, // Only enough to cover ONE m5.xlarge
+				AccountID:       "123456789012",
+			},
+		},
+		OnDemandPrices: map[string]float64{
+			"m5.xlarge:us-west-2": 0.192,
+		},
+	}
+
+	result := calc.Calculate(input)
+
+	// The older instance should get SP coverage, newer instance stays on-demand
+	assert.Equal(t, CoverageEC2InstanceSavingsPlan, result.InstanceCosts["i-older"].CoverageType,
+		"Older instance should get SP coverage")
+	assert.Equal(t, CoverageOnDemand, result.InstanceCosts["i-newer"].CoverageType,
+		"Newer instance should stay on-demand when SP is exhausted")
+
+	// Verify the older instance got full coverage
+	assert.Greater(t, result.InstanceCosts["i-older"].SavingsPlanCoverage, 0.0)
+
+	// Verify the newer instance got no coverage
+	assert.Equal(t, 0.0, result.InstanceCosts["i-newer"].SavingsPlanCoverage)
+}
+
 // TestCalculatorMultipleAccounts tests cost calculation across multiple AWS accounts.
 func TestCalculatorMultipleAccounts(t *testing.T) {
 	calc := NewCalculator()
+	baseTime := testBaseTime()
 
 	input := CalculationInput{
 		Instances: []aws.Instance{
@@ -416,6 +500,7 @@ func TestCalculatorMultipleAccounts(t *testing.T) {
 				AccountID:        "111111111111",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
 			},
 			{
 				InstanceID:       "i-account2",
@@ -424,6 +509,7 @@ func TestCalculatorMultipleAccounts(t *testing.T) {
 				AccountID:        "222222222222",
 				AvailabilityZone: "us-west-2a",
 				State:            "running",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
 			},
 		},
 		ReservedInstances: []aws.ReservedInstance{
