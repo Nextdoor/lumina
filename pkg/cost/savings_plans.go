@@ -191,18 +191,32 @@ func applyEC2InstanceSavingsPlan(
 	//   - Between A and B (tie at 72%), B has lower SP rate ($0.054 < $0.107), so B comes first
 	//   - Final order: B ($0.054, 72%), A ($0.107, 72%), C ($0.058, 60%)
 	sort.Slice(eligible, func(i, j int) bool {
+		// Use epsilon comparison for floating-point values to handle precision issues
+		const epsilon = 1e-9
+
 		// Primary sort: highest savings percentage first
-		if eligible[i].SavingsPercent != eligible[j].SavingsPercent {
-			return eligible[i].SavingsPercent > eligible[j].SavingsPercent
+		savingsDiff := eligible[i].SavingsPercent - eligible[j].SavingsPercent
+		if savingsDiff > epsilon {
+			return true // i has higher savings
 		}
+		if savingsDiff < -epsilon {
+			return false // j has higher savings
+		}
+
 		// Tie-breaker: lowest SP rate first
-		if eligible[i].SPRate != eligible[j].SPRate {
-			return eligible[i].SPRate < eligible[j].SPRate
+		rateDiff := eligible[i].SPRate - eligible[j].SPRate
+		if rateDiff < -epsilon {
+			return true // i has lower rate
 		}
+		if rateDiff > epsilon {
+			return false // j has lower rate
+		}
+
 		// Stability tie-breaker: older instances first (by launch time)
 		if !eligible[i].Instance.LaunchTime.Equal(eligible[j].Instance.LaunchTime) {
 			return eligible[i].Instance.LaunchTime.Before(eligible[j].Instance.LaunchTime)
 		}
+
 		// Final tie-breaker: instance ID (for deterministic sort)
 		return eligible[i].Instance.InstanceID < eligible[j].Instance.InstanceID
 	})
@@ -409,16 +423,32 @@ func applyComputeSavingsPlan(
 	//
 	// See detailed comments in applyEC2InstanceSavingsPlan() for the rationale.
 	sort.Slice(eligible, func(i, j int) bool {
-		if eligible[i].SavingsPercent != eligible[j].SavingsPercent {
-			return eligible[i].SavingsPercent > eligible[j].SavingsPercent
+		// Use epsilon comparison for floating-point values to handle precision issues
+		const epsilon = 1e-9
+
+		// Primary sort: highest savings percentage first
+		savingsDiff := eligible[i].SavingsPercent - eligible[j].SavingsPercent
+		if savingsDiff > epsilon {
+			return true // i has higher savings
 		}
-		if eligible[i].SPRate != eligible[j].SPRate {
-			return eligible[i].SPRate < eligible[j].SPRate
+		if savingsDiff < -epsilon {
+			return false // j has higher savings
 		}
+
+		// Tie-breaker: lowest SP rate first
+		rateDiff := eligible[i].SPRate - eligible[j].SPRate
+		if rateDiff < -epsilon {
+			return true // i has lower rate
+		}
+		if rateDiff > epsilon {
+			return false // j has lower rate
+		}
+
 		// Stability tie-breaker: older instances first (by launch time)
 		if !eligible[i].Instance.LaunchTime.Equal(eligible[j].Instance.LaunchTime) {
 			return eligible[i].Instance.LaunchTime.Before(eligible[j].Instance.LaunchTime)
 		}
+
 		// Final tie-breaker: instance ID (for deterministic sort)
 		return eligible[i].Instance.InstanceID < eligible[j].Instance.InstanceID
 	})
