@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -182,14 +181,15 @@ func runStandalone(
 	setupLog.Info("started EC2 reconciler in standalone mode")
 
 	// Create credential monitor for AWS health checks
-	// The monitor runs background checks every 10 minutes instead of on every healthz probe,
-	// reducing AWS API calls from ~42/min to ~0.7/min (for 7 accounts).
+	// The monitor runs background checks at the configured interval instead of on every healthz probe,
+	// reducing AWS API calls from ~42/min to ~0.7/min (for 7 accounts with 10m interval).
 	validator := aws.NewAccountValidator(awsClient)
-	credMonitor := aws.NewCredentialMonitor(validator, cfg.AWSAccounts, 10*time.Minute)
+	checkInterval := cfg.GetAccountValidationInterval()
+	credMonitor := aws.NewCredentialMonitor(validator, cfg.AWSAccounts, checkInterval)
 	credMonitor.Start()
 	setupLog.Info("started AWS credential monitor",
 		"accounts", len(cfg.AWSAccounts),
-		"checkInterval", "10m")
+		"checkInterval", checkInterval)
 
 	// Setup metrics server using standard http package
 	// In standalone mode, we serve Prometheus metrics directly without authentication
@@ -562,15 +562,16 @@ func main() {
 	}
 
 	// Create credential monitor for AWS health checks
-	// The monitor runs background checks every 10 minutes instead of on every healthz probe,
-	// reducing AWS API calls from ~42/min to ~0.7/min (for 7 accounts) while still detecting
-	// credential issues within 10 minutes.
+	// The monitor runs background checks at the configured interval instead of on every healthz probe,
+	// reducing AWS API calls from ~42/min to ~0.7/min (for 7 accounts with 10m interval) while still
+	// detecting credential issues within the configured check interval.
 	validator := aws.NewAccountValidator(awsClient)
-	credMonitor := aws.NewCredentialMonitor(validator, cfg.AWSAccounts, 10*time.Minute)
+	checkInterval := cfg.GetAccountValidationInterval()
+	credMonitor := aws.NewCredentialMonitor(validator, cfg.AWSAccounts, checkInterval)
 	credMonitor.Start()
 	setupLog.Info("started AWS credential monitor",
 		"accounts", len(cfg.AWSAccounts),
-		"checkInterval", "10m")
+		"checkInterval", checkInterval)
 
 	// The readiness probe (readyz) validates AWS account access using the credential monitor.
 	// This ensures the controller doesn't receive traffic until all configured AWS accounts
