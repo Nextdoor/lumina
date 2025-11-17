@@ -38,6 +38,7 @@ type RealClient struct {
 	config               ClientConfig
 	stsClient            *sts.Client
 	defaultCredsProvider aws.CredentialsProvider   // Default credential provider from credential chain
+	defaultAccountConfig AccountConfig             // Account config for non-account-specific calls (pricing, etc)
 	mu                   sync.RWMutex              // Protects ec2Clients and spClients maps
 	ec2Clients           map[string]*RealEC2Client // Cached per-account EC2 clients
 	spClients            map[string]*RealSPClient  // Cached per-account Savings Plans clients
@@ -48,8 +49,16 @@ type RealClient struct {
 // NewRealClient creates a new RealClient with the specified configuration.
 // The client uses the AWS SDK default credential chain for authentication.
 //
+// The defaultAccountConfig specifies which account to use for non-account-specific
+// API calls (e.g., pricing data). This ensures all AWS calls use assumed role credentials.
+//
 // For LocalStack testing, set endpointURL to "http://localhost:4566".
-func NewRealClient(ctx context.Context, cfg ClientConfig, endpointURL string) (*RealClient, error) {
+func NewRealClient(
+	ctx context.Context,
+	cfg ClientConfig,
+	defaultAccountConfig AccountConfig,
+	endpointURL string,
+) (*RealClient, error) {
 	// Load AWS configuration using default credential chain
 	// This will automatically use:
 	// 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
@@ -77,6 +86,7 @@ func NewRealClient(ctx context.Context, cfg ClientConfig, endpointURL string) (*
 		config:               cfg,
 		stsClient:            stsClient,
 		defaultCredsProvider: awsCfg.Credentials,
+		defaultAccountConfig: defaultAccountConfig,
 		ec2Clients:           make(map[string]*RealEC2Client),
 		spClients:            make(map[string]*RealSPClient),
 		pricingCache:         nil, // Will be initialized on first Pricing() call
@@ -143,7 +153,7 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 }
 
 // Pricing returns a PricingClient. Pricing data is shared across all accounts,
-// but we use the default credential provider to ensure consistent authentication.
+// but we use the default account's assumed role credentials for authentication.
 //
 // The pricing client is lazily initialized on first call and then cached
 // for subsequent requests. This avoids AWS SDK configuration overhead
@@ -151,12 +161,15 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 //
 // Note: Unlike EC2 and SavingsPlans clients which are per-account, the pricing
 // client is shared because pricing data is the same for all accounts. We use
-// the default credential provider (which may be from an assumed role if configured)
-// to make the API calls.
+// the default account's credentials (via AssumeRole) to make the API calls,
+// ensuring all AWS calls use assumed role credentials rather than the pod's credentials.
 func (c *RealClient) Pricing(ctx context.Context) PricingClient {
 	if c.pricingCache == nil {
-		// Initialize pricing client with default credentials (uses us-east-1 for pricing API)
-		client, err := NewRealPricingClient(ctx, c.defaultCredsProvider, c.endpointURL)
+		// Get credentials for the default account (will use AssumeRole if configured)
+		creds := c.getCredentials(c.defaultAccountConfig)
+
+		// Initialize pricing client with default account credentials (uses us-east-1 for pricing API)
+		client, err := NewRealPricingClient(ctx, creds, c.endpointURL)
 		if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
 			// Return a client that will error on every call
 			// This is better than panicking, and allows the controller to continue

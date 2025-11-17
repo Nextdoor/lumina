@@ -89,14 +89,22 @@ func runStandalone(
 ) error {
 	setupLog.Info("starting in standalone mode (no Kubernetes integration)")
 
+	// Get default account for non-account-specific AWS calls (pricing, etc)
+	defaultAccount := cfg.GetDefaultAccount()
+
 	// Create AWS client
 	awsClient, err := aws.NewClient(aws.ClientConfig{
 		DefaultRegion: cfg.DefaultRegion,
+		DefaultAccount: aws.AccountConfig{
+			AccountID:     defaultAccount.AccountID,
+			AssumeRoleARN: defaultAccount.AssumeRoleARN,
+			Region:        defaultAccount.Region,
+		},
 	})
 	if err != nil {
 		return err
 	}
-	setupLog.Info("created AWS client")
+	setupLog.Info("created AWS client", "defaultAccount", defaultAccount.Name)
 
 	// Initialize Prometheus metrics without controller-runtime manager
 	// We'll create our own HTTP server for metrics
@@ -469,16 +477,24 @@ func main() {
 	luminaMetrics.ControllerRunning.Set(1)
 	setupLog.Info("metrics initialized and controller running metric set")
 
+	// Get default account for non-account-specific AWS calls (pricing, etc)
+	defaultAccount := cfg.GetDefaultAccount()
+
 	// Create AWS client for controllers and health checks
 	// This client handles credential management and AssumeRole operations
 	awsClient, err := aws.NewClient(aws.ClientConfig{
 		DefaultRegion: cfg.DefaultRegion,
+		DefaultAccount: aws.AccountConfig{
+			AccountID:     defaultAccount.AccountID,
+			AssumeRoleARN: defaultAccount.AssumeRoleARN,
+			Region:        defaultAccount.Region,
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create AWS client")
 		os.Exit(1)
 	}
-	setupLog.Info("created AWS client")
+	setupLog.Info("created AWS client", "defaultAccount", defaultAccount.Name)
 
 	if err := (&controller.NodeReconciler{
 		Client: mgr.GetClient(),

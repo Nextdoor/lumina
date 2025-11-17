@@ -38,6 +38,12 @@ type Config struct {
 	// Each account must have an AssumeRole ARN configured.
 	AWSAccounts []AWSAccount `yaml:"awsAccounts"`
 
+	// DefaultAccount is the AWS account used for non-account-specific API calls
+	// such as pricing data retrieval. This account's AssumeRole ARN is used for
+	// operations that don't target a specific monitored account.
+	// If not specified, uses the first account in AWSAccounts.
+	DefaultAccount *AWSAccount `yaml:"defaultAccount,omitempty"`
+
 	// DefaultRegion is the default AWS region for API calls.
 	// Can be overridden per-account if needed.
 	DefaultRegion string `yaml:"defaultRegion,omitempty"`
@@ -246,6 +252,13 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate default account if specified
+	if c.DefaultAccount != nil {
+		if err := c.DefaultAccount.Validate(); err != nil {
+			return fmt.Errorf("invalid default account: %w", err)
+		}
+	}
+
 	// Validate log level
 	validLogLevels := map[string]bool{
 		"debug": true,
@@ -369,4 +382,15 @@ func (c *Config) GetAccountValidationInterval() time.Duration {
 		return 10 * time.Minute
 	}
 	return duration
+}
+
+// GetDefaultAccount returns the default account to use for non-account-specific
+// AWS API calls (e.g., pricing data). If DefaultAccount is not explicitly configured,
+// returns the first account in AWSAccounts.
+func (c *Config) GetDefaultAccount() AWSAccount {
+	if c.DefaultAccount != nil {
+		return *c.DefaultAccount
+	}
+	// Default to first account if default account not specified
+	return c.AWSAccounts[0]
 }

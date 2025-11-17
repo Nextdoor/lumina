@@ -109,6 +109,11 @@ type ClientConfig struct {
 	// DefaultRegion is the default AWS region for API calls
 	DefaultRegion string
 
+	// DefaultAccount is the account configuration to use for non-account-specific
+	// API calls (e.g., pricing data). This ensures all AWS calls use assumed role
+	// credentials rather than the pod's service account credentials.
+	DefaultAccount AccountConfig
+
 	// MaxRetries is the maximum number of retries for AWS API calls
 	// Default: 3
 	MaxRetries int
@@ -144,5 +149,5 @@ func NewClient(config ClientConfig) (Client, error) {
 // For LocalStack testing, pass "http://localhost:4566" as endpointURL.
 func NewClientWithEndpoint(config ClientConfig, endpointURL string) (Client, error) {
 	// Create a real AWS client with the specified endpoint
-	return NewRealClient(context.Background(), config, endpointURL)
+	return NewRealClient(context.Background(), config, config.DefaultAccount, endpointURL)
 }

@@ -27,8 +27,15 @@ func TestNewRealClient(t *testing.T) {
 		DefaultRegion: "us-west-2",
 	}
 
+	// Default account config for non-account-specific calls (pricing, etc)
+	defaultAccountConfig := AccountConfig{
+		AccountID:     "123456789012",
+		AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+		Region:        "us-west-2",
+	}
+
 	// Create client without endpoint (will use real AWS - but we won't call any APIs)
-	client, err := NewRealClient(ctx, cfg, "")
+	client, err := NewRealClient(ctx, cfg, defaultAccountConfig, "")
 	if err != nil {
 		t.Fatalf("expected no error creating real client, got: %v", err)
 	}
@@ -63,8 +70,15 @@ func TestNewRealClientWithEndpoint(t *testing.T) {
 		DefaultRegion: "us-east-1",
 	}
 
+	// Default account config for non-account-specific calls (pricing, etc)
+	defaultAccountConfig := AccountConfig{
+		AccountID:     "123456789012",
+		AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+		Region:        "us-east-1",
+	}
+
 	endpoint := testLocalStackEndpoint
-	client, err := NewRealClient(ctx, cfg, endpoint)
+	client, err := NewRealClient(ctx, cfg, defaultAccountConfig, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error creating client with endpoint, got: %v", err)
 	}
@@ -85,7 +99,14 @@ func TestRealClientPricing(t *testing.T) {
 		DefaultRegion: "us-west-2",
 	}
 
-	client, err := NewRealClient(ctx, cfg, "")
+	// Default account config for non-account-specific calls (pricing, etc)
+	defaultAccountConfig := AccountConfig{
+		AccountID:     "123456789012",
+		AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+		Region:        "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, defaultAccountConfig, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -150,7 +171,14 @@ func TestRealClientEC2(t *testing.T) {
 		DefaultRegion: "us-west-2",
 	}
 
-	client, err := NewRealClient(ctx, cfg, "")
+	// Default account config for non-account-specific calls (pricing, etc)
+	defaultAccountConfig := AccountConfig{
+		AccountID:     "123456789012",
+		AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+		Region:        "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, defaultAccountConfig, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -190,7 +218,14 @@ func TestRealClientSavingsPlans(t *testing.T) {
 		DefaultRegion: "us-west-2",
 	}
 
-	client, err := NewRealClient(ctx, cfg, "")
+	// Default account config for non-account-specific calls (pricing, etc)
+	defaultAccountConfig := AccountConfig{
+		AccountID:     "123456789012",
+		AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+		Region:        "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, defaultAccountConfig, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -233,7 +268,14 @@ func TestRealClientGetCredentialsWithoutAssumeRole(t *testing.T) {
 		DefaultRegion: "us-west-2",
 	}
 
-	client, err := NewRealClient(ctx, cfg, "")
+	// Default account config for non-account-specific calls (pricing, etc)
+	defaultAccountConfig := AccountConfig{
+		AccountID:     "123456789012",
+		AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
+		Region:        "us-west-2",
+	}
+
+	client, err := NewRealClient(ctx, cfg, defaultAccountConfig, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
