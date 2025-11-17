@@ -344,6 +344,18 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 
 	result := calc.Calculate(input)
 
+	// Debug output to understand what's happening in CI
+	t.Logf("i-compsp: coverage=%s, shelf=%.6f, effective=%.6f, sp_coverage=%.6f",
+		result.InstanceCosts["i-compsp"].CoverageType,
+		result.InstanceCosts["i-compsp"].ShelfPrice,
+		result.InstanceCosts["i-compsp"].EffectiveCost,
+		result.InstanceCosts["i-compsp"].SavingsPlanCoverage)
+	t.Logf("i-ondemand: coverage=%s, shelf=%.6f, effective=%.6f, sp_coverage=%.6f",
+		result.InstanceCosts["i-ondemand"].CoverageType,
+		result.InstanceCosts["i-ondemand"].ShelfPrice,
+		result.InstanceCosts["i-ondemand"].EffectiveCost,
+		result.InstanceCosts["i-ondemand"].SavingsPlanCoverage)
+
 	// Verify priority order
 	assert.Equal(t, CoverageReservedInstance, result.InstanceCosts["i-ri"].CoverageType)
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, result.InstanceCosts["i-ec2sp"].CoverageType)
