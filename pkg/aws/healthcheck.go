@@ -15,27 +15,30 @@
 package aws
 
 import (
-	"fmt"
 	"net/http"
-
-	"github.com/nextdoor/lumina/pkg/config"
 )
 
 // HealthChecker provides health check functionality for AWS account access.
 // It implements the controller-runtime healthz.Checker interface and can be
 // used as a readiness probe to ensure the controller doesn't mark itself as
 // ready until all configured AWS accounts are accessible.
+//
+// The health checker now uses a CredentialMonitor for efficient background
+// credential validation, reducing AWS API traffic from ~42 calls/min to
+// ~0.7 calls/min (for 7 accounts with default settings) while still detecting
+// credential issues within the configured monitor interval.
 type HealthChecker struct {
-	validator Validator
-	accounts  []config.AWSAccount
+	monitor *CredentialMonitor
 }
 
-// NewHealthChecker creates a new health checker that validates access to
-// the provided AWS accounts using the given validator.
-func NewHealthChecker(validator Validator, accounts []config.AWSAccount) *HealthChecker {
+// NewHealthChecker creates a new health checker that uses the provided
+// credential monitor for health status checks.
+//
+// The monitor should be started separately via monitor.Start() before
+// the health checker is registered with the controller-runtime manager.
+func NewHealthChecker(monitor *CredentialMonitor) *HealthChecker {
 	return &HealthChecker{
-		validator: validator,
-		accounts:  accounts,
+		monitor: monitor,
 	}
 }
 
@@ -44,47 +47,27 @@ func (h *HealthChecker) Name() string {
 	return "aws-account-access"
 }
 
-// Check validates that all configured AWS accounts are accessible.
-// This method is called by controller-runtime's health probe server.
+// Check validates that all configured AWS accounts are accessible by
+// reading cached status from the credential monitor.
 //
-// It returns nil if all accounts are accessible, or an error if any account
-// fails validation. The error message includes details about which accounts
-// failed and why.
+// This method is called by controller-runtime's health probe server
+// (typically every 10 seconds). Instead of making AWS API calls on every
+// check, it reads cached status from the credential monitor's in-memory state.
+// This provides:
+//   - Sub-millisecond response times (memory read vs network call)
+//   - 98% reduction in AWS API traffic (from ~42 calls/min to ~0.7 calls/min)
+//   - Graceful degradation (fails only if ALL accounts are unhealthy)
+//   - Still detects credential issues within the monitor's check interval
+//
+// The method returns nil if all accounts are healthy (or if some are degraded
+// but not all failed). It returns an error only if ALL accounts are unhealthy,
+// implementing graceful degradation to allow the controller to continue operating
+// when individual accounts have issues.
 //
 // This check is designed to be used as a readiness probe, not a liveness probe.
 // Temporary AWS API failures should not cause the pod to be killed, but they
 // should prevent the pod from receiving traffic until AWS access is restored.
 func (h *HealthChecker) Check(req *http.Request) error {
-	ctx := req.Context()
-
-	// If no accounts are configured, consider this healthy (controller can still run,
-	// it just won't collect any data). This allows the controller to start even if
-	// configuration is incomplete, which is useful for debugging and gradual rollout.
-	if len(h.accounts) == 0 {
-		return nil
-	}
-
-	// Validate each account
-	var failedAccounts []string
-	for _, account := range h.accounts {
-		accountConfig := AccountConfig{
-			AccountID:     account.AccountID,
-			AssumeRoleARN: account.AssumeRoleARN,
-			Region:        account.Region,
-		}
-
-		if err := h.validator.ValidateAccountAccess(ctx, accountConfig); err != nil {
-			// Don't fail immediately; collect all failures to provide comprehensive feedback
-			failedAccounts = append(failedAccounts, fmt.Sprintf("%s (%s): %v",
-				account.Name, account.AccountID, err))
-		}
-	}
-
-	// If any accounts failed, return an error with all failure details
-	if len(failedAccounts) > 0 {
-		return fmt.Errorf("failed to validate access to %d/%d AWS accounts: %v",
-			len(failedAccounts), len(h.accounts), failedAccounts)
-	}
-
-	return nil
+	// Read cached status from monitor (no AWS API calls)
+	return h.monitor.GetStatus()
 }

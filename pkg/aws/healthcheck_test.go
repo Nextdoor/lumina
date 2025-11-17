@@ -20,192 +20,165 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/nextdoor/lumina/pkg/config"
 )
 
-// MockValidator is a test double for the Validator interface
-type MockValidator struct {
-	ValidateAccountAccessFunc func(ctx context.Context, accountConfig AccountConfig) error
-}
-
-func (m *MockValidator) ValidateAccountAccess(ctx context.Context, accountConfig AccountConfig) error {
-	if m.ValidateAccountAccessFunc != nil {
-		return m.ValidateAccountAccessFunc(ctx, accountConfig)
-	}
-	return nil
-}
-
 func TestHealthChecker_Name(t *testing.T) {
-	checker := NewHealthChecker(&MockValidator{}, []config.AWSAccount{})
+	monitor := NewCredentialMonitor(&mockValidator{}, []config.AWSAccount{}, 10*time.Minute)
+	checker := NewHealthChecker(monitor)
+
 	if name := checker.Name(); name != "aws-account-access" {
 		t.Errorf("expected name 'aws-account-access', got %q", name)
 	}
 }
 
-func TestHealthChecker_Check(t *testing.T) {
-	tests := []struct {
-		name          string
-		accounts      []config.AWSAccount
-		validatorFunc func(ctx context.Context, cfg AccountConfig) error
-		expectError   bool
-		errorContains string
-	}{
-		{
-			name:     "no accounts configured - healthy",
-			accounts: []config.AWSAccount{},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				t.Error("validator should not be called when no accounts are configured")
-				return nil
-			},
-			expectError: false,
-		},
-		{
-			name: "single account - successful validation",
-			accounts: []config.AWSAccount{
-				{
-					AccountID:     "123456789012",
-					Name:          "Production",
-					AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
-					Region:        "us-west-2",
-				},
-			},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				return nil
-			},
-			expectError: false,
-		},
-		{
-			name: "single account - validation failure",
-			accounts: []config.AWSAccount{
-				{
-					AccountID:     "123456789012",
-					Name:          "Production",
-					AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
-					Region:        "us-west-2",
-				},
-			},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				return errors.New("AssumeRole denied")
-			},
-			expectError:   true,
-			errorContains: "failed to validate access to 1/1 AWS accounts",
-		},
-		{
-			name: "multiple accounts - all successful",
-			accounts: []config.AWSAccount{
-				{
-					AccountID:     "123456789012",
-					Name:          "Production",
-					AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
-					Region:        "us-west-2",
-				},
-				{
-					AccountID:     "987654321098",
-					Name:          "Staging",
-					AssumeRoleARN: "arn:aws:iam::987654321098:role/test-role",
-					Region:        "us-east-1",
-				},
-			},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				return nil
-			},
-			expectError: false,
-		},
-		{
-			name: "multiple accounts - partial failure",
-			accounts: []config.AWSAccount{
-				{
-					AccountID:     "123456789012",
-					Name:          "Production",
-					AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
-					Region:        "us-west-2",
-				},
-				{
-					AccountID:     "987654321098",
-					Name:          "Staging",
-					AssumeRoleARN: "arn:aws:iam::987654321098:role/test-role",
-					Region:        "us-east-1",
-				},
-			},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				// Fail only for the staging account
-				if cfg.AccountID == "987654321098" {
-					return errors.New("network timeout")
-				}
-				return nil
-			},
-			expectError:   true,
-			errorContains: "failed to validate access to 1/2 AWS accounts",
-		},
-		{
-			name: "multiple accounts - all failed",
-			accounts: []config.AWSAccount{
-				{
-					AccountID:     "123456789012",
-					Name:          "Production",
-					AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
-					Region:        "us-west-2",
-				},
-				{
-					AccountID:     "987654321098",
-					Name:          "Staging",
-					AssumeRoleARN: "arn:aws:iam::987654321098:role/test-role",
-					Region:        "us-east-1",
-				},
-			},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				return errors.New("invalid credentials")
-			},
-			expectError:   true,
-			errorContains: "failed to validate access to 2/2 AWS accounts",
-		},
-		{
-			name: "validation error includes account details",
-			accounts: []config.AWSAccount{
-				{
-					AccountID:     "123456789012",
-					Name:          "Production",
-					AssumeRoleARN: "arn:aws:iam::123456789012:role/test-role",
-					Region:        "us-west-2",
-				},
-			},
-			validatorFunc: func(ctx context.Context, cfg AccountConfig) error {
-				return errors.New("AssumeRole denied")
-			},
-			expectError:   true,
-			errorContains: "Production (123456789012)",
+func TestHealthChecker_CheckNoAccounts(t *testing.T) {
+	validator := &mockValidator{}
+	accounts := []config.AWSAccount{}
+	monitor := NewCredentialMonitor(validator, accounts, 10*time.Minute)
+	checker := NewHealthChecker(monitor)
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	err := checker.Check(req)
+
+	if err != nil {
+		t.Errorf("expected nil error with no accounts, got: %v", err)
+	}
+}
+
+func TestHealthChecker_CheckAllHealthy(t *testing.T) {
+	validator := &mockValidator{}
+	accounts := []config.AWSAccount{
+		{AccountID: "111", Name: "account1", Region: "us-west-2"},
+		{AccountID: "222", Name: "account2", Region: "us-east-1"},
+	}
+	monitor := NewCredentialMonitor(validator, accounts, 10*time.Minute)
+
+	// Run initial check
+	monitor.CheckAllAccounts()
+
+	checker := NewHealthChecker(monitor)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	err := checker.Check(req)
+
+	if err != nil {
+		t.Errorf("expected nil error when all accounts healthy, got: %v", err)
+	}
+}
+
+func TestHealthChecker_CheckSomeDegraded(t *testing.T) {
+	// Validator that fails for one account
+	validator := &mockValidator{
+		validateFunc: func(ctx context.Context, accountConfig AccountConfig) error {
+			if accountConfig.AccountID == "222" {
+				return errors.New("credential expired")
+			}
+			return nil
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create mock validator
-			mockValidator := &MockValidator{
-				ValidateAccountAccessFunc: tt.validatorFunc,
-			}
+	accounts := []config.AWSAccount{
+		{AccountID: "111", Name: "account1", Region: "us-west-2"},
+		{AccountID: "222", Name: "account2", Region: "us-east-1"},
+		{AccountID: "333", Name: "account3", Region: "eu-west-1"},
+	}
+	monitor := NewCredentialMonitor(validator, accounts, 10*time.Minute)
 
-			// Create health checker
-			checker := NewHealthChecker(mockValidator, tt.accounts)
+	// Run initial check
+	monitor.CheckAllAccounts()
 
-			// Create a test HTTP request with context
-			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	checker := NewHealthChecker(monitor)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	err := checker.Check(req)
 
-			// Run health check
-			err := checker.Check(req)
+	// With graceful degradation, should return nil (healthy) even though one account failed
+	if err != nil {
+		t.Errorf("expected nil error with graceful degradation, got: %v", err)
+	}
+}
 
-			// Verify results
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("expected error but got nil")
-				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
-					t.Errorf("expected error to contain %q, got %q", tt.errorContains, err.Error())
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
-			}
-		})
+func TestHealthChecker_CheckAllUnhealthy(t *testing.T) {
+	// Validator that always fails
+	expectedErr := errors.New("all credentials expired")
+	validator := &mockValidator{
+		validateFunc: func(ctx context.Context, accountConfig AccountConfig) error {
+			return expectedErr
+		},
+	}
+
+	accounts := []config.AWSAccount{
+		{AccountID: "111", Name: "account1", Region: "us-west-2"},
+		{AccountID: "222", Name: "account2", Region: "us-east-1"},
+	}
+	monitor := NewCredentialMonitor(validator, accounts, 10*time.Minute)
+
+	// Run initial check
+	monitor.CheckAllAccounts()
+
+	checker := NewHealthChecker(monitor)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	err := checker.Check(req)
+
+	// When ALL accounts fail, should return error
+	if err == nil {
+		t.Fatal("expected error when all accounts unhealthy")
+	}
+
+	if err.Error() == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+func TestHealthChecker_CheckBeforeMonitorRuns(t *testing.T) {
+	validator := &mockValidator{}
+	accounts := []config.AWSAccount{
+		{AccountID: "111", Name: "account1", Region: "us-west-2"},
+	}
+
+	// Create monitor but don't run any checks
+	monitor := NewCredentialMonitor(validator, accounts, 10*time.Minute)
+
+	checker := NewHealthChecker(monitor)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	err := checker.Check(req)
+
+	// Before first check, should not fail (graceful startup)
+	if err != nil {
+		t.Errorf("expected nil error before first check, got: %v", err)
+	}
+}
+
+func TestHealthChecker_CheckUsesMonitorCache(t *testing.T) {
+	validator := &mockValidator{}
+	accounts := []config.AWSAccount{
+		{AccountID: "111", Name: "account1", Region: "us-west-2"},
+	}
+
+	monitor := NewCredentialMonitor(validator, accounts, 10*time.Minute)
+	monitor.CheckAllAccounts()
+
+	// Verify one check was performed
+	initialCallCount := validator.getCallCount()
+	if initialCallCount != 1 {
+		t.Fatalf("expected 1 validation call, got %d", initialCallCount)
+	}
+
+	checker := NewHealthChecker(monitor)
+
+	// Call Check() multiple times
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	for i := 0; i < 10; i++ {
+		err := checker.Check(req)
+		if err != nil {
+			t.Errorf("unexpected error on check %d: %v", i, err)
+		}
+	}
+
+	// Verify no additional validation calls were made (reading from cache)
+	finalCallCount := validator.getCallCount()
+	if finalCallCount != initialCallCount {
+		t.Errorf("expected %d validation calls (cached), got %d", initialCallCount, finalCallCount)
 	}
 }

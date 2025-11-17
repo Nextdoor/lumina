@@ -22,7 +22,6 @@ import (
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/savingsplans"
 	"github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 )
@@ -40,18 +39,22 @@ type RealSPClient struct {
 	accountID string
 }
 
-// NewRealSPClient creates a new Savings Plans client with the specified credentials.
+// NewRealSPClient creates a new Savings Plans client with the specified credential provider.
+// The credential provider should come from either the default credential chain or
+// from an AssumeRoleProvider that automatically refreshes credentials.
 func NewRealSPClient(
 	ctx context.Context,
 	accountID string,
 	region string,
-	creds credentials.StaticCredentialsProvider,
+	credsProvider aws.CredentialsProvider,
 	endpointURL string,
 ) (*RealSPClient, error) {
-	// Load AWS configuration with the provided credentials
+	// Load AWS configuration with the provided credential provider.
+	// The provider handles credential refresh automatically, preventing
+	// expiration issues that occurred with static credentials.
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(region),
-		awsconfig.WithCredentialsProvider(creds),
+		awsconfig.WithCredentialsProvider(credsProvider),
 	)
 	if err != nil { // coverage:ignore - AWS SDK config loading errors are difficult to trigger in unit tests
 		return nil, err

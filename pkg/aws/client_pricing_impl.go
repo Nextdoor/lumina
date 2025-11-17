@@ -62,11 +62,15 @@ const (
 	PricingRegionAPSouth1 = "ap-south-1"
 )
 
-// NewRealPricingClient creates a new Pricing client.
+// NewRealPricingClient creates a new Pricing client with the specified credential provider.
 // The pricing API is only available in us-east-1 and ap-south-1.
 // By default, uses us-east-1 for the pricing API region.
-func NewRealPricingClient(ctx context.Context, endpointURL string) (*RealPricingClient, error) {
-	return NewRealPricingClientWithRegion(ctx, PricingRegionUSEast1, endpointURL)
+func NewRealPricingClient(
+	ctx context.Context,
+	credsProvider aws.CredentialsProvider,
+	endpointURL string,
+) (*RealPricingClient, error) {
+	return NewRealPricingClientWithRegion(ctx, PricingRegionUSEast1, credsProvider, endpointURL)
 }
 
 // NewRealPricingClientWithRegion creates a new Pricing client with a specific pricing region.
@@ -74,6 +78,7 @@ func NewRealPricingClient(ctx context.Context, endpointURL string) (*RealPricing
 func NewRealPricingClientWithRegion(
 	ctx context.Context,
 	pricingRegion string,
+	credsProvider aws.CredentialsProvider,
 	endpointURL string,
 ) (*RealPricingClient, error) {
 	// Validate pricing region
@@ -86,10 +91,12 @@ func NewRealPricingClientWithRegion(
 		)
 	}
 
-	// Load AWS configuration
-	// Pricing API does not require account-specific credentials as pricing data is public
+	// Load AWS configuration with the provided credential provider.
+	// Even though pricing data is public, we use the assumed role credentials
+	// to ensure consistent authentication across all AWS API calls.
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(pricingRegion),
+		awsconfig.WithCredentialsProvider(credsProvider),
 	)
 	if err != nil { // coverage:ignore - AWS SDK config loading errors are difficult to trigger in unit tests
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)

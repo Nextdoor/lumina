@@ -280,8 +280,8 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.HealthProbeBindAddress != ":8081" {
 		t.Errorf("HealthProbeBindAddress = %q, want ':8081'", cfg.HealthProbeBindAddress)
 	}
-	if cfg.AccountValidationInterval != "5m" {
-		t.Errorf("AccountValidationInterval = %q, want '5m'", cfg.AccountValidationInterval)
+	if cfg.AccountValidationInterval != "10m" {
+		t.Errorf("AccountValidationInterval = %q, want '10m'", cfg.AccountValidationInterval)
 	}
 }
 

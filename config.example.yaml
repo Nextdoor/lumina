@@ -27,6 +27,18 @@ awsAccounts:
   #   regions:
   #     - "us-west-2"  # This account only uses us-west-2
 
+# Default Account Configuration (Optional)
+# Specifies which AWS account to use for non-account-specific API calls
+# such as AWS Pricing API. If not specified, the first account in awsAccounts
+# will be used. This ensures all AWS API calls use assumed role credentials
+# rather than the pod's service account credentials.
+#
+# defaultAccount:
+#   accountId: "123456789012"
+#   name: "Production"
+#   assumeRoleArn: "arn:aws:iam::123456789012:role/lumina-controller"
+#   region: "us-west-2"  # Optional: region for this account
+
 # Default AWS region for API calls
 # Can be overridden by LUMINA_DEFAULT_REGION environment variable
 # Default: us-west-2
@@ -61,8 +73,8 @@ healthProbeBindAddress: ":8081"
 # How often to validate AWS account access
 # Format: Go duration string (e.g., "5m", "10m", "1h")
 # Can be overridden by LUMINA_ACCOUNT_VALIDATION_INTERVAL environment variable
-# Default: 5m
-accountValidationInterval: "5m"
+# Default: 10m
+accountValidationInterval: "10m"
 
 # IAM Role Requirements:
 #

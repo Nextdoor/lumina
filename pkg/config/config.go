@@ -38,6 +38,12 @@ type Config struct {
 	// Each account must have an AssumeRole ARN configured.
 	AWSAccounts []AWSAccount `yaml:"awsAccounts"`
 
+	// DefaultAccount is the AWS account used for non-account-specific API calls
+	// such as pricing data retrieval. This account's AssumeRole ARN is used for
+	// operations that don't target a specific monitored account.
+	// If not specified, uses the first account in AWSAccounts.
+	DefaultAccount *AWSAccount `yaml:"defaultAccount,omitempty"`
+
 	// DefaultRegion is the default AWS region for API calls.
 	// Can be overridden per-account if needed.
 	DefaultRegion string `yaml:"defaultRegion,omitempty"`
@@ -63,7 +69,7 @@ type Config struct {
 
 	// AccountValidationInterval is how often to validate AWS account access.
 	// Format: Go duration string (e.g., "5m", "10m")
-	// Default: 5m
+	// Default: 10m
 	AccountValidationInterval string `yaml:"accountValidationInterval,omitempty"`
 
 	// Reconciliation contains settings for data collection reconciliation loops.
@@ -188,7 +194,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("logLevel", "info")
 	v.SetDefault("metricsBindAddress", ":8080")
 	v.SetDefault("healthProbeBindAddress", ":8081")
-	v.SetDefault("accountValidationInterval", "5m")
+	v.SetDefault("accountValidationInterval", "10m")
 	v.SetDefault("reconciliation.risp", "1h")
 	v.SetDefault("reconciliation.ec2", "5m")
 
@@ -246,6 +252,13 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate default account if specified
+	if c.DefaultAccount != nil {
+		if err := c.DefaultAccount.Validate(); err != nil {
+			return fmt.Errorf("invalid default account: %w", err)
+		}
+	}
+
 	// Validate log level
 	validLogLevels := map[string]bool{
 		"debug": true,
@@ -255,6 +268,13 @@ func (c *Config) Validate() error {
 	}
 	if c.LogLevel != "" && !validLogLevels[c.LogLevel] {
 		return fmt.Errorf("invalid log level %q, must be one of: debug, info, warn, error", c.LogLevel)
+	}
+
+	// Validate account validation interval
+	if c.AccountValidationInterval != "" {
+		if _, err := time.ParseDuration(c.AccountValidationInterval); err != nil {
+			return fmt.Errorf("invalid account validation interval %q: %w", c.AccountValidationInterval, err)
+		}
 	}
 
 	// Validate reconciliation intervals
@@ -348,4 +368,29 @@ func extractAccountIDFromARN(arn string) string {
 		return parts[4]
 	}
 	return ""
+}
+
+// GetAccountValidationInterval returns the parsed account validation interval duration.
+// Returns 10 minutes if not configured (the default value).
+func (c *Config) GetAccountValidationInterval() time.Duration {
+	if c.AccountValidationInterval == "" {
+		return 10 * time.Minute
+	}
+	duration, err := time.ParseDuration(c.AccountValidationInterval)
+	if err != nil {
+		// Should never happen since Validate() checks this
+		return 10 * time.Minute
+	}
+	return duration
+}
+
+// GetDefaultAccount returns the default account to use for non-account-specific
+// AWS API calls (e.g., pricing data). If DefaultAccount is not explicitly configured,
+// returns the first account in AWSAccounts.
+func (c *Config) GetDefaultAccount() AWSAccount {
+	if c.DefaultAccount != nil {
+		return *c.DefaultAccount
+	}
+	// Default to first account if default account not specified
+	return c.AWSAccounts[0]
 }
