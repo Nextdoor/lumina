@@ -330,7 +330,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				SavingsPlanType: "Compute",
 				Region:          "all",
 				InstanceFamily:  "all",
-				Commitment:      0.112, // Exactly enough to cover c5.xlarge, nothing left for r5.xlarge
+				Commitment:      0.1122, // Exactly enough to cover c5.xlarge, nothing left for r5.xlarge
 				AccountID:       "123456789012",
 			},
 		},
