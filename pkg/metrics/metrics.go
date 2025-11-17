@@ -83,6 +83,22 @@ type Metrics struct {
 	// This enables alerting on upcoming expirations for renewal planning.
 	// Labels: savings_plan_arn, account_id, type
 	SavingsPlanRemainingHours *prometheus.GaugeVec
+
+	// EC2Instance indicates the presence of an EC2 instance.
+	// Value is always 1 when the instance exists and is running. When the instance
+	// is stopped or terminated, the metric is deleted entirely (not set to 0).
+	// Labels: account_id, region, instance_type, availability_zone, instance_id
+	EC2Instance *prometheus.GaugeVec
+
+	// EC2InstanceCount tracks the count of running instances by instance family.
+	// This provides a higher-level view of EC2 inventory without per-instance granularity.
+	// Labels: account_id, region, instance_family
+	EC2InstanceCount *prometheus.GaugeVec
+
+	// EC2RunningInstanceCount tracks the total count of running instances by account and region.
+	// This enables fleet-wide capacity tracking and monitoring.
+	// Labels: account_id, region
+	EC2RunningInstanceCount *prometheus.GaugeVec
 }
 
 // NewMetrics creates and registers all Prometheus metrics with the provided
@@ -147,6 +163,21 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "savings_plan_remaining_hours",
 			Help: "Number of hours remaining until Savings Plan expires",
 		}, []string{"savings_plan_arn", "account_id", "type"}),
+
+		EC2Instance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ec2_instance",
+			Help: "Indicates presence of a running EC2 instance (1 = exists, metric absent = stopped or terminated)",
+		}, []string{"account_id", "region", "instance_type", "availability_zone", "instance_id"}),
+
+		EC2InstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ec2_instance_count",
+			Help: "Count of running EC2 instances by instance family",
+		}, []string{"account_id", "region", "instance_family"}),
+
+		EC2RunningInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ec2_running_instance_count",
+			Help: "Total count of running EC2 instances by account and region",
+		}, []string{"account_id", "region"}),
 	}
 
 	// Register all metrics with the provided registry
@@ -161,6 +192,9 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.ReservedInstanceCount,
 		m.SavingsPlanCommitment,
 		m.SavingsPlanRemainingHours,
+		m.EC2Instance,
+		m.EC2InstanceCount,
+		m.EC2RunningInstanceCount,
 	)
 
 	return m

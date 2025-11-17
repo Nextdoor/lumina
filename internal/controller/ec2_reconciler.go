@@ -150,6 +150,12 @@ func (r *EC2Reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Res
 		"total_instances", len(allInstances),
 		"running_instances", len(runningInstances))
 
+	// Update Prometheus metrics with current cache state
+	// This exposes EC2 instance inventory for monitoring and alerting
+	r.Metrics.UpdateEC2InstanceMetrics(runningInstances)
+	log.V(1).Info("updated EC2 instance metrics",
+		"instance_count", len(runningInstances))
+
 	// Parse reconciliation interval from config, with default fallback to 5 minutes
 	// The interval determines how often we refresh EC2 instance inventory data
 	requeueAfter := 5 * time.Minute // Default
