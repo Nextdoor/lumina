@@ -32,7 +32,7 @@ import (
 	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 
 // EC2Reconciler reconciles EC2 instance data across all AWS accounts.
 // It queries AWS APIs at a configurable interval to maintain fresh instance inventory.
@@ -328,42 +328,32 @@ func (r *EC2Reconciler) RunStandalone(ctx context.Context) error {
 // SetupWithManager sets up the reconciler with the Manager.
 // coverage:ignore - controller-runtime boilerplate, tested via E2E
 func (r *EC2Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// This is a timer-based controller that requeues itself every 5 minutes.
-	// Controller-runtime requires at least one watch, so we watch ConfigMaps
-	// but ignore all events (the actual trigger is the RequeueAfter in Reconcile).
+	// This is a timer-based controller that requeues itself every 5 minutes using RequeueAfter.
+	// We watch Nodes (which represent EC2 instances in Kubernetes) to trigger initial reconciliation,
+	// but we ignore most Node events - we only trigger on the FIRST Node we see to start the cycle.
+	// Once triggered, the Reconcile() method returns RequeueAfter which causes controller-runtime
+	// to automatically schedule subsequent reconciliations every 5 minutes.
 	//
-	// The predicate filters out all ConfigMap events - we only want timer-based triggers.
-	controller, err := ctrl.NewControllerManagedBy(mgr).
+	// Note: While we watch Nodes to establish the watch, the actual EC2 data collection queries
+	// AWS APIs directly and is independent of Kubernetes Node objects. This watch is purely to
+	// trigger the initial reconciliation - all subsequent runs are timer-based via RequeueAfter.
+	triggered := false
+	err := ctrl.NewControllerManagedBy(mgr).
 		Named("ec2").
-		For(&corev1.ConfigMap{}).
-		WithEventFilter(predicate.NewPredicateFuncs(func(_ client.Object) bool {
-			return false // Ignore all ConfigMap events
+		For(&corev1.Node{}).
+		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			// Only trigger reconciliation once on the first Node we see
+			// After that, RequeueAfter handles all subsequent reconciliations
+			if !triggered {
+				triggered = true
+				return true
+			}
+			return false
 		})).
-		Build(r)
+		Complete(r)
 	if err != nil {
 		return err
 	}
-
-	// Enqueue an initial reconcile request to start the reconciliation cycle immediately.
-	// We create a dummy ConfigMap request since controller-runtime requires a Request object,
-	// but the actual reconcile logic ignores the Request parameter entirely.
-	// This triggers the first Reconcile() call which then uses RequeueAfter to schedule
-	// subsequent runs every 5 minutes.
-	go func() {
-		// Wait a bit for the manager to fully start
-		time.Sleep(2 * time.Second)
-
-		// Enqueue a reconcile request with a dummy object
-		// The reconciler doesn't use the Request parameter, so any non-nil value works
-		dummyRequest := ctrl.Request{
-			NamespacedName: client.ObjectKey{
-				Namespace: "default",
-				Name:      "ec2-trigger",
-			},
-		}
-		// Ignore error from initial trigger - if it fails, the periodic timer will retry
-		_, _ = controller.Reconcile(context.Background(), dummyRequest)
-	}()
 
 	return nil
 }
