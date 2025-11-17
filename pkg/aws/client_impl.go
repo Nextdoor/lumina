@@ -16,6 +16,7 @@ package aws
 
 import (
 	"context"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -36,6 +37,7 @@ import (
 type RealClient struct {
 	config       ClientConfig
 	stsClient    *sts.Client
+	mu           sync.RWMutex              // Protects ec2Clients, spClients, and pricingCache from concurrent access
 	ec2Clients   map[string]*RealEC2Client // Cached per-account EC2 clients
 	spClients    map[string]*RealSPClient  // Cached per-account Savings Plans clients
 	pricingCache *RealPricingClient        // Shared pricing client (region-independent)
@@ -84,11 +86,14 @@ func NewRealClient(ctx context.Context, cfg ClientConfig, endpointURL string) (*
 // If accountConfig.AssumeRoleARN is set, it will assume that role using STS.
 // The client is cached per-account to avoid repeated AssumeRole calls.
 func (c *RealClient) EC2(ctx context.Context, accountConfig AccountConfig) (EC2Client, error) {
-	// Check cache first
+	// Check cache first (read lock)
 	cacheKey := accountConfig.AccountID + ":" + accountConfig.Region
+	c.mu.RLock()
 	if client, ok := c.ec2Clients[cacheKey]; ok {
+		c.mu.RUnlock()
 		return client, nil
 	}
+	c.mu.RUnlock()
 
 	// Get credentials (potentially via AssumeRole)
 	creds, err := c.getCredentials(ctx, accountConfig)
@@ -102,8 +107,10 @@ func (c *RealClient) EC2(ctx context.Context, accountConfig AccountConfig) (EC2C
 		return nil, err
 	}
 
-	// Cache the client
+	// Cache the client (write lock)
+	c.mu.Lock()
 	c.ec2Clients[cacheKey] = client
+	c.mu.Unlock()
 	return client, nil
 }
 
@@ -111,11 +118,14 @@ func (c *RealClient) EC2(ctx context.Context, accountConfig AccountConfig) (EC2C
 // If accountConfig.AssumeRoleARN is set, it will assume that role using STS.
 // The client is cached per-account to avoid repeated AssumeRole calls.
 func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConfig) (SavingsPlansClient, error) {
-	// Check cache first
+	// Check cache first (read lock)
 	cacheKey := accountConfig.AccountID + ":" + accountConfig.Region
+	c.mu.RLock()
 	if client, ok := c.spClients[cacheKey]; ok {
+		c.mu.RUnlock()
 		return client, nil
 	}
+	c.mu.RUnlock()
 
 	// Get credentials (potentially via AssumeRole)
 	creds, err := c.getCredentials(ctx, accountConfig)
@@ -129,8 +139,10 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 		return nil, err
 	}
 
-	// Cache the client
+	// Cache the client (write lock)
+	c.mu.Lock()
 	c.spClients[cacheKey] = client
+	c.mu.Unlock()
 	return client, nil
 }
 
@@ -141,17 +153,33 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 // for subsequent requests. This avoids AWS SDK configuration overhead
 // during client initialization.
 func (c *RealClient) Pricing(ctx context.Context) PricingClient {
-	if c.pricingCache == nil {
-		// Initialize pricing client (uses us-east-1 for pricing API)
-		client, err := NewRealPricingClient(ctx, c.endpointURL)
-		if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
-			// Return a client that will error on every call
-			// This is better than panicking, and allows the controller to continue
-			// operating even if pricing API is unavailable
-			return &BrokenPricingClient{err: err}
-		}
-		c.pricingCache = client
+	// Check cache first (read lock)
+	c.mu.RLock()
+	if c.pricingCache != nil {
+		cached := c.pricingCache
+		c.mu.RUnlock()
+		return cached
 	}
+	c.mu.RUnlock()
+
+	// Initialize pricing client (write lock)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have initialized it)
+	if c.pricingCache != nil {
+		return c.pricingCache
+	}
+
+	// Initialize pricing client (uses us-east-1 for pricing API)
+	client, err := NewRealPricingClient(ctx, c.endpointURL)
+	if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
+		// Return a client that will error on every call
+		// This is better than panicking, and allows the controller to continue
+		// operating even if pricing API is unavailable
+		return &BrokenPricingClient{err: err}
+	}
+	c.pricingCache = client
 	return c.pricingCache
 }
 
