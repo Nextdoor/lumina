@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -65,11 +66,29 @@ type Config struct {
 	// Default: 5m
 	AccountValidationInterval string `yaml:"accountValidationInterval,omitempty"`
 
+	// Reconciliation contains settings for data collection reconciliation loops.
+	Reconciliation ReconciliationConfig `yaml:"reconciliation,omitempty"`
+
 	// TestData contains mock data for E2E testing.
 	// When present, the RISP reconciler will use this data instead of making AWS API calls.
 	// This allows testing without requiring a fully functional AWS environment.
 	// IMPORTANT: This field should only be used in E2E tests, never in production.
 	TestData *TestData `yaml:"testData,omitempty"`
+}
+
+// ReconciliationConfig contains settings for reconciliation intervals.
+type ReconciliationConfig struct {
+	// RISP is how often to reconcile Reserved Instances and Savings Plans.
+	// Format: Go duration string (e.g., "1h", "30m", "2h")
+	// Default: 1h
+	// Recommended: 1h (hourly) - RI/SP data changes infrequently
+	RISP string `yaml:"risp,omitempty"`
+
+	// EC2 is how often to reconcile EC2 instance inventory.
+	// Format: Go duration string (e.g., "5m", "10m", "1m")
+	// Default: 5m
+	// Recommended: 5m - EC2 instances change frequently due to autoscaling
+	EC2 string `yaml:"ec2,omitempty"`
 }
 
 // TestData contains mock data for E2E testing of RISP reconciliation.
@@ -142,6 +161,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("metricsBindAddress", ":8080")
 	v.SetDefault("healthProbeBindAddress", ":8081")
 	v.SetDefault("accountValidationInterval", "5m")
+	v.SetDefault("reconciliation.risp", "1h")
+	v.SetDefault("reconciliation.ec2", "5m")
 
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
@@ -152,6 +173,8 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv("metricsBindAddress", "LUMINA_METRICS_BIND_ADDRESS")
 	_ = v.BindEnv("healthProbeBindAddress", "LUMINA_HEALTH_PROBE_BIND_ADDRESS")
 	_ = v.BindEnv("accountValidationInterval", "LUMINA_ACCOUNT_VALIDATION_INTERVAL")
+	_ = v.BindEnv("reconciliation.risp", "LUMINA_RECONCILIATION_RISP")
+	_ = v.BindEnv("reconciliation.ec2", "LUMINA_RECONCILIATION_EC2")
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
@@ -204,6 +227,18 @@ func (c *Config) Validate() error {
 	}
 	if c.LogLevel != "" && !validLogLevels[c.LogLevel] {
 		return fmt.Errorf("invalid log level %q, must be one of: debug, info, warn, error", c.LogLevel)
+	}
+
+	// Validate reconciliation intervals
+	if c.Reconciliation.RISP != "" {
+		if _, err := time.ParseDuration(c.Reconciliation.RISP); err != nil {
+			return fmt.Errorf("invalid RISP reconciliation interval %q: %w", c.Reconciliation.RISP, err)
+		}
+	}
+	if c.Reconciliation.EC2 != "" {
+		if _, err := time.ParseDuration(c.Reconciliation.EC2); err != nil {
+			return fmt.Errorf("invalid EC2 reconciliation interval %q: %w", c.Reconciliation.EC2, err)
+		}
 	}
 
 	return nil
