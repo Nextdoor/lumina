@@ -82,6 +82,31 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **Note:** SP utilization metrics (current usage, remaining capacity, utilization %) will be added in Phase 6 after cost calculation is implemented.
 
+### EC2 Instance Inventory (Phase 5)
+
+**`ec2_instance`** (gauge)
+- Indicates presence of a running EC2 instance
+- Labels: `account_id`, `region`, `instance_type`, `availability_zone`, `instance_id`
+- Value: 1 = instance exists and is running, metric absent = instance stopped or terminated
+- Use: Track specific instance inventory, monitor fleet composition
+
+**`ec2_instance_count`** (gauge)
+- Count of running instances by instance family
+- Labels: `account_id`, `region`, `instance_family`
+- Value: Number of running instances in this family
+- Use: High-level capacity planning, aggregate fleet view
+
+**`ec2_running_instance_count`** (gauge)
+- Total count of running instances
+- Labels: `account_id`, `region`
+- Value: Total number of running instances
+- Use: Fleet-wide capacity tracking, cost forecasting
+
+**Notes:**
+- Only running instances are included in metrics (stopped instances don't incur compute costs)
+- Metrics are updated every 5 minutes by the EC2 reconciler
+- Instance family is extracted from instance type (e.g., `m5.xlarge` → `m5`)
+
 ## Usage
 
 ### Initialization
@@ -148,6 +173,21 @@ This function:
 - Calculates remaining hours until expiration
 - Handles EC2 Instance vs Compute SP type differences
 
+### Updating EC2 Instance Metrics (Phase 5)
+
+```go
+// Called by EC2 reconciler after cache update (every 5 minutes)
+runningInstances := ec2Cache.GetRunningInstances()
+m.UpdateEC2InstanceMetrics(runningInstances)
+```
+
+This function:
+- Resets all existing EC2 metrics (clean slate approach)
+- Sets new values for all currently running instances
+- Automatically removes metrics for stopped/terminated instances
+- Aggregates counts by instance family
+- Aggregates counts by account+region
+
 ## Example Prometheus Queries
 
 ```promql
@@ -206,6 +246,39 @@ count(savings_plan_remaining_hours < 168)
 
 # SP commitment expiring within 30 days
 sum(savings_plan_hourly_commitment and savings_plan_remaining_hours < 720)
+
+# Total running instances across all accounts
+sum(ec2_running_instance_count)
+
+# Running instances by account
+sum by (account_id) (ec2_running_instance_count)
+
+# Running instances by region
+sum by (region) (ec2_running_instance_count)
+
+# Instance count by family
+sum by (instance_family) (ec2_instance_count)
+
+# Top 10 instance families by count
+topk(10, sum by (instance_family) (ec2_instance_count))
+
+# Specific instance type count
+count(ec2_instance{instance_type="m5.xlarge"})
+
+# Instances in a specific AZ
+count(ec2_instance{availability_zone="us-west-2a"})
+
+# Instance count by account and family
+sum by (account_id, instance_family) (ec2_instance_count)
+
+# Alert: Large instance count change (more than 10 instances/min)
+abs(rate(ec2_running_instance_count[5m])) > 10
+
+# Alert: Fleet size drops below threshold
+sum(ec2_running_instance_count) < 100
+
+# Instance type diversity (number of different instance types)
+count by (account_id) (count by (account_id, instance_type) (ec2_instance))
 ```
 
 ## Testing
