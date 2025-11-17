@@ -8,6 +8,9 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# Default log-level for run-local
+LOG_LEVEL ?= info
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -131,7 +134,7 @@ run-local: ## Run controller locally in standalone mode with config.yaml (must e
 		--metrics-bind-address=:8080 \
 		--health-probe-bind-address=:8081 \
 		--metrics-secure=false \
-		--zap-log-level=debug
+		--zap-log-level=$(LOG_LEVEL)
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
