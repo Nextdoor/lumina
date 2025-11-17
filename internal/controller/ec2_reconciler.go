@@ -247,7 +247,7 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 		stateCount[inst.State]++
 	}
 
-	log.Info("updated EC2 instances",
+	log.V(1).Info("updated EC2 instances",
 		"total_count", len(instances),
 		"state_breakdown", stateCount,
 		"duration_seconds", duration.Seconds())

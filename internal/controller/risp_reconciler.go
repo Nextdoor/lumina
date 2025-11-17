@@ -259,7 +259,7 @@ func (r *RISPReconciler) reconcileReservedInstances(
 			"reserved_instances",
 		).Set(0)
 
-		log.Info("updated reserved instances",
+		log.V(1).Info("updated reserved instances",
 			"region", region,
 			"count", len(ris),
 			"duration_seconds", duration.Seconds())
@@ -343,13 +343,13 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 		"savings_plans",
 	).Set(0)
 
-	log.Info("updated savings plans",
+	log.V(1).Info("updated savings plans",
 		"count", len(sps),
 		"duration_seconds", duration.Seconds())
 
 	// Log details about each SP for observability
 	for _, sp := range sps {
-		log.Info("savings plan details",
+		log.V(1).Info("savings plan details",
 			"sp_arn", sp.SavingsPlanARN,
 			"sp_type", sp.SavingsPlanType,
 			"commitment", sp.Commitment,
