@@ -1,0 +1,171 @@
+/*
+Copyright 2025 Lumina Contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package cache
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// PricingCache provides thread-safe access to AWS pricing data.
+// It stores on-demand pricing for EC2 instances and can be extended to support
+// Savings Plans and Reserved Instance pricing in the future.
+//
+// The cache is populated by the pricing reconciler via bulk loading from the
+// AWS Pricing API. Pricing data is refreshed periodically (typically every 24 hours)
+// as AWS pricing changes infrequently (monthly).
+//
+// Thread-safety: All methods are safe for concurrent access.
+type PricingCache struct {
+	mu sync.RWMutex
+
+	// onDemandPrices stores on-demand pricing keyed by "region:instanceType:os"
+	// Example key: "us-west-2:m5.xlarge:Linux" → 0.192
+	onDemandPrices map[string]float64
+
+	// Metadata
+	lastUpdated time.Time
+	isPopulated bool
+}
+
+// NewPricingCache creates a new empty pricing cache.
+func NewPricingCache() *PricingCache {
+	return &PricingCache{
+		onDemandPrices: make(map[string]float64),
+		isPopulated:    false,
+	}
+}
+
+// GetOnDemandPrice returns the on-demand price for an instance type in a region.
+// Returns the price and true if found, or 0 and false if not found.
+//
+// This is an O(1) lookup operation.
+func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem string) (float64, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	key := fmt.Sprintf("%s:%s:%s", region, instanceType, operatingSystem)
+	price, exists := c.onDemandPrices[key]
+	return price, exists
+}
+
+// SetOnDemandPrices replaces all on-demand pricing data in the cache.
+// This is typically called by the pricing reconciler after bulk-loading data.
+//
+// The input map should use keys in the format "region:instanceType:os".
+func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.onDemandPrices = prices
+	c.lastUpdated = time.Now()
+	c.isPopulated = len(prices) > 0
+}
+
+// GetAllOnDemandPrices returns a copy of all on-demand prices.
+// This is useful for populating CalculationInput.OnDemandPrices.
+func (c *PricingCache) GetAllOnDemandPrices() map[string]float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Return a copy to prevent external modifications
+	copy := make(map[string]float64, len(c.onDemandPrices))
+	for k, v := range c.onDemandPrices {
+		copy[k] = v
+	}
+	return copy
+}
+
+// GetOnDemandPricesForInstances returns pricing data only for the specified
+// instance types and regions. This is more efficient than GetAllOnDemandPrices
+// when you only need a subset of the data.
+//
+// Returns a map keyed by "instanceType:region" (without OS) for easier lookup
+// by the cost calculator.
+func (c *PricingCache) GetOnDemandPricesForInstances(
+	instances []InstanceKey,
+	operatingSystem string,
+) map[string]float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	result := make(map[string]float64, len(instances))
+	for _, inst := range instances {
+		key := fmt.Sprintf("%s:%s:%s", inst.Region, inst.InstanceType, operatingSystem)
+		if price, exists := c.onDemandPrices[key]; exists {
+			// Return with simplified key for calculator
+			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
+			result[resultKey] = price
+		}
+	}
+	return result
+}
+
+// InstanceKey represents an instance type and region combination.
+type InstanceKey struct {
+	InstanceType string
+	Region       string
+}
+
+// IsPopulated returns true if the cache has been populated with pricing data.
+func (c *PricingCache) IsPopulated() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.isPopulated
+}
+
+// LastUpdated returns the timestamp of the last cache update.
+func (c *PricingCache) LastUpdated() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastUpdated
+}
+
+// GetStats returns statistics about the cached pricing data.
+func (c *PricingCache) GetStats() PricingStats {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return PricingStats{
+		OnDemandPriceCount: len(c.onDemandPrices),
+		LastUpdated:        c.lastUpdated,
+		IsPopulated:        c.isPopulated,
+		AgeHours:           time.Since(c.lastUpdated).Hours(),
+	}
+}
+
+// PricingStats contains statistics about the pricing cache.
+type PricingStats struct {
+	OnDemandPriceCount int
+	LastUpdated        time.Time
+	IsPopulated        bool
+	AgeHours           float64
+}
+
+// IsStale returns true if the cache hasn't been updated in more than the specified duration.
+// AWS pricing typically changes monthly, so 24-48 hours is a reasonable staleness threshold.
+func (c *PricingCache) IsStale(maxAge time.Duration) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.isPopulated {
+		return true
+	}
+
+	return time.Since(c.lastUpdated) > maxAge
+}

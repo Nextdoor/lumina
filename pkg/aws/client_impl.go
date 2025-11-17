@@ -136,11 +136,59 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 
 // Pricing returns a PricingClient. Pricing API is not account-specific
 // and does not require AssumeRole operations.
-func (c *RealClient) Pricing(_ context.Context) PricingClient {
+//
+// The pricing client is lazily initialized on first call and then cached
+// for subsequent requests. This avoids AWS SDK configuration overhead
+// during client initialization.
+func (c *RealClient) Pricing(ctx context.Context) PricingClient {
 	if c.pricingCache == nil {
-		c.pricingCache = NewRealPricingClient()
+		// Initialize pricing client (uses us-east-1 for pricing API)
+		client, err := NewRealPricingClient(ctx, c.endpointURL)
+		if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
+			// Return a client that will error on every call
+			// This is better than panicking, and allows the controller to continue
+			// operating even if pricing API is unavailable
+			return &BrokenPricingClient{err: err}
+		}
+		c.pricingCache = client
 	}
 	return c.pricingCache
+}
+
+// BrokenPricingClient is a PricingClient that always returns an error.
+// This is used as a fallback when the real pricing client fails to initialize.
+// It allows the controller to continue operating even if pricing API is unavailable.
+type BrokenPricingClient struct {
+	err error
+}
+
+// GetOnDemandPrice always returns the initialization error.
+func (b *BrokenPricingClient) GetOnDemandPrice(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ string,
+) (*OnDemandPrice, error) {
+	return nil, b.err
+}
+
+// GetOnDemandPrices always returns the initialization error.
+func (b *BrokenPricingClient) GetOnDemandPrices(
+	_ context.Context,
+	_ string,
+	_ []string,
+	_ string,
+) ([]OnDemandPrice, error) {
+	return nil, b.err
+}
+
+// LoadAllPricing always returns the initialization error.
+func (b *BrokenPricingClient) LoadAllPricing(
+	_ context.Context,
+	_ []string,
+	_ []string,
+) (map[string]float64, error) {
+	return nil, b.err
 }
 
 // getCredentials returns credentials for the specified account.

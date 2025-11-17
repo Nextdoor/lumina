@@ -86,6 +86,22 @@ type PricingClient interface {
 		instanceTypes []string,
 		operatingSystem string,
 	) ([]OnDemandPrice, error)
+
+	// LoadAllPricing bulk-loads pricing data for the specified regions and operating systems.
+	// This is the most efficient way to preload pricing data at startup.
+	// Results are cached internally and used by GetOnDemandPrice() calls.
+	//
+	// Parameters:
+	//   - regions: List of AWS regions to load pricing for (e.g., ["us-west-2", "us-east-1"])
+	//   - operatingSystems: List of OS types to load (e.g., ["Linux", "Windows"])
+	//
+	// Returns a map of "region:instanceType:os" -> price ($/hour) for all loaded prices.
+	// This allows callers to populate their own caches if needed.
+	LoadAllPricing(
+		ctx context.Context,
+		regions []string,
+		operatingSystems []string,
+	) (map[string]float64, error)
 }
 
 // ClientConfig configures the AWS client creation.

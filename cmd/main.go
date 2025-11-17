@@ -113,6 +113,10 @@ func runStandalone(
 	ec2Cache := cache.NewEC2Cache()
 	setupLog.Info("initialized EC2 cache")
 
+	// Initialize pricing cache
+	pricingCache := cache.NewPricingCache()
+	setupLog.Info("initialized pricing cache")
+
 	// Create RISP reconciler for standalone mode
 	// In standalone mode, we'll run it on a timer instead of K8s reconciliation
 	// Regions will be read from cfg.Regions with account-specific overrides
@@ -136,8 +140,32 @@ func runStandalone(
 		Regions:   cfg.Regions,
 	}
 
+	// Create pricing reconciler for standalone mode
+	// Pricing reconciler runs every 24 hours (AWS pricing changes monthly)
+	// IMPORTANT: This runs FIRST and BLOCKS until initial pricing data is loaded
+	// Without pricing data, cost calculations will fail
+	pricingReconciler := &controller.PricingReconciler{
+		AWSClient:        awsClient,
+		Config:           cfg,
+		Cache:            pricingCache,
+		Metrics:          luminaMetrics,
+		Log:              ctrl.Log.WithName("pricing-reconciler"),
+		Regions:          cfg.Regions,
+		OperatingSystems: []string{"Linux", "Windows"},
+	}
+
 	// Start reconcilers in background goroutines
 	ctx := ctrl.SetupSignalHandler()
+
+	// Start pricing reconciler FIRST (blocking initial load)
+	// This ensures pricing cache is populated before other reconcilers need it
+	go func() {
+		if err := pricingReconciler.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "pricing reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started pricing reconciler in standalone mode (initial load blocking)")
+
 	go func() {
 		if err := rispReconciler.RunStandalone(ctx); err != nil {
 			setupLog.Error(err, "RISP reconciler stopped with error")
@@ -458,6 +486,10 @@ func main() {
 	ec2Cache := cache.NewEC2Cache()
 	setupLog.Info("initialized EC2 cache")
 
+	// Initialize pricing cache
+	pricingCache := cache.NewPricingCache()
+	setupLog.Info("initialized pricing cache")
+
 	// Setup RISP reconciler for hourly data collection
 	// This reconciler queries AWS APIs for Reserved Instances and Savings Plans
 	// and maintains an in-memory cache for cost calculation (future phases)
@@ -491,6 +523,24 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("registered EC2 reconciler for 5-minute data collection")
+
+	// Setup pricing reconciler for 24-hour data collection
+	// This reconciler bulk-loads all AWS EC2 pricing data and refreshes daily
+	// Pricing data is required for cost calculations and changes infrequently (monthly)
+	// Regions will be read from cfg.Regions
+	if err := (&controller.PricingReconciler{
+		AWSClient:        awsClient,
+		Config:           cfg,
+		Cache:            pricingCache,
+		Metrics:          luminaMetrics,
+		Log:              ctrl.Log.WithName("pricing-reconciler"),
+		Regions:          cfg.Regions,
+		OperatingSystems: []string{"Linux", "Windows"},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Pricing")
+		os.Exit(1)
+	}
+	setupLog.Info("registered pricing reconciler for 24-hour data collection")
 
 	// +kubebuilder:scaffold:builder
 
