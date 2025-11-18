@@ -21,7 +21,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false  # Disable built-in cache, using magic cache instead
+          cache: true  # Enable Go module caching for faster dependency downloads
 
       - name: Running Tests
         run: |

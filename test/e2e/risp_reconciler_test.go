@@ -73,7 +73,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring("starting RI/SP reconciliation cycle"),
 					"Controller should have started RISP reconciliation")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should complete initial reconciliation cycle", func() {
@@ -83,7 +83,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring("reconciliation cycle completed"),
 					"RISP reconciliation should complete")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should query Reserved Instances from configured regions", func() {
@@ -95,7 +95,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 					"Controller should query Reserved Instances")
 				g.Expect(logs).To(ContainSubstring(`"region": "us-west-2"`),
 					"Controller should query us-west-2 region")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("checking logs for RI queries in us-east-1")
 			Eventually(func(g Gomega) {
@@ -103,7 +103,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring(`"region": "us-east-1"`),
 					"Controller should query us-east-1 region")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should query Savings Plans from configured accounts", func() {
@@ -113,7 +113,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring("updated savings plans"),
 					"Controller should query Savings Plans")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should query data from both test accounts", func() {
@@ -123,7 +123,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring(`"account_id": "000000000000"`),
 					"Controller should query test-production account")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("checking logs for test-staging account")
 			Eventually(func(g Gomega) {
@@ -131,7 +131,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring(`"account_id": "111111111111"`),
 					"Controller should query test-staging account")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should log cache statistics after reconciliation", func() {
@@ -147,7 +147,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 					"Cache stats should include RI count")
 				g.Expect(logs).To(ContainSubstring("savings_plans"),
 					"Cache stats should include SP count")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
 
@@ -164,7 +164,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 					"Should expose data freshness metrics")
 				g.Expect(metricsOutput).To(ContainSubstring(`data_type="reserved_instances"`),
 					"Should have RI freshness metrics")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should expose data freshness metrics for Savings Plans", func() {
@@ -176,7 +176,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				// The metrics should include lumina_data_freshness_seconds for SPs
 				g.Expect(metricsOutput).To(ContainSubstring(`data_type="savings_plans"`),
 					"Should have SP freshness metrics")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should record successful data collection in metrics", func() {
@@ -206,19 +206,20 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				}
 				g.Expect(foundSuccessMetric).To(BeTrue(),
 					"Should have at least one successful data collection metric")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
-		It("should record freshness as 0 seconds immediately after update", func() {
-			By("checking that freshness is near zero after reconciliation")
+		It("should record freshness as Unix timestamp", func() {
+			By("checking that freshness contains valid Unix timestamp")
 			Eventually(func(g Gomega) {
 				metricsOutput, err := getMetricsOutput()
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Parse the freshness metrics and verify they're recent (< 5 minutes old)
-				// This confirms the reconciler is actively updating the metrics
+				// Parse the freshness metrics and verify they contain valid Unix timestamps
+				// Timestamps should be > 1700000000 (Nov 2023) and recent (within last hour)
 				lines := strings.Split(metricsOutput, "\n")
-				foundRecentFreshness := false
+				foundValidTimestamp := false
+				now := float64(time.Now().Unix())
 				for _, line := range lines {
 					if strings.Contains(line, "lumina_data_freshness_seconds") &&
 						!strings.HasPrefix(line, "#") &&
@@ -227,16 +228,17 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 						parts := strings.Fields(line)
 						if len(parts) >= 2 {
 							value, err := strconv.ParseFloat(parts[len(parts)-1], 64)
-							if err == nil && value < 300 { // Less than 5 minutes old
-								foundRecentFreshness = true
+							// Check if it's a valid Unix timestamp (> Nov 2023) and recent (within last hour)
+							if err == nil && value > 1700000000 && value <= now && (now-value) < 3600 {
+								foundValidTimestamp = true
 								break
 							}
 						}
 					}
 				}
-				g.Expect(foundRecentFreshness).To(BeTrue(),
-					"Data freshness should be recent (< 5 minutes)")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+				g.Expect(foundValidTimestamp).To(BeTrue(),
+					"Data freshness should contain valid recent Unix timestamp")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should have metrics for all configured accounts", func() {
@@ -246,7 +248,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(metricsOutput).To(ContainSubstring(`account_id="000000000000"`),
 					"Should have metrics for test-production account (000000000000)")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying metrics exist for test-staging account")
 			Eventually(func(g Gomega) {
@@ -254,7 +256,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(metricsOutput).To(ContainSubstring(`account_id="111111111111"`),
 					"Should have metrics for test-staging account (111111111111)")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should have RI metrics for all configured regions", func() {
@@ -275,7 +277,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				}
 				g.Expect(foundRegion).To(BeTrue(),
 					"Should have RI metrics for us-west-2 region")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying metrics exist for us-east-1")
 			Eventually(func(g Gomega) {
@@ -293,7 +295,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				}
 				g.Expect(foundRegion).To(BeTrue(),
 					"Should have RI metrics for us-east-1 region")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should have SP metrics with empty region label", func() {
@@ -315,7 +317,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				}
 				g.Expect(foundSPMetric).To(BeTrue(),
 					"SP metrics should have empty region label (organization-wide)")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
 
@@ -353,7 +355,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				// We look for the completion message which happens before requeuing
 				g.Expect(logs).To(ContainSubstring("reconciliation cycle completed"),
 					"Reconciler should complete cycles")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			// Note: We can't easily test the actual 1-hour requeue in E2E tests
 			// (would take too long), but we verify the reconciler completes successfully
@@ -380,7 +382,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 					"Should have RI updates")
 				g.Expect(logs).To(ContainSubstring("updated savings plans"),
 					"Should have SP updates")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should complete reconciliation even if some queries fail", func() {
@@ -397,7 +399,7 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(logs).To(ContainSubstring("reconciliation cycle completed"),
 					"Reconciliation should complete even with partial failures")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
 })

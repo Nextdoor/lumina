@@ -6,7 +6,7 @@ on:
 jobs:
   test-e2e:
     name: Run on Ubuntu
-    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     steps:
       - name: Setup RunsOn magic cache
         uses: runs-on/action@v2
@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false  # Disable built-in cache, using magic cache instead
+          cache: true  # Enable Go module caching for faster dependency downloads
 
       - name: Install the latest version of kind
         run: |

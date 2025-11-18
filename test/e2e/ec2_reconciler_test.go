@@ -53,7 +53,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 
 			g.Expect(runningPods).To(HaveLen(1), "expected 1 controller pod running")
 			controllerPodName = runningPods[0]
-		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		}, 20*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	Context("EC2 Data Collection", func() {
@@ -64,7 +64,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("starting EC2 reconciliation cycle"),
 					"EC2 reconciler should have started")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying EC2 reconciliation completed successfully")
 			Eventually(func(g Gomega) {
@@ -72,7 +72,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("reconciliation cycle completed successfully"),
 					"EC2 reconciler should have completed successfully")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying EC2 instances were collected")
 			Eventually(func(g Gomega) {
@@ -95,7 +95,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				// Verify ec2_instance metric exists
 				g.Expect(metricsOutput).To(ContainSubstring("ec2_instance{"),
 					"ec2_instance metric should be present")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying ec2_instance metric has correct labels")
 			metricsOutput, err := getMetricsOutput()
@@ -121,7 +121,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(metricsOutput).To(ContainSubstring("ec2_instance_count{"),
 					"ec2_instance_count metric should be present")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying ec2_instance_count metric has correct labels")
 			metricsOutput, err := getMetricsOutput()
@@ -162,7 +162,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(metricsOutput).To(ContainSubstring("ec2_running_instance_count{"),
 					"ec2_running_instance_count metric should be present")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying ec2_running_instance_count metric has correct labels")
 			metricsOutput, err := getMetricsOutput()
@@ -201,7 +201,7 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("updated EC2 instance metrics"),
 					"Controller should log EC2 metrics update")
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
 

@@ -51,9 +51,10 @@ type Metrics struct {
 	// Labels: account_id, account_name
 	AccountValidationDuration *prometheus.HistogramVec
 
-	// DataFreshness tracks how long it's been since the last successful data
-	// collection for each data type and region. This metric will be populated
-	// in Phase 2+ when data collection is implemented.
+	// DataFreshness stores the Unix timestamp of the last successful data
+	// collection for each data type and region. To calculate data staleness
+	// (age), use the PromQL query: time() - lumina_data_freshness_seconds
+	// This enables alerting on stale data (e.g., data older than 10 minutes).
 	// Labels: account_id, region, data_type
 	DataFreshness *prometheus.GaugeVec
 
@@ -159,7 +160,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 
 		DataFreshness: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_data_freshness_seconds",
-			Help: "Seconds since last successful data collection (Phase 2+)",
+			Help: "Unix timestamp of last successful data collection. Calculate age: time() - <metric>",
 		}, []string{"account_id", "region", "data_type"}),
 
 		DataLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
