@@ -72,10 +72,7 @@ func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem st
 	defer c.mu.RUnlock()
 
 	// Normalize to lowercase for case-insensitive lookups
-	key := fmt.Sprintf("%s:%s:%s",
-		strings.ToLower(region),
-		strings.ToLower(instanceType),
-		strings.ToLower(operatingSystem))
+	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", region, instanceType, operatingSystem))
 	price, exists := c.onDemandPrices[key]
 	return price, exists
 }
@@ -156,10 +153,7 @@ func (c *PricingCache) GetOnDemandPricesForInstances(
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
 		// Normalize to lowercase for case-insensitive lookups
-		key := fmt.Sprintf("%s:%s:%s",
-			strings.ToLower(inst.Region),
-			strings.ToLower(inst.InstanceType),
-			strings.ToLower(operatingSystem))
+		key := strings.ToLower(fmt.Sprintf("%s:%s:%s", inst.Region, inst.InstanceType, operatingSystem))
 		if price, exists := c.onDemandPrices[key]; exists {
 			// Return with simplified key for calculator
 			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
