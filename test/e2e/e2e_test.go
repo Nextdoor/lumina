@@ -202,7 +202,7 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(output).To(And(
 					ContainSubstring("loaded configuration"),
 					ContainSubstring(`"accounts": 2`),
-					ContainSubstring(`"default-region": "us-west-2"`),
+					ContainSubstring(`"default-region": "us-east-1"`),
 				), "Controller should have loaded config successfully with 2 accounts")
 			}
 			Eventually(verifyConfigLoaded, 30*time.Second, 2*time.Second).Should(Succeed())
