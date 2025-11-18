@@ -91,6 +91,22 @@ var _ = Describe("Cost Reconciler", Ordered, func() {
 				metricsOutput, err := getMetricsOutput()
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve metrics")
 
+				// Debug: Print all Lumina metrics if the cost metric isn't found
+				if !strings.Contains(metricsOutput, "ec2_instance_hourly_cost{") {
+					GinkgoWriter.Printf("\n=== All Lumina Metrics (DEBUG) ===\n")
+					lines := strings.Split(metricsOutput, "\n")
+					for _, line := range lines {
+						// Print all lines that start with "lumina_" or contain cost/pricing/ec2
+						if strings.HasPrefix(line, "lumina_") ||
+							strings.Contains(line, "ec2") ||
+							strings.Contains(line, "cost") ||
+							strings.Contains(line, "pricing") {
+							GinkgoWriter.Printf("%s\n", line)
+						}
+					}
+					GinkgoWriter.Printf("=== End Lumina Metrics ===\n\n")
+				}
+
 				// Verify ec2_instance_hourly_cost metric exists
 				g.Expect(metricsOutput).To(ContainSubstring("ec2_instance_hourly_cost{"),
 					"ec2_instance_hourly_cost metric should be present")
