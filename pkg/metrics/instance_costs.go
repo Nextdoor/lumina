@@ -66,6 +66,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult) {
 			"instance_type":     ic.InstanceType,
 			"cost_type":         costType,
 			"availability_zone": ic.AvailabilityZone,
+			"lifecycle":         ic.Lifecycle,
 		}).Set(ic.EffectiveCost)
 	}
 

@@ -22,6 +22,11 @@ import (
 	"github.com/nextdoor/lumina/pkg/aws"
 )
 
+const (
+	// lifecycleSpot is the EC2 instance lifecycle value for spot instances
+	lifecycleSpot = "spot"
+)
+
 // Calculator orchestrates the cost calculation process, implementing AWS's
 // Savings Plans allocation algorithm. It takes a point-in-time snapshot of
 // all compute resources and discount instruments, then calculates per-instance
@@ -143,7 +148,8 @@ func (c *Calculator) initializeInstanceCosts(input CalculationInput, costs map[s
 			SavingsPlanARN:      "",
 			OnDemandCost:        shelfPrice, // Will be reduced as coverage applied
 			SpotPrice:           0,
-			IsSpot:              inst.State == "running" && inst.Lifecycle == "spot",
+			IsSpot:              inst.State == "running" && inst.Lifecycle == lifecycleSpot,
+			Lifecycle:           inst.Lifecycle, // Capture lifecycle for metrics
 		}
 	}
 }
@@ -187,7 +193,7 @@ func (c *Calculator) initializeSPUtilization(input CalculationInput, utilization
 func (c *Calculator) applySpotPricing(input CalculationInput, costs map[string]*InstanceCost) {
 	for _, inst := range input.Instances {
 		// Skip non-spot instances
-		if inst.Lifecycle != "spot" {
+		if inst.Lifecycle != lifecycleSpot {
 			continue
 		}
 
@@ -200,21 +206,22 @@ func (c *Calculator) applySpotPricing(input CalculationInput, costs map[string]*
 		spotKey := inst.InstanceType + ":" + inst.AvailabilityZone
 		spotPrice := input.SpotPrices[spotKey]
 
-		if spotPrice <= 0 {
-			// No spot price data available, keep on-demand estimate
-			continue
-		}
-
-		// For spot instances, the effective cost is the spot price
-		// (unless covered by RI or SP, which would have already set EffectiveCost)
+		// For spot instances, ALWAYS use the spot price as the effective cost.
+		// Spot instances cannot use Reserved Instances or Savings Plans per AWS billing rules.
 		//
-		// If instance is NOT covered by RI/SP, use spot price
-		if cost.RICoverage == 0 && cost.SavingsPlanCoverage == 0 {
-			cost.EffectiveCost = spotPrice
-			cost.SpotPrice = spotPrice
-			cost.CoverageType = CoverageSpot
-			cost.OnDemandCost = 0 // Not paying on-demand rate
-		}
+		// If spot price data is available, use it. Otherwise, mark as $0 until spot pricing
+		// is implemented (tracked in Phase 8).
+		//
+		// Reset any RI/SP coverage that may have been incorrectly applied (defense-in-depth).
+		// The eligibility filters in applyReservedInstances() and applySavingsPlans()
+		// should prevent spot instances from getting coverage, but we reset here to be safe.
+		cost.EffectiveCost = spotPrice
+		cost.SpotPrice = spotPrice
+		cost.CoverageType = CoverageSpot
+		cost.OnDemandCost = 0        // Not paying on-demand rate
+		cost.RICoverage = 0          // Reset any incorrectly applied RI coverage
+		cost.SavingsPlanCoverage = 0 // Reset any incorrectly applied SP coverage
+		cost.IsSpot = true           // Mark as spot instance
 		// Note: cost is already a pointer, no need to reassign
 	}
 }
