@@ -365,27 +365,29 @@ func TestDeleteAccountMetrics_NonExistent(t *testing.T) {
 	})
 }
 
-// TestDataFreshnessMetrics verifies the Phase 2+ metrics structure exists.
+// TestDataFreshnessMetrics verifies the data freshness metrics work correctly.
+// DataFreshness stores Unix timestamps of last successful data collection.
 func TestDataFreshnessMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	// These metrics won't be used in Phase 1, but we verify they're created
-	// with the correct structure for future use
+	// Verify the metrics are created
 	assert.NotNil(t, m.DataFreshness)
 	assert.NotNil(t, m.DataLastSuccess)
 
-	// Verify they can be set (simulating future Phase 2+ usage)
+	// Verify they can be set with realistic values
 	labels := prometheus.Labels{
 		"account_id": "123456789012",
 		"region":     "us-west-2",
 		"data_type":  "ec2_instances",
 	}
 
+	// DataFreshness stores Unix timestamps (e.g., 1704123600 for 2024-01-01)
 	freshnessMetric, err := m.DataFreshness.GetMetricWith(labels)
 	require.NoError(t, err)
-	freshnessMetric.Set(45.0)
-	assert.Equal(t, 45.0, testutil.ToFloat64(freshnessMetric))
+	testTimestamp := 1704123600.0
+	freshnessMetric.Set(testTimestamp)
+	assert.Equal(t, testTimestamp, testutil.ToFloat64(freshnessMetric))
 
 	successMetric, err := m.DataLastSuccess.GetMetricWith(labels)
 	require.NoError(t, err)

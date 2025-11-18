@@ -455,8 +455,11 @@ func TestPricingReconciler_Reconcile_Metrics(t *testing.T) {
 				}
 				if dataType == "pricing" {
 					foundFreshness = true
-					assert.Equal(t, float64(0), *metric.Gauge.Value,
-						"data_freshness should be 0 immediately after load")
+					// DataFreshness now stores Unix timestamps, so verify it's a reasonable timestamp
+					assert.Greater(t, *metric.Gauge.Value, float64(1700000000),
+						"data_freshness should be a Unix timestamp (> 2023-11-14)")
+					assert.Less(t, *metric.Gauge.Value, float64(2000000000),
+						"data_freshness should be a Unix timestamp (< 2033-05-18)")
 				}
 			}
 		}

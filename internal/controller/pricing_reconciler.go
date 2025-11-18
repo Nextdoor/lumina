@@ -186,12 +186,12 @@ func (r *PricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		"pricing",
 	).Set(1)
 
-	// Calculate freshness (0 seconds since just updated)
+	// Record the Unix timestamp of this successful collection
 	r.Metrics.DataFreshness.WithLabelValues(
 		"", // Not account-specific
 		"", // Not region-specific
 		"pricing",
-	).Set(0)
+	).Set(float64(time.Now().Unix()))
 
 	// Log cache statistics with detailed information
 	stats := r.Cache.GetStats()

@@ -74,7 +74,7 @@ func TestLoadEC2Fixtures(t *testing.T) {
 	sg := fixtures.SecurityGroups[0]
 	assert.Equal(t, "lumina-test-sg", sg.GroupName, "Security group name should match")
 	assert.NotEmpty(t, sg.Description, "Security group should have description")
-	assert.Equal(t, "us-west-2", sg.Region, "Security group region should match")
+	assert.Equal(t, "us-east-1", sg.Region, "Security group region should match")
 
 	// Verify instance structure
 	foundM5Instance := false
@@ -83,7 +83,7 @@ func TestLoadEC2Fixtures(t *testing.T) {
 			foundM5Instance = true
 			assert.Equal(t, "ami-12345678", instance.ImageID, "Image ID should match")
 			assert.Equal(t, 2, instance.Count, "Should launch 2 instances")
-			assert.Equal(t, "us-west-2", instance.Region, "Region should match")
+			assert.Equal(t, "us-east-1", instance.Region, "Region should match")
 			assert.NotEmpty(t, instance.Tags, "Instance should have tags")
 		}
 	}
