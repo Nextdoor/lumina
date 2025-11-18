@@ -48,11 +48,11 @@ testData:
 
   # Pricing test data
   # LocalStack's free tier doesn't support the Pricing API, so we provide mock pricing
-  # Nested structure: pricing[region][instanceType][operatingSystem] = hourly price
+  # Flat map with keys in format "region:instanceType:operatingSystem" -> price
+  # NOTE: We use a flat structure because Viper's mapstructure treats periods (.)
+  # as nested delimiters, which breaks instance type names like "m5.xlarge"
+  # IMPORTANT: Viper lowercases all map keys, so we must use lowercase OS names
   # Values match the instances created in testdata/ec2.json
   pricing:
-    us-west-2:
-      m5.xlarge:
-        Linux: 0.192
-      c5.large:
-        Linux: 0.085
+    "us-west-2:m5.xlarge:linux": 0.192
+    "us-west-2:c5.large:linux": 0.085

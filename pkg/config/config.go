@@ -130,34 +130,18 @@ type TestData struct {
 	// Key format: "accountID"
 	SavingsPlans map[string][]TestSavingsPlan `yaml:"savingsPlans,omitempty"`
 
-	// PricingNested contains mock pricing data in nested format for testing.
-	// Structure: map[region]map[instanceType]map[operatingSystem]price
-	// Example: {"us-west-2": {"m5.large": {"Linux": 0.096}}}
-	// This nested structure works better with Viper/mapstructure since it avoids
-	// period-handling issues in flat keys like "us-west-2:m5.large:Linux".
-	PricingNested map[string]map[string]map[string]float64 `yaml:"pricing,omitempty"`
-
-	// Pricing returns flattened pricing data in the format "region:instanceType:os" -> price.
-	// This is computed from PricingNested and cached.
-	pricingFlat map[string]float64
+	// PricingFlat contains mock pricing data in flat format for testing.
+	// Map keys are in format "region:instanceType:operatingSystem" -> price
+	// Example: {"us-west-2:m5.xlarge:Linux": 0.192}
+	// We use a flat structure because Viper's mapstructure decoder treats periods (.)
+	// as nested structure delimiters, which breaks instance type names like "m5.xlarge".
+	PricingFlat map[string]float64 `yaml:"pricing,omitempty"`
 }
 
 // Pricing returns the pricing data as a flattened map with keys in the format
 // "region:instanceType:operatingSystem" -> price.
-// This method lazily flattens the nested PricingNested structure on first call.
 func (td *TestData) Pricing() map[string]float64 {
-	if td.pricingFlat == nil && td.PricingNested != nil {
-		td.pricingFlat = make(map[string]float64)
-		for region, instanceTypes := range td.PricingNested {
-			for instanceType, operatingSystems := range instanceTypes {
-				for os, price := range operatingSystems {
-					key := fmt.Sprintf("%s:%s:%s", region, instanceType, os)
-					td.pricingFlat[key] = price
-				}
-			}
-		}
-	}
-	return td.pricingFlat
+	return td.PricingFlat
 }
 
 // TestSavingsPlan represents a mock Savings Plan for E2E testing.
@@ -248,6 +232,30 @@ func Load(path string) (*Config, error) {
 	// coverage:ignore - Viper unmarshal errors are extremely rare and difficult to trigger
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+	}
+
+	// Handle test data pricing separately because Viper's mapstructure decoder
+	// treats both periods (.) and colons (:) as nested structure delimiters.
+	// This breaks map keys like "us-west-2:m5.xlarge:Linux".
+	//
+	// We use v.Get() to bypass mapstructure and read the raw data directly,
+	// then manually convert it to the expected type.
+	if rawPricing := v.Get("testData.pricing"); rawPricing != nil {
+		if pricingMap, ok := rawPricing.(map[string]interface{}); ok {
+			// Convert map[string]interface{} to map[string]float64
+			converted := make(map[string]float64, len(pricingMap))
+			for k, v := range pricingMap {
+				if floatVal, ok := v.(float64); ok {
+					converted[k] = floatVal
+				}
+			}
+
+			// Initialize TestData if nil
+			if cfg.TestData == nil {
+				cfg.TestData = &TestData{}
+			}
+			cfg.TestData.PricingFlat = converted
+		}
 	}
 
 	// Validate configuration
