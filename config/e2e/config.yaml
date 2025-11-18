@@ -53,6 +53,10 @@ testData:
   # as nested delimiters, which breaks instance type names like "m5.xlarge"
   # IMPORTANT: Viper lowercases all map keys, so we must use lowercase OS names
   # Values match the instances created in testdata/ec2.json
+  # NOTE: LocalStack may create instances in us-east-1 even when we specify us-west-2,
+  # so we include pricing for both regions
   pricing:
     "us-west-2:m5.xlarge:linux": 0.192
     "us-west-2:c5.large:linux": 0.085
+    "us-east-1:m5.xlarge:linux": 0.192
+    "us-east-1:c5.large:linux": 0.085
