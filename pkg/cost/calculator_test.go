@@ -62,8 +62,8 @@ func TestCalculatorBasicFlow(t *testing.T) {
 		SavingsPlans:      []aws.SavingsPlan{},
 		SpotPrices:        make(map[string]float64),
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2":  0.192,
-			"c5.2xlarge:us-west-2": 0.34,
+			"m5.xlarge:us-west-2":  1.00,
+			"c5.2xlarge:us-west-2": 2.00,
 		},
 	}
 
@@ -75,8 +75,8 @@ func TestCalculatorBasicFlow(t *testing.T) {
 	// Check first instance
 	cost1 := result.InstanceCosts["i-001"]
 	assert.Equal(t, "i-001", cost1.InstanceID)
-	assert.Equal(t, 0.192, cost1.ShelfPrice)
-	assert.Equal(t, 0.192, cost1.EffectiveCost)
+	assert.Equal(t, 1.00, cost1.ShelfPrice)
+	assert.Equal(t, 1.00, cost1.EffectiveCost)
 	assert.Equal(t, CoverageOnDemand, cost1.CoverageType)
 	assert.Equal(t, 0.0, cost1.RICoverage)
 	assert.Equal(t, 0.0, cost1.SavingsPlanCoverage)
@@ -84,12 +84,12 @@ func TestCalculatorBasicFlow(t *testing.T) {
 	// Check second instance
 	cost2 := result.InstanceCosts["i-002"]
 	assert.Equal(t, "i-002", cost2.InstanceID)
-	assert.Equal(t, 0.34, cost2.ShelfPrice)
-	assert.Equal(t, 0.34, cost2.EffectiveCost)
+	assert.Equal(t, 2.00, cost2.ShelfPrice)
+	assert.Equal(t, 2.00, cost2.EffectiveCost)
 
 	// Check aggregates
-	assert.Equal(t, 0.532, result.TotalShelfPrice)
-	assert.Equal(t, 0.532, result.TotalEstimatedCost)
+	assert.Equal(t, 3.00, result.TotalShelfPrice)
+	assert.Equal(t, 3.00, result.TotalEstimatedCost)
 	assert.Equal(t, 0.0, result.TotalSavings)
 }
 
@@ -133,7 +133,7 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 		},
 		SavingsPlans: []aws.SavingsPlan{},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
+			"m5.xlarge:us-west-2": 1.00,
 		},
 	}
 
@@ -142,17 +142,17 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 	// The older instance (i-001) should be RI-covered, newer instance (i-002) stays on-demand
 	assert.Equal(t, CoverageReservedInstance, result.InstanceCosts["i-001"].CoverageType,
 		"Older instance should get RI coverage")
-	assert.Equal(t, 0.192, result.InstanceCosts["i-001"].RICoverage)
+	assert.Equal(t, 1.00, result.InstanceCosts["i-001"].RICoverage)
 	assert.Equal(t, 0.0, result.InstanceCosts["i-001"].EffectiveCost)
 
 	assert.Equal(t, CoverageOnDemand, result.InstanceCosts["i-002"].CoverageType,
 		"Newer instance should stay on-demand when RI is exhausted")
-	assert.Equal(t, 0.192, result.InstanceCosts["i-002"].EffectiveCost)
+	assert.Equal(t, 1.00, result.InstanceCosts["i-002"].EffectiveCost)
 
 	// Check aggregates
-	assert.Equal(t, 0.384, result.TotalShelfPrice)    // 2 * 0.192
-	assert.Equal(t, 0.192, result.TotalEstimatedCost) // Only 1 on-demand
-	assert.Equal(t, 0.192, result.TotalSavings)       // 1 RI saves $0.192/hour
+	assert.Equal(t, 2.00, result.TotalShelfPrice)    // 2 * $1.00
+	assert.Equal(t, 1.00, result.TotalEstimatedCost) // Only 1 on-demand
+	assert.Equal(t, 1.00, result.TotalSavings)       // 1 RI saves $1.00/hour
 }
 
 // TestCalculatorWithEC2InstanceSavingsPlan tests EC2 Instance SP application.
@@ -188,30 +188,53 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.20, // Enough to cover both instances
+				Commitment:      1.00, // Enough to cover both instances (SP rates: $0.28 + $0.56 = $0.84)
 				AccountID:       "123456789012",
 			},
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2":  0.192,
-			"m5.2xlarge:us-west-2": 0.384,
+			"m5.xlarge:us-west-2":  1.00,
+			"m5.2xlarge:us-west-2": 2.00,
 		},
 	}
 
 	result := calc.Calculate(input)
 
-	// Both instances should have SP coverage
-	for _, cost := range result.InstanceCosts {
-		assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost.CoverageType)
-		assert.Greater(t, cost.SavingsPlanCoverage, 0.0)
-		assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost.SavingsPlanARN)
-	}
+	// Verify both instances get full EC2 Instance SP coverage
+	// With 72% EC2 Instance SP discount:
+	//   - m5.xlarge: $1.00 OD → $0.28 SP rate
+	//   - m5.2xlarge: $2.00 OD → $0.56 SP rate
+	// Total commitment used: $0.28 + $0.56 = $0.84 (out of $1.00 available)
 
-	// Check SP utilization
+	// Check first instance (m5.xlarge)
+	cost1 := result.InstanceCosts["i-001"]
+	assert.Equal(t, "i-001", cost1.InstanceID)
+	assert.Equal(t, 1.00, cost1.ShelfPrice)
+	assert.InDelta(t, 0.28, cost1.EffectiveCost, 0.01) // Pays SP rate
+	assert.InDelta(t, 0.28, cost1.SavingsPlanCoverage, 0.01)
+	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost1.CoverageType)
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN)
+
+	// Check second instance (m5.2xlarge)
+	cost2 := result.InstanceCosts["i-002"]
+	assert.Equal(t, "i-002", cost2.InstanceID)
+	assert.Equal(t, 2.00, cost2.ShelfPrice)
+	assert.InDelta(t, 0.56, cost2.EffectiveCost, 0.01) // Pays SP rate
+	assert.InDelta(t, 0.56, cost2.SavingsPlanCoverage, 0.01)
+	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost2.CoverageType)
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost2.SavingsPlanARN)
+
+	// Check SP utilization metrics
 	spUtil := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-001"]
-	assert.Equal(t, 0.20, spUtil.HourlyCommitment)
-	assert.Greater(t, spUtil.CurrentUtilizationRate, 0.0)
-	assert.LessOrEqual(t, spUtil.CurrentUtilizationRate, 0.20)
+	assert.Equal(t, 1.00, spUtil.HourlyCommitment)
+	assert.InDelta(t, 0.84, spUtil.CurrentUtilizationRate, 0.01) // $0.28 + $0.56
+	assert.InDelta(t, 0.16, spUtil.RemainingCapacity, 0.01)      // $1.00 - $0.84
+	assert.InDelta(t, 84.0, spUtil.UtilizationPercent, 1.0)      // 84%
+
+	// Check aggregate totals
+	assert.InDelta(t, 3.00, result.TotalShelfPrice, 0.01)    // $1.00 + $2.00
+	assert.InDelta(t, 0.84, result.TotalEstimatedCost, 0.01) // $0.28 + $0.56
+	assert.InDelta(t, 2.16, result.TotalSavings, 0.01)       // $3.00 - $0.84
 }
 
 // TestCalculatorSpotPricing tests that spot instances use spot market prices.
@@ -235,24 +258,24 @@ func TestCalculatorSpotPricing(t *testing.T) {
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      []aws.SavingsPlan{},
 		SpotPrices: map[string]float64{
-			"m5.xlarge:us-west-2a": 0.058, // Spot price is much lower
+			"m5.xlarge:us-west-2a": 0.30, // Spot price is much lower than on-demand
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
+			"m5.xlarge:us-west-2": 1.00,
 		},
 	}
 
 	result := calc.Calculate(input)
 
 	cost := result.InstanceCosts["i-spot-001"]
-	assert.Equal(t, 0.192, cost.ShelfPrice)    // On-demand shelf price
-	assert.Equal(t, 0.058, cost.EffectiveCost) // Actual spot price
+	assert.Equal(t, 1.00, cost.ShelfPrice)    // On-demand shelf price
+	assert.Equal(t, 0.30, cost.EffectiveCost) // Actual spot price
 	assert.Equal(t, CoverageSpot, cost.CoverageType)
-	assert.Equal(t, 0.058, cost.SpotPrice)
+	assert.Equal(t, 0.30, cost.SpotPrice)
 	assert.True(t, cost.IsSpot)
 
 	// Savings should reflect spot discount
-	assert.InDelta(t, 0.134, result.TotalSavings, 0.001)
+	assert.InDelta(t, 0.70, result.TotalSavings, 0.001)
 }
 
 // TestCalculatorPriorityOrder tests that discounts are applied in correct priority:
@@ -322,7 +345,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.30, // Enough to cover m5.2xlarge (~$0.277 coverage needed)
+				Commitment:      0.56, // Enough to cover m5.2xlarge SP rate ($2.00 * 0.28 = $0.56)
 				AccountID:       "123456789012",
 			},
 			{
@@ -330,15 +353,15 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				SavingsPlanType: "Compute",
 				Region:          "all",
 				InstanceFamily:  "all",
-				Commitment:      0.1122, // Exactly enough to cover c5.xlarge, nothing left for r5.xlarge
+				Commitment:      0.3399, // Just under c5.xlarge SP rate ($1.00 * 0.34), nothing left for r5.xlarge
 				AccountID:       "123456789012",
 			},
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2":  0.192,
-			"m5.2xlarge:us-west-2": 0.384,
-			"c5.xlarge:us-west-2":  0.17,
-			"r5.xlarge:us-west-2":  0.252,
+			"m5.xlarge:us-west-2":  1.00,
+			"m5.2xlarge:us-west-2": 2.00,
+			"c5.xlarge:us-west-2":  1.00,
+			"r5.xlarge:us-west-2":  1.50,
 		},
 	}
 
@@ -399,22 +422,34 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.20,
+				Commitment:      0.50, // Commitment to cover the instance (SP rate $0.28)
 				AccountID:       "123456789012",
 				End:             endTime,
 			},
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
+			"m5.xlarge:us-west-2": 1.00,
 		},
 	}
 
 	result := calc.Calculate(input)
 
+	// Verify instance got SP coverage
+	// With 72% EC2 Instance SP discount:
+	//   - m5.xlarge: $1.00 OD → $0.28 SP rate
+	//   - Commitment: $0.50 (enough to fully cover the instance)
+	cost := result.InstanceCosts["i-001"]
+	assert.Equal(t, 1.00, cost.ShelfPrice)
+	assert.InDelta(t, 0.28, cost.EffectiveCost, 0.01)
+	assert.InDelta(t, 0.28, cost.SavingsPlanCoverage, 0.01)
+	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost.CoverageType)
+
+	// Verify SP utilization metrics
 	spUtil := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-001"]
-	assert.Equal(t, 0.20, spUtil.HourlyCommitment)
-	assert.Greater(t, spUtil.CurrentUtilizationRate, 0.0)
-	assert.LessOrEqual(t, spUtil.CurrentUtilizationRate, 0.20)
+	assert.Equal(t, 0.50, spUtil.HourlyCommitment)
+	assert.InDelta(t, 0.28, spUtil.CurrentUtilizationRate, 0.01) // Instance uses $0.28 of commitment
+	assert.InDelta(t, 0.22, spUtil.RemainingCapacity, 0.01)      // $0.50 - $0.28 remaining
+	assert.InDelta(t, 56.0, spUtil.UtilizationPercent, 1.0)      // 56% utilized
 	assert.Greater(t, spUtil.RemainingHours, 0.0)
 	assert.InDelta(t, 365*24, spUtil.RemainingHours, 24) // Within 24 hours of 1 year
 	assert.Equal(t, endTime, spUtil.EndTime)
@@ -462,12 +497,12 @@ func TestCalculatorLaunchTimeStability(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.138, // Only enough to cover ONE m5.xlarge
+				Commitment:      0.28, // Exactly ONE m5.xlarge SP rate ($1.00 * 0.28)
 				AccountID:       "123456789012",
 			},
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
+			"m5.xlarge:us-west-2": 1.00,
 		},
 	}
 
@@ -525,7 +560,7 @@ func TestCalculatorMultipleAccounts(t *testing.T) {
 		},
 		SavingsPlans: []aws.SavingsPlan{},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
+			"m5.xlarge:us-west-2": 1.00,
 		},
 	}
 
@@ -594,13 +629,13 @@ func TestCalculatorRIAndSPInteraction(t *testing.T) {
 				SavingsPlanType: "Compute",
 				Region:          "all",
 				InstanceFamily:  "all",
-				Commitment:      1.0, // Large commitment - enough to try covering both instances
+				Commitment:      2.00, // Large commitment - enough to try covering both instances
 				AccountID:       "123456789012",
 			},
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
-			"c5.xlarge:us-west-2": 0.17,
+			"m5.xlarge:us-west-2": 1.00,
+			"c5.xlarge:us-west-2": 1.00,
 		},
 	}
 
@@ -616,7 +651,7 @@ func TestCalculatorRIAndSPInteraction(t *testing.T) {
 		"CRITICAL BUG: RI-covered instance went NEGATIVE after SP allocation!")
 	assert.Equal(t, 0.0, riCoveredCost.SavingsPlanCoverage,
 		"RI-covered instance should not get SP coverage")
-	assert.Equal(t, 0.192, riCoveredCost.RICoverage,
+	assert.Equal(t, 1.00, riCoveredCost.RICoverage,
 		"RI coverage amount should be full shelf price")
 
 	// The SP should cover the other instance instead
@@ -663,7 +698,7 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.05, // Small commitment - only partially covers the instance
+				Commitment:      0.10, // Small commitment - only partially covers the instance
 				AccountID:       "123456789012",
 			},
 			{
@@ -671,12 +706,12 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 				SavingsPlanType: "Compute",
 				Region:          "all",
 				InstanceFamily:  "all",
-				Commitment:      1.0, // Large commitment - tries to over-cover remaining cost
+				Commitment:      2.00, // Large commitment - tries to over-cover remaining cost
 				AccountID:       "123456789012",
 			},
 		},
 		OnDemandPrices: map[string]float64{
-			"m5.xlarge:us-west-2": 0.192,
+			"m5.xlarge:us-west-2": 1.00,
 		},
 	}
 
@@ -696,10 +731,28 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 	assert.LessOrEqual(t, cost.SavingsPlanCoverage, cost.ShelfPrice,
 		"SP coverage exceeded shelf price - should be capped")
 
-	// The final effective cost should be shelf price minus total coverage
-	expectedEffectiveCost := cost.ShelfPrice - cost.SavingsPlanCoverage
+	// Calculate expected values based on NEW algorithm
+	// 1. EC2 Instance SP (72% discount): rate = $1.00 * 0.28 = $0.28
+	//    Commitment $0.10 < rate $0.28, so partial coverage
+	//    Contributes $0.10, EffectiveCost = $1.00 - $0.10 = $0.90
+	//
+	// 2. Compute SP (66% discount): rate = $1.00 * 0.34 = $0.34
+	//    Commitment $2.00 > rate $0.34, so full coverage
+	//    Contributes $0.34, EffectiveCost = $0.34 (pay SP rate)
+	//
+	// Total SavingsPlanCoverage = $0.10 + $0.34 = $0.44
+	// Final EffectiveCost = $0.34
+
+	expectedEC2Contribution := 0.10      // Limited by commitment
+	expectedComputeSPRate := 1.00 * 0.34 // 66% discount
+
+	expectedEffectiveCost := expectedComputeSPRate // Fully covered by Compute SP
 	assert.InDelta(t, expectedEffectiveCost, cost.EffectiveCost, 0.001,
-		"EffectiveCost calculation incorrect")
+		"EffectiveCost should equal Compute SP rate when fully covered")
+
+	expectedTotalSPCoverage := expectedEC2Contribution + expectedComputeSPRate
+	assert.InDelta(t, expectedTotalSPCoverage, cost.SavingsPlanCoverage, 0.001,
+		"Total SP coverage should be sum of both SP contributions")
 }
 
 // TestCalculatorNegativeCostPrevention is a comprehensive test ensuring no combination
@@ -748,7 +801,7 @@ func TestCalculatorNegativeCostPrevention(t *testing.T) {
 					AccountID:       "123456789012",
 				},
 			},
-			onDemandPrice: 0.192,
+			onDemandPrice: 1.00,
 			description:   "Instance fully covered by RI, EC2 Instance SP tries to apply",
 		},
 		{
@@ -778,11 +831,11 @@ func TestCalculatorNegativeCostPrevention(t *testing.T) {
 					SavingsPlanType: "Compute",
 					Region:          "all",
 					InstanceFamily:  "all",
-					Commitment:      1.0,
+					Commitment:      2.00,
 					AccountID:       "123456789012",
 				},
 			},
-			onDemandPrice: 0.17,
+			onDemandPrice: 1.00,
 			description:   "Instance fully covered by RI, Compute SP tries to apply",
 		},
 		{
@@ -803,7 +856,7 @@ func TestCalculatorNegativeCostPrevention(t *testing.T) {
 					SavingsPlanType: "EC2Instance",
 					Region:          "us-west-2",
 					InstanceFamily:  "m5",
-					Commitment:      1.0,
+					Commitment:      2.00,
 					AccountID:       "123456789012",
 				},
 				{
@@ -811,11 +864,11 @@ func TestCalculatorNegativeCostPrevention(t *testing.T) {
 					SavingsPlanType: "Compute",
 					Region:          "all",
 					InstanceFamily:  "all",
-					Commitment:      1.0,
+					Commitment:      2.00,
 					AccountID:       "123456789012",
 				},
 			},
-			onDemandPrice: 0.192,
+			onDemandPrice: 1.00,
 			description:   "Instance covered by EC2 Instance SP, Compute SP tries to apply after",
 		},
 	}
@@ -878,12 +931,12 @@ func TestCalculatorInvariantValidation(t *testing.T) {
 					SavingsPlanType: "EC2Instance",
 					Region:          "us-west-2",
 					InstanceFamily:  "m5",
-					Commitment:      0.20,
+					Commitment:      0.50,
 					AccountID:       "123456789012",
 				},
 			},
 			OnDemandPrices: map[string]float64{
-				"m5.xlarge:us-west-2": 0.192,
+				"m5.xlarge:us-west-2": 1.00,
 			},
 		}
 
@@ -918,7 +971,7 @@ func TestCalculatorInvariantValidation(t *testing.T) {
 					ReservedInstances: []aws.ReservedInstance{},
 					SavingsPlans:      []aws.SavingsPlan{},
 					OnDemandPrices: map[string]float64{
-						"m5.xlarge:us-west-2": 0.192,
+						"m5.xlarge:us-west-2": 1.00,
 					},
 				},
 			},
@@ -948,7 +1001,7 @@ func TestCalculatorInvariantValidation(t *testing.T) {
 					},
 					SavingsPlans: []aws.SavingsPlan{},
 					OnDemandPrices: map[string]float64{
-						"m5.xlarge:us-west-2": 0.192,
+						"m5.xlarge:us-west-2": 1.00,
 					},
 				},
 			},
@@ -982,12 +1035,12 @@ func TestCalculatorInvariantValidation(t *testing.T) {
 							SavingsPlanType: "Compute",
 							Region:          "all",
 							InstanceFamily:  "all",
-							Commitment:      1.0,
+							Commitment:      2.00,
 							AccountID:       "123456789012",
 						},
 					},
 					OnDemandPrices: map[string]float64{
-						"m5.xlarge:us-west-2": 0.192,
+						"m5.xlarge:us-west-2": 1.00,
 					},
 				},
 			},
@@ -1024,10 +1077,10 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 				Region:              "us-west-2",
 				AccountID:           "123456789012",
 				AvailabilityZone:    "us-west-2a",
-				ShelfPrice:          0.192,
-				EffectiveCost:       -0.05, // BUG: Negative cost!
-				RICoverage:          0.192,
-				SavingsPlanCoverage: 0.05,
+				ShelfPrice:          1.00,
+				EffectiveCost:       -0.20, // BUG: Negative cost!
+				RICoverage:          1.00,
+				SavingsPlanCoverage: 0.20,
 				CoverageType:        CoverageReservedInstance,
 			},
 		}
@@ -1049,12 +1102,12 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 				Region:              "us-west-2",
 				AccountID:           "123456789012",
 				AvailabilityZone:    "us-west-2a",
-				ShelfPrice:          0.192,
+				ShelfPrice:          1.00,
 				EffectiveCost:       0.00,
-				RICoverage:          0.15, // RI coverage
-				SavingsPlanCoverage: 0.10, // SP coverage
+				RICoverage:          0.70, // RI coverage
+				SavingsPlanCoverage: 0.50, // SP coverage
 				CoverageType:        CoverageReservedInstance,
-				// Total: 0.15 + 0.10 = 0.25 > 0.192 ← BUG!
+				// Total: 0.70 + 0.50 = 1.20 > 1.00 ← BUG!
 			},
 		}
 
@@ -1104,10 +1157,10 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 				Region:              "us-west-2",
 				AccountID:           "123456789012",
 				AvailabilityZone:    "us-west-2a",
-				ShelfPrice:          0.192,
-				EffectiveCost:       0.054, // Positive, reasonable cost
+				ShelfPrice:          1.00,
+				EffectiveCost:       0.28, // Positive, reasonable cost (EC2 Instance SP rate)
 				RICoverage:          0.0,
-				SavingsPlanCoverage: 0.138, // Coverage < shelf price ✓
+				SavingsPlanCoverage: 0.28, // Coverage < shelf price ✓
 				CoverageType:        CoverageEC2InstanceSavingsPlan,
 			},
 		}
@@ -1117,7 +1170,7 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 			SavingsPlanType: "EC2Instance",
 			Region:          "us-west-2",
 			InstanceFamily:  "m5",
-			Commitment:      0.20,
+			Commitment:      0.50,
 			AccountID:       "123456789012",
 		}
 
@@ -1125,9 +1178,9 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 			sp.SavingsPlanARN: {
 				SavingsPlanARN:         sp.SavingsPlanARN,
 				HourlyCommitment:       sp.Commitment,
-				CurrentUtilizationRate: 0.138, // Used $0.138/hour
-				RemainingCapacity:      0.062, // Remaining $0.062/hour
-				// Total: 0.138 + 0.062 = 0.20 ✓
+				CurrentUtilizationRate: 0.28, // Used $0.28/hour
+				RemainingCapacity:      0.22, // Remaining $0.22/hour
+				// Total: 0.28 + 0.22 = 0.50 ✓
 			},
 		}
 
