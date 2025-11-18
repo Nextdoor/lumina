@@ -1051,8 +1051,8 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 				AvailabilityZone:    "us-west-2a",
 				ShelfPrice:          0.192,
 				EffectiveCost:       0.00,
-				RICoverage:          0.15,  // RI coverage
-				SavingsPlanCoverage: 0.10,  // SP coverage
+				RICoverage:          0.15, // RI coverage
+				SavingsPlanCoverage: 0.10, // SP coverage
 				CoverageType:        CoverageReservedInstance,
 				// Total: 0.15 + 0.10 = 0.25 > 0.192 ← BUG!
 			},

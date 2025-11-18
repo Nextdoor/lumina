@@ -130,11 +130,34 @@ type TestData struct {
 	// Key format: "accountID"
 	SavingsPlans map[string][]TestSavingsPlan `yaml:"savingsPlans,omitempty"`
 
-	// Pricing contains mock pricing data for testing.
-	// Key format: "region:instanceType:operatingSystem"
-	// Example: "us-west-2:m5.large:Linux" -> 0.096
-	// This allows E2E tests to run without calling the real AWS Pricing API.
-	Pricing map[string]float64 `yaml:"pricing,omitempty"`
+	// PricingNested contains mock pricing data in nested format for testing.
+	// Structure: map[region]map[instanceType]map[operatingSystem]price
+	// Example: {"us-west-2": {"m5.large": {"Linux": 0.096}}}
+	// This nested structure works better with Viper/mapstructure since it avoids
+	// period-handling issues in flat keys like "us-west-2:m5.large:Linux".
+	PricingNested map[string]map[string]map[string]float64 `yaml:"pricing,omitempty"`
+
+	// Pricing returns flattened pricing data in the format "region:instanceType:os" -> price.
+	// This is computed from PricingNested and cached.
+	pricingFlat map[string]float64
+}
+
+// Pricing returns the pricing data as a flattened map with keys in the format
+// "region:instanceType:operatingSystem" -> price.
+// This method lazily flattens the nested PricingNested structure on first call.
+func (td *TestData) Pricing() map[string]float64 {
+	if td.pricingFlat == nil && td.PricingNested != nil {
+		td.pricingFlat = make(map[string]float64)
+		for region, instanceTypes := range td.PricingNested {
+			for instanceType, operatingSystems := range instanceTypes {
+				for os, price := range operatingSystems {
+					key := fmt.Sprintf("%s:%s:%s", region, instanceType, os)
+					td.pricingFlat[key] = price
+				}
+			}
+		}
+	}
+	return td.pricingFlat
 }
 
 // TestSavingsPlan represents a mock Savings Plan for E2E testing.

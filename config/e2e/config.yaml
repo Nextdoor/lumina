@@ -16,7 +16,7 @@ awsAccounts:
     region: "us-east-1"
 
 # Test data for E2E tests
-# LocalStack's free tier doesn't support Savings Plans API, so we inject test data
+# LocalStack's free tier doesn't support Savings Plans API or Pricing API, so we inject test data
 testData:
   savingsPlans:
     # Test data for test-production account
@@ -45,3 +45,14 @@ testData:
         commitment: 3.0  # $3/hour
         start: "2024-03-01T00:00:00Z"
         end: "2027-03-01T00:00:00Z"
+
+  # Pricing test data
+  # LocalStack's free tier doesn't support the Pricing API, so we provide mock pricing
+  # Nested structure: pricing[region][instanceType][operatingSystem] = hourly price
+  # Values match the instances created in testdata/ec2.json
+  pricing:
+    us-west-2:
+      m5.xlarge:
+        Linux: 0.192
+      c5.large:
+        Linux: 0.085

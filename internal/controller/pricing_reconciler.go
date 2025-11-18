@@ -127,11 +127,11 @@ func (r *PricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	var err error
 	var duration time.Duration
 
-	if r.Config.TestData != nil && r.Config.TestData.Pricing != nil {
+	if r.Config.TestData != nil && r.Config.TestData.Pricing() != nil {
 		// Use test data instead of calling AWS Pricing API
 		// This allows E2E tests to run hermetically without external API dependencies
-		log.Info("using test data for pricing", "count", len(r.Config.TestData.Pricing))
-		prices = r.Config.TestData.Pricing
+		prices = r.Config.TestData.Pricing()
+		log.Info("using test data for pricing", "count", len(prices))
 		duration = time.Since(startTime)
 	} else {
 		// Normal production path: query AWS Pricing API
