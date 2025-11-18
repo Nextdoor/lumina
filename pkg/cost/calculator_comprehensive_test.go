@@ -30,10 +30,13 @@ import (
 // scenarios clear and easy to reason about.
 //
 // Pricing scheme used across all tests:
-//   - m5.2xlarge: $2.00/hr OD, $1.40/hr SP (30% discount)
-//   - m5.xlarge:  $1.00/hr OD, $0.70/hr SP (30% discount), $0.50/hr Spot
-//   - c5.xlarge:  $1.00/hr OD, $0.70/hr SP (30% discount), $0.40/hr Spot
-//   - t3.medium:  $0.50/hr OD, $0.35/hr SP (30% discount), $0.20/hr Spot
+//   - m5.2xlarge: $2.00/hr OD, $0.68/hr Compute SP (66% discount)
+//   - m5.xlarge:  $1.00/hr OD, $0.34/hr Compute SP (66% discount), $0.50/hr Spot
+//   - c5.xlarge:  $1.00/hr OD, $0.34/hr Compute SP (66% discount), $0.40/hr Spot
+//   - t3.medium:  $0.50/hr OD, $0.17/hr Compute SP (66% discount), $0.20/hr Spot
+//
+// Note: Compute Savings Plans provide 66% discount (see pkg/cost/savings_plans.go:602)
+// EC2 Instance Savings Plans provide 72% discount
 func TestCalculatorComprehensiveScenarios(t *testing.T) {
 	baseTime := testBaseTime()
 
@@ -115,8 +118,9 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 			expectedTotalSPCoverage:    0.00,
 		},
 		{
-			name:        "Scenario 2: RI + SP coverage",
-			description: "5 RIs, 1 SP worth 5 more instances, 15 total instances. 5 RI-covered, 5 SP-covered, 5 on-demand.",
+			name: "Scenario 2: RI + SP coverage",
+			description: "5 RIs, 1 SP with $3.00 commitment, 15 total instances. " +
+				"5 RI-covered, ~2.3 SP-covered (partial), rest on-demand. ",
 			//nolint:dupl // Test data duplication is acceptable for clarity
 			instances: []aws.Instance{
 				// 15 m5.2xlarge instances
@@ -142,8 +146,10 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 			},
 			savingsPlans: []aws.SavingsPlan{
 				// SP commitment is the DISCOUNT BUDGET (not payment amount)
-				// Discount per instance: $2.00 (OD) - $1.40 (SP) = $0.60/hr
-				// To cover 5 instances: 5 * $0.60 = $3.00/hr commitment
+				// With 66% Compute SP discount:
+				//   - SP rate: $2.00 * 0.34 = $0.68/hr
+				//   - Coverage per instance: $2.00 - $0.68 = $1.32/hr
+				//   - $3.00 commitment covers: 2 full instances + 0.27 of 3rd instance
 				newTestComputeSP("sp-001", 3.00),
 			},
 			//nolint:dupl // Test expectations duplication is acceptable for clarity
@@ -154,24 +160,27 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 				"i-003": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
 				"i-004": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
 				"i-005": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
-				// Next 5 instances should be SP-covered
-				"i-006": {ShelfPrice: 2.00, EffectiveCost: 1.40, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.60},
-				"i-007": {ShelfPrice: 2.00, EffectiveCost: 1.40, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.60},
-				"i-008": {ShelfPrice: 2.00, EffectiveCost: 1.40, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.60},
-				"i-009": {ShelfPrice: 2.00, EffectiveCost: 1.40, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.60},
-				"i-010": {ShelfPrice: 2.00, EffectiveCost: 1.40, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.60},
-				// Remaining 5 instances should be on-demand
+				// Next 2 instances get full SP coverage (66% discount)
+				"i-006": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
+				"i-007": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
+				// i-008 gets partial SP coverage (commitment exhausted)
+				"i-008": {ShelfPrice: 2.00, EffectiveCost: 1.64, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.36},
+				// Remaining 7 instances are on-demand (no SP budget left)
+				"i-009": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
+				"i-010": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-011": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-012": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-013": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-014": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-015": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 			},
-			expectedTotalShelfPrice:    30.00, // 15 * $2.00
-			expectedTotalEstimatedCost: 17.00, // (5 RI * $0) + (5 SP * $1.40) + (5 OD * $2.00) = 0 + 7 + 10 = 17
-			expectedTotalSavings:       13.00, // (5 RI * $2.00) + (5 SP * $0.60) = 10 + 3 = 13
+			expectedTotalShelfPrice: 30.00, // 15 * $2.00
+			// Total cost: (5 RI * $0) + (2 SP * $0.68) + (1 partial * $1.64) + (7 OD * $2.00)
+			//           = 0 + 1.36 + 1.64 + 14 = 17
+			expectedTotalEstimatedCost: 17.00,
+			expectedTotalSavings:       13.00, // (5 RI * $2.00) + (2.27 SP * ~$1.32) = 10 + 3 = 13
 			expectedTotalRICoverage:    10.00, // 5 * $2.00
-			expectedTotalSPCoverage:    3.00,  // 5 * $0.60 (discount amount, not SP rate)
+			expectedTotalSPCoverage:    3.00,  // $1.32 + $1.32 + $0.36 (discount amounts)
 		},
 		{
 			name: "Scenario 3: RI coverage with spot instances (spot should NOT get RI coverage)",
@@ -281,13 +290,6 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Skip Scenario 2 - unrelated SP allocation issue
-			// This scenario fails due to an existing bug in SP sorting/allocation
-			// that is NOT related to the spot instance fix
-			if tt.name == "Scenario 2: RI + SP coverage" {
-				t.Skip("Skipping due to unrelated SP allocation issue")
-			}
-
 			calc := NewCalculator()
 
 			// Build pricing maps with simple pricing
