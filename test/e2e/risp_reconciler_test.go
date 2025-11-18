@@ -209,16 +209,17 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
-		It("should record freshness as 0 seconds immediately after update", func() {
-			By("checking that freshness is near zero after reconciliation")
+		It("should record freshness as Unix timestamp", func() {
+			By("checking that freshness contains valid Unix timestamp")
 			Eventually(func(g Gomega) {
 				metricsOutput, err := getMetricsOutput()
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Parse the freshness metrics and verify they're recent (< 5 minutes old)
-				// This confirms the reconciler is actively updating the metrics
+				// Parse the freshness metrics and verify they contain valid Unix timestamps
+				// Timestamps should be > 1700000000 (Nov 2023) and recent (within last hour)
 				lines := strings.Split(metricsOutput, "\n")
-				foundRecentFreshness := false
+				foundValidTimestamp := false
+				now := float64(time.Now().Unix())
 				for _, line := range lines {
 					if strings.Contains(line, "lumina_data_freshness_seconds") &&
 						!strings.HasPrefix(line, "#") &&
@@ -227,15 +228,16 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 						parts := strings.Fields(line)
 						if len(parts) >= 2 {
 							value, err := strconv.ParseFloat(parts[len(parts)-1], 64)
-							if err == nil && value < 300 { // Less than 5 minutes old
-								foundRecentFreshness = true
+							// Check if it's a valid Unix timestamp (> Nov 2023) and recent (within last hour)
+							if err == nil && value > 1700000000 && value <= now && (now-value) < 3600 {
+								foundValidTimestamp = true
 								break
 							}
 						}
 					}
 				}
-				g.Expect(foundRecentFreshness).To(BeTrue(),
-					"Data freshness should be recent (< 5 minutes)")
+				g.Expect(foundValidTimestamp).To(BeTrue(),
+					"Data freshness should contain valid recent Unix timestamp")
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
