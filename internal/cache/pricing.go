@@ -18,6 +18,7 @@ package cache
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -30,12 +31,16 @@ import (
 // AWS Pricing API. Pricing data is refreshed periodically (typically every 24 hours)
 // as AWS pricing changes infrequently (monthly).
 //
+// All keys are normalized to lowercase for case-insensitive lookups. This ensures
+// consistent behavior regardless of the input casing from AWS APIs or configuration.
+//
 // Thread-safety: All methods are safe for concurrent access.
 type PricingCache struct {
 	mu sync.RWMutex
 
 	// onDemandPrices stores on-demand pricing keyed by "region:instanceType:os"
-	// Example key: "us-west-2:m5.xlarge:Linux" → 0.192
+	// All keys are lowercase for case-insensitive lookups.
+	// Example key: "us-west-2:m5.xlarge:linux" → 0.192
 	onDemandPrices map[string]float64
 
 	// Metadata
@@ -60,11 +65,17 @@ func NewPricingCache() *PricingCache {
 // Returns the price and true if found, or 0 and false if not found.
 //
 // This is an O(1) lookup operation.
+//
+// All keys are normalized to lowercase for consistent lookups regardless of input casing.
 func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem string) (float64, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	key := fmt.Sprintf("%s:%s:%s", region, instanceType, operatingSystem)
+	// Normalize to lowercase for case-insensitive lookups
+	key := fmt.Sprintf("%s:%s:%s",
+		strings.ToLower(region),
+		strings.ToLower(instanceType),
+		strings.ToLower(operatingSystem))
 	price, exists := c.onDemandPrices[key]
 	return price, exists
 }
@@ -73,11 +84,17 @@ func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem st
 // This is typically called by the pricing reconciler after bulk-loading data.
 //
 // The input map should use keys in the format "region:instanceType:os".
+// All keys are normalized to lowercase for case-insensitive lookups.
 func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.onDemandPrices = prices
+	// Normalize all keys to lowercase for consistent lookups
+	normalizedPrices := make(map[string]float64, len(prices))
+	for key, price := range prices {
+		normalizedPrices[strings.ToLower(key)] = price
+	}
+	c.onDemandPrices = normalizedPrices
 	c.lastUpdated = time.Now()
 	c.isPopulated = len(prices) > 0
 
@@ -138,7 +155,11 @@ func (c *PricingCache) GetOnDemandPricesForInstances(
 
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
-		key := fmt.Sprintf("%s:%s:%s", inst.Region, inst.InstanceType, operatingSystem)
+		// Normalize to lowercase for case-insensitive lookups
+		key := fmt.Sprintf("%s:%s:%s",
+			strings.ToLower(inst.Region),
+			strings.ToLower(inst.InstanceType),
+			strings.ToLower(operatingSystem))
 		if price, exists := c.onDemandPrices[key]; exists {
 			// Return with simplified key for calculator
 			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
