@@ -46,6 +46,11 @@ type RISPCache struct {
 
 	// Last successful update time
 	lastUpdate time.Time
+
+	// notifiers are callbacks invoked after cache updates
+	// Separate mutex to prevent deadlock during notification
+	notifyMu  sync.RWMutex
+	notifiers []UpdateNotifier
 }
 
 // NewRISPCache creates a new empty RI/SP cache.
@@ -76,6 +81,9 @@ func (c *RISPCache) UpdateReservedInstances(region, accountID string, ris []aws.
 	key := region + ":" + accountID + ":ri"
 	c.freshness[key] = time.Now()
 	c.lastUpdate = time.Now()
+
+	// Notify subscribers after releasing the write lock
+	c.notifyUpdate()
 }
 
 // UpdateSavingsPlans atomically replaces all SP data for an account.
@@ -91,6 +99,33 @@ func (c *RISPCache) UpdateSavingsPlans(accountID string, sps []aws.SavingsPlan) 
 	key := accountID + ":sp"
 	c.freshness[key] = time.Now()
 	c.lastUpdate = time.Now()
+
+	// Notify subscribers after releasing the write lock
+	c.notifyUpdate()
+}
+
+// RegisterUpdateNotifier adds a callback to be invoked when cache data changes.
+// Multiple notifiers can be registered. Callbacks are invoked in separate goroutines
+// to prevent blocking cache operations.
+//
+// This is typically used to trigger cost recalculation when RI/SP data changes.
+func (c *RISPCache) RegisterUpdateNotifier(fn UpdateNotifier) {
+	c.notifyMu.Lock()
+	defer c.notifyMu.Unlock()
+	c.notifiers = append(c.notifiers, fn)
+}
+
+// notifyUpdate invokes all registered notifiers in separate goroutines.
+// This method should be called after cache modifications, outside of the main mutex lock.
+func (c *RISPCache) notifyUpdate() {
+	c.notifyMu.RLock()
+	defer c.notifyMu.RUnlock()
+
+	for _, fn := range c.notifiers {
+		// Run in goroutine to prevent blocking cache operations
+		// This means notifiers must be thread-safe
+		go fn()
+	}
 }
 
 // GetReservedInstances returns all RIs for a specific region/account.

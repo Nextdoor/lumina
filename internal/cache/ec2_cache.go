@@ -37,6 +37,10 @@ import (
 	"github.com/nextdoor/lumina/pkg/aws"
 )
 
+// UpdateNotifier is a callback function invoked when cache data changes.
+// Used to trigger dependent calculations (e.g., cost recalculation) when data updates.
+type UpdateNotifier func()
+
 // EC2Cache stores EC2 instance data with thread-safe access.
 // Instance IDs are globally unique across AWS, so we use them as the primary key.
 // Each instance stores its own AccountID and Region for filtering operations.
@@ -54,6 +58,11 @@ type EC2Cache struct {
 
 	// lastUpdate tracks when the cache was last modified
 	lastUpdate time.Time
+
+	// notifiers are callbacks invoked after cache updates
+	// Separate mutex to prevent deadlock during notification
+	notifyMu  sync.RWMutex
+	notifiers []UpdateNotifier
 }
 
 // NewEC2Cache creates a new empty EC2 instance cache.
@@ -97,6 +106,34 @@ func (c *EC2Cache) SetInstances(accountID, region string, instances []aws.Instan
 	}
 
 	c.lastUpdate = time.Now()
+
+	// Notify subscribers after releasing the write lock
+	// This prevents deadlock if notifiers try to read from the cache
+	c.notifyUpdate()
+}
+
+// RegisterUpdateNotifier adds a callback to be invoked when cache data changes.
+// Multiple notifiers can be registered. Callbacks are invoked in separate goroutines
+// to prevent blocking cache operations.
+//
+// This is typically used to trigger cost recalculation when EC2 inventory changes.
+func (c *EC2Cache) RegisterUpdateNotifier(fn UpdateNotifier) {
+	c.notifyMu.Lock()
+	defer c.notifyMu.Unlock()
+	c.notifiers = append(c.notifiers, fn)
+}
+
+// notifyUpdate invokes all registered notifiers in separate goroutines.
+// This method should be called after cache modifications, outside of the main mutex lock.
+func (c *EC2Cache) notifyUpdate() {
+	c.notifyMu.RLock()
+	defer c.notifyMu.RUnlock()
+
+	for _, fn := range c.notifiers {
+		// Run in goroutine to prevent blocking cache operations
+		// This means notifiers must be thread-safe
+		go fn()
+	}
 }
 
 // GetInstance returns a specific instance by its ID.

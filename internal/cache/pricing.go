@@ -41,6 +41,11 @@ type PricingCache struct {
 	// Metadata
 	lastUpdated time.Time
 	isPopulated bool
+
+	// notifiers are callbacks invoked after cache updates
+	// Separate mutex to prevent deadlock during notification
+	notifyMu  sync.RWMutex
+	notifiers []UpdateNotifier
 }
 
 // NewPricingCache creates a new empty pricing cache.
@@ -75,6 +80,33 @@ func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
 	c.onDemandPrices = prices
 	c.lastUpdated = time.Now()
 	c.isPopulated = len(prices) > 0
+
+	// Notify subscribers after releasing the write lock
+	c.notifyUpdate()
+}
+
+// RegisterUpdateNotifier adds a callback to be invoked when cache data changes.
+// Multiple notifiers can be registered. Callbacks are invoked in separate goroutines
+// to prevent blocking cache operations.
+//
+// This is typically used to trigger cost recalculation when pricing data changes.
+func (c *PricingCache) RegisterUpdateNotifier(fn UpdateNotifier) {
+	c.notifyMu.Lock()
+	defer c.notifyMu.Unlock()
+	c.notifiers = append(c.notifiers, fn)
+}
+
+// notifyUpdate invokes all registered notifiers in separate goroutines.
+// This method should be called after cache modifications, outside of the main mutex lock.
+func (c *PricingCache) notifyUpdate() {
+	c.notifyMu.RLock()
+	defer c.notifyMu.RUnlock()
+
+	for _, fn := range c.notifiers {
+		// Run in goroutine to prevent blocking cache operations
+		// This means notifiers must be thread-safe
+		go fn()
+	}
 }
 
 // GetAllOnDemandPrices returns a copy of all on-demand prices.

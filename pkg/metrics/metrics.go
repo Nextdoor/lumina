@@ -99,6 +99,29 @@ type Metrics struct {
 	// This enables fleet-wide capacity tracking and monitoring.
 	// Labels: account_id, region
 	EC2RunningInstanceCount *prometheus.GaugeVec
+
+	// EC2InstanceHourlyCost tracks the effective hourly cost for each EC2 instance after
+	// applying all discounts (Reserved Instances, Savings Plans, spot pricing).
+	// This enables per-instance cost tracking and chargeback. Value is in USD/hour.
+	// Labels: instance_id, account_id, region, instance_type, cost_type, availability_zone
+	EC2InstanceHourlyCost *prometheus.GaugeVec
+
+	// SavingsPlanCurrentUtilizationRate tracks the current hourly rate being consumed by
+	// instances covered by this Savings Plan. This is a snapshot of current usage ($/hour).
+	// Labels: savings_plan_arn, account_id, type
+	SavingsPlanCurrentUtilizationRate *prometheus.GaugeVec
+
+	// SavingsPlanRemainingCapacity tracks the unused capacity in $/hour for a Savings Plan.
+	// Calculated as: HourlyCommitment - CurrentUtilizationRate
+	// Can be negative if over-utilized (spillover to on-demand rates).
+	// Labels: savings_plan_arn, account_id, type
+	SavingsPlanRemainingCapacity *prometheus.GaugeVec
+
+	// SavingsPlanUtilizationPercent tracks the utilization percentage of a Savings Plan.
+	// Calculated as: (CurrentUtilizationRate / HourlyCommitment) * 100
+	// Can exceed 100% if the SP is over-utilized.
+	// Labels: savings_plan_arn, account_id, type
+	SavingsPlanUtilizationPercent *prometheus.GaugeVec
 }
 
 // NewMetrics creates and registers all Prometheus metrics with the provided
@@ -178,6 +201,26 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "ec2_running_instance_count",
 			Help: "Total count of running EC2 instances by account and region",
 		}, []string{"account_id", "region"}),
+
+		EC2InstanceHourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ec2_instance_hourly_cost",
+			Help: "Effective hourly cost for an EC2 instance after applying all discounts (USD/hour)",
+		}, []string{"instance_id", "account_id", "region", "instance_type", "cost_type", "availability_zone"}),
+
+		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "savings_plan_current_utilization_rate",
+			Help: "Current hourly rate being consumed by instances covered by this Savings Plan (USD/hour)",
+		}, []string{"savings_plan_arn", "account_id", "type"}),
+
+		SavingsPlanRemainingCapacity: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "savings_plan_remaining_capacity",
+			Help: "Unused capacity in USD/hour for a Savings Plan (negative if over-utilized)",
+		}, []string{"savings_plan_arn", "account_id", "type"}),
+
+		SavingsPlanUtilizationPercent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "savings_plan_utilization_percent",
+			Help: "Utilization percentage of a Savings Plan (can exceed 100% if over-utilized)",
+		}, []string{"savings_plan_arn", "account_id", "type"}),
 	}
 
 	// Register all metrics with the provided registry
@@ -195,6 +238,10 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.EC2Instance,
 		m.EC2InstanceCount,
 		m.EC2RunningInstanceCount,
+		m.EC2InstanceHourlyCost,
+		m.SavingsPlanCurrentUtilizationRate,
+		m.SavingsPlanRemainingCapacity,
+		m.SavingsPlanUtilizationPercent,
 	)
 
 	return m

@@ -104,6 +104,10 @@ type ReconciliationConfig struct {
 	// Default: 24h
 	// Recommended: 24h (daily) - AWS pricing changes monthly, daily refresh is sufficient
 	Pricing string `yaml:"pricing,omitempty"`
+
+	// Cost reconciliation is event-driven (no configurable interval needed).
+	// Cost calculations trigger automatically when EC2, RISP, or Pricing caches update.
+	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.
 }
 
 // PricingConfig contains settings for AWS pricing data collection.
@@ -197,6 +201,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("accountValidationInterval", "10m")
 	v.SetDefault("reconciliation.risp", "1h")
 	v.SetDefault("reconciliation.ec2", "5m")
+	// Cost reconciliation is event-driven (no default interval needed)
 
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
@@ -293,6 +298,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid Pricing reconciliation interval %q: %w", c.Reconciliation.Pricing, err)
 		}
 	}
+	// Cost reconciliation is event-driven (no interval validation needed)
 
 	// Validate pricing configuration
 	if len(c.Pricing.OperatingSystems) > 0 {

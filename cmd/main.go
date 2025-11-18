@@ -23,11 +23,13 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -49,6 +51,7 @@ import (
 	"github.com/nextdoor/lumina/internal/controller"
 	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/config"
+	"github.com/nextdoor/lumina/pkg/cost"
 	"github.com/nextdoor/lumina/pkg/metrics"
 	// +kubebuilder:scaffold:imports
 )
@@ -187,6 +190,41 @@ func runStandalone(
 		}
 	}()
 	setupLog.Info("started EC2 reconciler in standalone mode")
+
+	// Create cost reconciler with event-driven architecture
+	// Cost calculations trigger automatically when any cache (EC2, RISP, Pricing) updates.
+	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.
+	costCalculator := cost.NewCalculator()
+	costReconciler := &controller.CostReconciler{
+		Calculator:   costCalculator,
+		Config:       cfg,
+		EC2Cache:     ec2Cache,
+		RISPCache:    rispCache,
+		PricingCache: pricingCache,
+		Metrics:      luminaMetrics,
+		Log:          ctrl.Log.WithName("cost-reconciler"),
+	}
+
+	// Create debouncer that triggers cost calculation 1 second after last cache update
+	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
+	costReconciler.Debouncer = cache.NewDebouncer(1*time.Second, func() {
+		if _, err := costReconciler.Reconcile(ctx, ctrl.Request{}); err != nil {
+			setupLog.Error(err, "cost calculation triggered by cache update failed")
+		}
+	})
+
+	// Register cost reconciler with all caches
+	// Any cache update will trigger the debouncer, which triggers cost recalculation
+	ec2Cache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+	rispCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+	pricingCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+
+	go func() {
+		if err := costReconciler.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "cost reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started cost reconciler in event-driven mode (1s debounce)")
 
 	// Create credential monitor for AWS health checks
 	// The monitor runs background checks at the configured interval instead of on every healthz probe,
@@ -567,6 +605,44 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("registered pricing reconciler for 24-hour data collection")
+
+	// Setup cost reconciler with event-driven architecture
+	// Cost calculations trigger automatically when any cache (EC2, RISP, Pricing) updates.
+	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.
+	costCalculator := cost.NewCalculator()
+	costReconciler := &controller.CostReconciler{
+		Calculator:   costCalculator,
+		Config:       cfg,
+		EC2Cache:     ec2Cache,
+		RISPCache:    rispCache,
+		PricingCache: pricingCache,
+		Metrics:      luminaMetrics,
+		Log:          ctrl.Log.WithName("cost-reconciler"),
+	}
+
+	// Create a context for the debouncer callbacks
+	// We use context.Background() because the debouncer runs in the manager's lifecycle
+	debouncerCtx := context.Background()
+
+	// Create debouncer that triggers cost calculation 1 second after last cache update
+	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
+	costReconciler.Debouncer = cache.NewDebouncer(1*time.Second, func() {
+		if _, err := costReconciler.Reconcile(debouncerCtx, ctrl.Request{}); err != nil {
+			setupLog.Error(err, "cost calculation triggered by cache update failed")
+		}
+	})
+
+	// Register cost reconciler with all caches
+	// Any cache update will trigger the debouncer, which triggers cost recalculation
+	ec2Cache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+	rispCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+	pricingCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+
+	if err := costReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Cost")
+		os.Exit(1)
+	}
+	setupLog.Info("registered cost reconciler in event-driven mode (1s debounce)")
 
 	// +kubebuilder:scaffold:builder
 

@@ -120,14 +120,21 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
-.PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
-
-.PHONY: run-local
-run-local: ## Run controller locally in standalone mode with config.yaml (must exist in current directory)
+.PHONY: local-config
 	@test -f config.yaml || (echo "ERROR: config.yaml not found in current directory. Create one based on config.example.yaml" && exit 1)
 	@echo "Running controller in standalone mode with config.yaml..."
+
+.PHONY: run
+run: local-config manifests generate fmt vet ## Run a controller from your host.
+	go run ./cmd/main.go \
+		--config=config.yaml \
+		--metrics-bind-address=:8080 \
+		--health-probe-bind-address=:8081 \
+		--metrics-secure=false \
+		--zap-log-level=$(LOG_LEVEL)
+
+.PHONY: run-local
+run-local: local-config ## Run controller locally in standalone mode with config.yaml (must exist in current directory)
 	go run ./cmd/main.go \
 		--config=config.yaml \
 		--no-kubernetes \
