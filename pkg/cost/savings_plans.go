@@ -108,7 +108,11 @@ func applyEC2InstanceSavingsPlan(
 	eligible := make([]instanceWithSavings, 0, len(instances))
 	for idx := range instances {
 		inst := &instances[idx]
-		cost := costs[inst.InstanceID]
+		cost, exists := costs[inst.InstanceID]
+		if !exists {
+			// Instance not in costs map (pricing data missing or cache race)
+			continue
+		}
 
 		// Skip if already RI-covered
 		// Reserved Instances have already been applied (higher priority than SPs).
@@ -282,6 +286,13 @@ func applyEC2InstanceSavingsPlan(
 			coverage = remainingCommitment
 		}
 
+		// CRITICAL: Limit coverage to not exceed remaining effective cost
+		// This prevents negative costs when an instance is already partially covered
+		// by Reserved Instances. The coverage cannot reduce EffectiveCost below zero.
+		if coverage > cost.EffectiveCost {
+			coverage = cost.EffectiveCost
+		}
+
 		// Apply coverage to this instance
 		//
 		// SavingsPlanCoverage tracks how much discount this instance gets ($/hour)
@@ -291,11 +302,8 @@ func applyEC2InstanceSavingsPlan(
 		cost.SavingsPlanARN = sp.SavingsPlanARN
 		cost.EffectiveCost -= coverage
 
-		// The remaining cost after SP coverage is charged at on-demand rate
-		// This handles both:
-		// 1. Fully covered instances: OnDemandCost = 0 (EffectiveCost = SP rate)
-		// 2. Partially covered instances: OnDemandCost > 0 (spillover to on-demand)
-		cost.OnDemandCost = cost.EffectiveCost
+		// OnDemandCost should remain at shelf price, not be modified by SP coverage
+		// (This field tracks what the instance would cost without any discounts)
 
 		if cost.SavingsPlanCoverage > 0 {
 			cost.CoverageType = CoverageEC2InstanceSavingsPlan
@@ -369,7 +377,11 @@ func applyComputeSavingsPlan(
 	eligible := make([]instanceWithSavings, 0, len(instances))
 	for idx := range instances {
 		inst := &instances[idx]
-		cost := costs[inst.InstanceID]
+		cost, exists := costs[inst.InstanceID]
+		if !exists {
+			// Instance not in costs map (pricing data missing or cache race)
+			continue
+		}
 
 		// Skip if already RI-covered
 		// Reserved Instances have already been applied (highest priority).
@@ -478,11 +490,20 @@ func applyComputeSavingsPlan(
 			coverage = remainingCommitment
 		}
 
+		// CRITICAL: Limit coverage to not exceed remaining effective cost
+		// This prevents negative costs when an instance is already partially covered
+		// by RIs or EC2 Instance SPs. The coverage cannot reduce EffectiveCost below zero.
+		if coverage > cost.EffectiveCost {
+			coverage = cost.EffectiveCost
+		}
+
 		// Apply coverage
 		cost.SavingsPlanCoverage += coverage
 		cost.SavingsPlanARN = sp.SavingsPlanARN
 		cost.EffectiveCost -= coverage
-		cost.OnDemandCost = cost.EffectiveCost
+
+		// OnDemandCost should remain at shelf price, not be modified by SP coverage
+		// (This field tracks what the instance would cost without any discounts)
 
 		// Set coverage type to Compute SP ONLY if this is the instance's first SP coverage
 		// If an EC2 Instance SP already partially covered this instance, we want to keep

@@ -18,6 +18,8 @@ package cost
 
 import (
 	"time"
+
+	"github.com/nextdoor/lumina/pkg/aws"
 )
 
 // Calculator orchestrates the cost calculation process, implementing AWS's
@@ -82,6 +84,10 @@ func (c *Calculator) Calculate(input CalculationInput) CalculationResult {
 	// Step 4: Apply Savings Plans
 	// This handles both EC2 Instance SPs and Compute SPs in priority order
 	applySavingsPlans(input.Instances, input.SavingsPlans, costsPtrs, spUtilPtrs)
+
+	// Step 4.5: Validate Savings Plans math invariants
+	// This runtime check ensures the algorithm calculated costs correctly
+	c.validateSavingsPlansInvariants(input.SavingsPlans, costsPtrs, spUtilPtrs)
 
 	// Step 5: Apply spot pricing for spot instances
 	// Spot instances use current market rates, not on-demand rates
@@ -228,4 +234,183 @@ func (c *Calculator) calculateAggregates(result *CalculationResult) {
 	result.TotalEstimatedCost = totalEstimatedCost
 	result.TotalShelfPrice = totalShelfPrice
 	result.TotalSavings = totalShelfPrice - totalEstimatedCost
+}
+
+// validateSavingsPlansInvariants performs runtime validation of critical math invariants
+// in the Savings Plans allocation algorithm. This catches calculation bugs before they
+// reach metrics/dashboards.
+//
+// Invariants validated:
+//
+//  1. SP Commitment Balance:
+//     For each Savings Plan: commitment = currentUtilization + remainingCapacity
+//     This ensures we didn't over-allocate or under-allocate SP budget.
+//
+//  2. Non-Negative Costs:
+//     All instance costs must be >= 0. Negative costs indicate a bug in the
+//     coverage limiting logic.
+//
+//  3. Coverage Bounds:
+//     Total coverage (RI + SP) must not exceed shelf price for any instance.
+//
+// This function panics if any invariant is violated, since that indicates a critical
+// bug in the cost calculation logic that should never happen in production.
+//
+// Design rationale:
+//   - Fail fast: Better to panic than emit bad metrics to production dashboards
+//   - Defensive programming: Validates assumptions that "should always be true"
+//   - Debugging aid: Makes it obvious when algorithm changes break invariants
+//   - No performance impact: Only runs once per reconciliation loop (~1 minute)
+func (c *Calculator) validateSavingsPlansInvariants(
+	savingsPlans []aws.SavingsPlan,
+	costs map[string]*InstanceCost,
+	utilization map[string]*SavingsPlanUtilization,
+) {
+	const epsilon = 1e-6 // Tolerance for floating-point comparison
+
+	// INVARIANT 1: Validate SP commitment balance for each Savings Plan
+	//
+	// The math MUST always work out to:
+	//   SP Commitment = Current Utilization Rate + Remaining Capacity
+	//
+	// Where:
+	//   - Commitment: Fixed $/hour budget (e.g., $150/hour)
+	//   - Current Utilization Rate: Sum of coverage amounts we applied to instances
+	//   - Remaining Capacity: Unused SP budget this hour
+	//
+	// If this doesn't balance, we either:
+	//   - Over-allocated coverage (utilization > commitment) → instances got too much discount
+	//   - Under-counted utilization (utilization + remaining < commitment) → lost SP budget
+	//
+	// Both scenarios indicate a critical bug in the allocation algorithm.
+	for _, sp := range savingsPlans {
+		util, exists := utilization[sp.SavingsPlanARN]
+		if !exists {
+			// SP wasn't tracked - should never happen, but don't panic in production
+			continue
+		}
+
+		// Calculate what the commitment balance should be
+		calculatedCommitment := util.CurrentUtilizationRate + util.RemainingCapacity
+
+		// Verify it matches the SP's actual commitment
+		diff := calculatedCommitment - sp.Commitment
+		if diff > epsilon || diff < -epsilon {
+			// CRITICAL BUG: SP math doesn't add up!
+			//
+			// This should NEVER happen. If it does, it means:
+			// 1. We over-allocated coverage (applied more discount than SP commitment allows), OR
+			// 2. We lost track of remaining capacity, OR
+			// 3. The coverage amounts we applied don't match what we recorded in utilization
+			//
+			// Example failure:
+			//   SP Commitment: $150/hour
+			//   Current Utilization: $152/hour (bug: over-allocated!)
+			//   Remaining Capacity: $0
+			//   calculatedCommitment = $152 + $0 = $152 ≠ $150
+			panic(invariantViolation{
+				description: "Savings Plan commitment balance violation",
+				spARN:       sp.SavingsPlanARN,
+				expected:    sp.Commitment,
+				actual:      calculatedCommitment,
+				details: map[string]interface{}{
+					"utilization": util.CurrentUtilizationRate,
+					"remaining":   util.RemainingCapacity,
+				},
+			})
+		}
+	}
+
+	// INVARIANT 2: Validate non-negative costs
+	//
+	// No instance can have negative effective cost. This was the bug we fixed:
+	// instances with RI coverage going negative when Compute SP tried to apply.
+	//
+	// If this happens, it means the coverage limiting logic failed.
+	for instanceID, cost := range costs {
+		if cost.EffectiveCost < -epsilon {
+			// CRITICAL BUG: Instance has negative cost!
+			//
+			// This indicates the coverage limiting logic didn't work correctly.
+			// The bug scenario:
+			//   1. Instance covered by RI: EffectiveCost = $0
+			//   2. SP tries to apply $0.13 coverage
+			//   3. Coverage limiting fails: EffectiveCost = $0 - $0.13 = -$0.13
+			//
+			// This should be impossible after our fix, but if it happens, we want
+			// to know immediately (hence the panic).
+			panic(invariantViolation{
+				description: "Instance has negative effective cost",
+				spARN:       cost.SavingsPlanARN,
+				expected:    0.0,
+				actual:      cost.EffectiveCost,
+				details: map[string]interface{}{
+					"instance_id":           instanceID,
+					"instance_type":         cost.InstanceType,
+					"shelf_price":           cost.ShelfPrice,
+					"ri_coverage":           cost.RICoverage,
+					"savings_plan_coverage": cost.SavingsPlanCoverage,
+					"coverage_type":         cost.CoverageType,
+				},
+			})
+		}
+	}
+
+	// INVARIANT 3: Validate coverage bounds
+	//
+	// Total coverage (RI + SP) must not exceed shelf price for any instance.
+	// If it does, we're applying more discount than the instance costs!
+	//
+	// Example violation:
+	//   Shelf price: $0.192/hour
+	//   RI coverage: $0.100/hour
+	//   SP coverage: $0.150/hour
+	//   Total: $0.250/hour > $0.192/hour ← BUG!
+	for instanceID, cost := range costs {
+		totalCoverage := cost.RICoverage + cost.SavingsPlanCoverage
+
+		// Allow small floating-point error
+		if totalCoverage > cost.ShelfPrice+epsilon {
+			// CRITICAL BUG: Over-allocated coverage!
+			//
+			// This means we applied more discount than the instance actually costs.
+			// This should be caught by the coverage limiting logic, but if it happens,
+			// it indicates a bug in either:
+			//   - RI allocation (applyReservedInstances)
+			//   - SP allocation (applySavingsPlans)
+			//   - Coverage limiting (the fix we added)
+			panic(invariantViolation{
+				description: "Total coverage exceeds shelf price",
+				spARN:       cost.SavingsPlanARN,
+				expected:    cost.ShelfPrice,
+				actual:      totalCoverage,
+				details: map[string]interface{}{
+					"instance_id":           instanceID,
+					"instance_type":         cost.InstanceType,
+					"shelf_price":           cost.ShelfPrice,
+					"ri_coverage":           cost.RICoverage,
+					"savings_plan_coverage": cost.SavingsPlanCoverage,
+					"effective_cost":        cost.EffectiveCost,
+				},
+			})
+		}
+	}
+}
+
+// invariantViolation represents a critical math invariant violation in the cost
+// calculation algorithm. This should NEVER happen in production.
+//
+// When this occurs, it indicates a bug in the algorithm logic (not bad input data).
+// The panic includes detailed context to help debug what went wrong.
+type invariantViolation struct {
+	description string                 // Human-readable description of what failed
+	spARN       string                 // Savings Plan ARN (if relevant)
+	expected    float64                // Expected value
+	actual      float64                // Actual value
+	details     map[string]interface{} // Additional debugging context
+}
+
+// Error implements the error interface for invariantViolation.
+func (v invariantViolation) Error() string {
+	return v.description
 }

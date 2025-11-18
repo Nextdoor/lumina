@@ -537,3 +537,603 @@ func TestCalculatorMultipleAccounts(t *testing.T) {
 	// Account 2 instance should be on-demand (RI doesn't cross accounts)
 	assert.Equal(t, CoverageOnDemand, result.InstanceCosts["i-account2"].CoverageType)
 }
+
+// TestCalculatorRIAndSPInteraction tests the critical bug fix: instances already
+// covered by RIs should not go negative when Savings Plans are applied.
+//
+// BUG SCENARIO (before fix):
+//  1. Instance fully covered by RI (EffectiveCost = $0)
+//  2. Compute SP calculates coverage based on shelf price ($0.192)
+//  3. SP tries to subtract $0.13 from $0 → NEGATIVE $-0.13/hr ❌
+//
+// EXPECTED BEHAVIOR (after fix):
+//  1. Instance fully covered by RI (EffectiveCost = $0)
+//  2. Compute SP calculates coverage would be $0.13
+//  3. Coverage limited to remaining EffectiveCost ($0)
+//  4. Final EffectiveCost remains $0 ✅
+func TestCalculatorRIAndSPInteraction(t *testing.T) {
+	calc := NewCalculator()
+	baseTime := testBaseTime()
+
+	input := CalculationInput{
+		Instances: []aws.Instance{
+			// Instance fully covered by RI - should NOT go negative when SP tries to apply
+			{
+				InstanceID:       "i-ri-covered",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
+			},
+			// Instance NOT covered by RI - should get SP coverage
+			{
+				InstanceID:       "i-sp-covered",
+				InstanceType:     "c5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
+			},
+		},
+		ReservedInstances: []aws.ReservedInstance{
+			{
+				ReservedInstanceID: "ri-001",
+				InstanceType:       "m5.xlarge",
+				InstanceCount:      1,
+				AvailabilityZone:   "us-west-2a",
+				Region:             "us-west-2",
+				AccountID:          "123456789012",
+			},
+		},
+		SavingsPlans: []aws.SavingsPlan{
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      1.0, // Large commitment - enough to try covering both instances
+				AccountID:       "123456789012",
+			},
+		},
+		OnDemandPrices: map[string]float64{
+			"m5.xlarge:us-west-2": 0.192,
+			"c5.xlarge:us-west-2": 0.17,
+		},
+	}
+
+	result := calc.Calculate(input)
+
+	// CRITICAL: RI-covered instance must have non-negative cost
+	riCoveredCost := result.InstanceCosts["i-ri-covered"]
+	assert.Equal(t, CoverageReservedInstance, riCoveredCost.CoverageType,
+		"Instance should remain RI-covered, not SP-covered")
+	assert.Equal(t, 0.0, riCoveredCost.EffectiveCost,
+		"RI-covered instance EffectiveCost must be exactly $0")
+	assert.GreaterOrEqual(t, riCoveredCost.EffectiveCost, 0.0,
+		"CRITICAL BUG: RI-covered instance went NEGATIVE after SP allocation!")
+	assert.Equal(t, 0.0, riCoveredCost.SavingsPlanCoverage,
+		"RI-covered instance should not get SP coverage")
+	assert.Equal(t, 0.192, riCoveredCost.RICoverage,
+		"RI coverage amount should be full shelf price")
+
+	// The SP should cover the other instance instead
+	spCoveredCost := result.InstanceCosts["i-sp-covered"]
+	assert.Equal(t, CoverageComputeSavingsPlan, spCoveredCost.CoverageType)
+	assert.Greater(t, spCoveredCost.SavingsPlanCoverage, 0.0,
+		"Non-RI instance should get SP coverage")
+	assert.GreaterOrEqual(t, spCoveredCost.EffectiveCost, 0.0,
+		"EffectiveCost must never be negative")
+}
+
+// TestCalculatorPartialRIAndSPOverlap tests that when an RI partially covers
+// an instance, a Savings Plan should NOT cause negative costs.
+//
+// SCENARIO:
+//   - Instance costs $0.20/hr on-demand
+//   - RI provides $0.10/hr coverage (partial) → EffectiveCost = $0.10/hr
+//   - EC2 Instance SP calculates $0.14/hr coverage (based on shelf price)
+//   - SP coverage should be LIMITED to remaining $0.10/hr, not exceed it
+//
+// This tests the coverage limiting logic for BOTH EC2 Instance SPs and Compute SPs.
+func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
+	calc := NewCalculator()
+	baseTime := testBaseTime()
+
+	input := CalculationInput{
+		Instances: []aws.Instance{
+			{
+				InstanceID:       "i-partial-ri",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
+			},
+		},
+		// No RIs - we'll simulate partial RI coverage by using a small EC2 Instance SP first,
+		// then a larger Compute SP that would normally exceed the remaining cost
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans: []aws.SavingsPlan{
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-small",
+				SavingsPlanType: "EC2Instance",
+				Region:          "us-west-2",
+				InstanceFamily:  "m5",
+				Commitment:      0.05, // Small commitment - only partially covers the instance
+				AccountID:       "123456789012",
+			},
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-large",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      1.0, // Large commitment - tries to over-cover remaining cost
+				AccountID:       "123456789012",
+			},
+		},
+		OnDemandPrices: map[string]float64{
+			"m5.xlarge:us-west-2": 0.192,
+		},
+	}
+
+	result := calc.Calculate(input)
+
+	cost := result.InstanceCosts["i-partial-ri"]
+
+	// CRITICAL: Cost must never go negative
+	assert.GreaterOrEqual(t, cost.EffectiveCost, 0.0,
+		"CRITICAL BUG: Instance cost went NEGATIVE when multiple SPs overlapped!")
+
+	// Verify SP coverage was applied but limited
+	assert.Greater(t, cost.SavingsPlanCoverage, 0.0,
+		"Instance should have some SP coverage")
+
+	// Total coverage (SP) should not exceed shelf price
+	assert.LessOrEqual(t, cost.SavingsPlanCoverage, cost.ShelfPrice,
+		"SP coverage exceeded shelf price - should be capped")
+
+	// The final effective cost should be shelf price minus total coverage
+	expectedEffectiveCost := cost.ShelfPrice - cost.SavingsPlanCoverage
+	assert.InDelta(t, expectedEffectiveCost, cost.EffectiveCost, 0.001,
+		"EffectiveCost calculation incorrect")
+}
+
+// TestCalculatorNegativeCostPrevention is a comprehensive test ensuring no combination
+// of RIs and SPs can cause negative costs.
+func TestCalculatorNegativeCostPrevention(t *testing.T) {
+	calc := NewCalculator()
+	baseTime := testBaseTime()
+
+	// Test multiple scenarios that previously could cause negative costs
+	testCases := []struct {
+		name          string
+		instance      aws.Instance
+		ris           []aws.ReservedInstance
+		sps           []aws.SavingsPlan
+		onDemandPrice float64
+		description   string
+	}{
+		{
+			name: "RI-covered + EC2 Instance SP",
+			instance: aws.Instance{
+				InstanceID:       "i-test-1",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       baseTime,
+			},
+			ris: []aws.ReservedInstance{
+				{
+					ReservedInstanceID: "ri-001",
+					InstanceType:       "m5.xlarge",
+					InstanceCount:      1,
+					AvailabilityZone:   "us-west-2a",
+					Region:             "us-west-2",
+					AccountID:          "123456789012",
+				},
+			},
+			sps: []aws.SavingsPlan{
+				{
+					SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2",
+					SavingsPlanType: "EC2Instance",
+					Region:          "us-west-2",
+					InstanceFamily:  "m5",
+					Commitment:      1.0,
+					AccountID:       "123456789012",
+				},
+			},
+			onDemandPrice: 0.192,
+			description:   "Instance fully covered by RI, EC2 Instance SP tries to apply",
+		},
+		{
+			name: "RI-covered + Compute SP",
+			instance: aws.Instance{
+				InstanceID:       "i-test-2",
+				InstanceType:     "c5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       baseTime,
+			},
+			ris: []aws.ReservedInstance{
+				{
+					ReservedInstanceID: "ri-002",
+					InstanceType:       "c5.xlarge",
+					InstanceCount:      1,
+					AvailabilityZone:   "us-west-2a",
+					Region:             "us-west-2",
+					AccountID:          "123456789012",
+				},
+			},
+			sps: []aws.SavingsPlan{
+				{
+					SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute",
+					SavingsPlanType: "Compute",
+					Region:          "all",
+					InstanceFamily:  "all",
+					Commitment:      1.0,
+					AccountID:       "123456789012",
+				},
+			},
+			onDemandPrice: 0.17,
+			description:   "Instance fully covered by RI, Compute SP tries to apply",
+		},
+		{
+			name: "EC2 Instance SP + Compute SP",
+			instance: aws.Instance{
+				InstanceID:       "i-test-3",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				LaunchTime:       baseTime,
+			},
+			ris: []aws.ReservedInstance{},
+			sps: []aws.SavingsPlan{
+				{
+					SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2",
+					SavingsPlanType: "EC2Instance",
+					Region:          "us-west-2",
+					InstanceFamily:  "m5",
+					Commitment:      1.0,
+					AccountID:       "123456789012",
+				},
+				{
+					SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute",
+					SavingsPlanType: "Compute",
+					Region:          "all",
+					InstanceFamily:  "all",
+					Commitment:      1.0,
+					AccountID:       "123456789012",
+				},
+			},
+			onDemandPrice: 0.192,
+			description:   "Instance covered by EC2 Instance SP, Compute SP tries to apply after",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := CalculationInput{
+				Instances:         []aws.Instance{tc.instance},
+				ReservedInstances: tc.ris,
+				SavingsPlans:      tc.sps,
+				OnDemandPrices: map[string]float64{
+					tc.instance.InstanceType + ":" + tc.instance.Region: tc.onDemandPrice,
+				},
+			}
+
+			result := calc.Calculate(input)
+			cost := result.InstanceCosts[tc.instance.InstanceID]
+
+			// CRITICAL: No matter what combination of RIs and SPs, cost must NEVER be negative
+			assert.GreaterOrEqual(t, cost.EffectiveCost, 0.0,
+				"NEGATIVE COST BUG: %s - EffectiveCost went negative: $%.6f/hr",
+				tc.description, cost.EffectiveCost)
+
+			// Additional validation
+			assert.GreaterOrEqual(t, cost.RICoverage, 0.0, "RI coverage cannot be negative")
+			assert.GreaterOrEqual(t, cost.SavingsPlanCoverage, 0.0, "SP coverage cannot be negative")
+
+			// Total coverage should not exceed shelf price
+			totalCoverage := cost.RICoverage + cost.SavingsPlanCoverage
+			assert.LessOrEqual(t, totalCoverage, cost.ShelfPrice+0.001, // Small epsilon for float precision
+				"Total coverage exceeded shelf price")
+		})
+	}
+}
+
+// TestCalculatorInvariantValidation tests that the runtime invariant validation
+// catches calculation bugs before they reach metrics.
+func TestCalculatorInvariantValidation(t *testing.T) {
+	calc := NewCalculator()
+	baseTime := testBaseTime()
+
+	// SCENARIO 1: Valid calculation - should NOT panic
+	t.Run("Valid Calculation", func(t *testing.T) {
+		input := CalculationInput{
+			Instances: []aws.Instance{
+				{
+					InstanceID:       "i-valid",
+					InstanceType:     "m5.xlarge",
+					Region:           "us-west-2",
+					AccountID:        "123456789012",
+					AvailabilityZone: "us-west-2a",
+					State:            "running",
+					LaunchTime:       baseTime,
+				},
+			},
+			ReservedInstances: []aws.ReservedInstance{},
+			SavingsPlans: []aws.SavingsPlan{
+				{
+					SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-valid",
+					SavingsPlanType: "EC2Instance",
+					Region:          "us-west-2",
+					InstanceFamily:  "m5",
+					Commitment:      0.20,
+					AccountID:       "123456789012",
+				},
+			},
+			OnDemandPrices: map[string]float64{
+				"m5.xlarge:us-west-2": 0.192,
+			},
+		}
+
+		// This should NOT panic - the calculation is valid
+		assert.NotPanics(t, func() {
+			calc.Calculate(input)
+		}, "Valid calculation should not trigger invariant violation")
+	})
+
+	// SCENARIO 2: All existing tests should pass invariant validation
+	// This verifies that the validation doesn't reject valid calculations
+	t.Run("Existing Tests Compatibility", func(t *testing.T) {
+		// Run a subset of existing test scenarios through the validation
+		testCases := []struct {
+			name  string
+			input CalculationInput
+		}{
+			{
+				name: "On-Demand Only",
+				input: CalculationInput{
+					Instances: []aws.Instance{
+						{
+							InstanceID:       "i-ondemand",
+							InstanceType:     "m5.xlarge",
+							Region:           "us-west-2",
+							AccountID:        "123456789012",
+							AvailabilityZone: "us-west-2a",
+							State:            "running",
+							LaunchTime:       baseTime,
+						},
+					},
+					ReservedInstances: []aws.ReservedInstance{},
+					SavingsPlans:      []aws.SavingsPlan{},
+					OnDemandPrices: map[string]float64{
+						"m5.xlarge:us-west-2": 0.192,
+					},
+				},
+			},
+			{
+				name: "RI Coverage",
+				input: CalculationInput{
+					Instances: []aws.Instance{
+						{
+							InstanceID:       "i-ri",
+							InstanceType:     "m5.xlarge",
+							Region:           "us-west-2",
+							AccountID:        "123456789012",
+							AvailabilityZone: "us-west-2a",
+							State:            "running",
+							LaunchTime:       baseTime,
+						},
+					},
+					ReservedInstances: []aws.ReservedInstance{
+						{
+							ReservedInstanceID: "ri-001",
+							InstanceType:       "m5.xlarge",
+							InstanceCount:      1,
+							AvailabilityZone:   "us-west-2a",
+							Region:             "us-west-2",
+							AccountID:          "123456789012",
+						},
+					},
+					SavingsPlans: []aws.SavingsPlan{},
+					OnDemandPrices: map[string]float64{
+						"m5.xlarge:us-west-2": 0.192,
+					},
+				},
+			},
+			{
+				name: "RI + SP (should not panic after our fix)",
+				input: CalculationInput{
+					Instances: []aws.Instance{
+						{
+							InstanceID:       "i-ri-sp",
+							InstanceType:     "m5.xlarge",
+							Region:           "us-west-2",
+							AccountID:        "123456789012",
+							AvailabilityZone: "us-west-2a",
+							State:            "running",
+							LaunchTime:       baseTime,
+						},
+					},
+					ReservedInstances: []aws.ReservedInstance{
+						{
+							ReservedInstanceID: "ri-001",
+							InstanceType:       "m5.xlarge",
+							InstanceCount:      1,
+							AvailabilityZone:   "us-west-2a",
+							Region:             "us-west-2",
+							AccountID:          "123456789012",
+						},
+					},
+					SavingsPlans: []aws.SavingsPlan{
+						{
+							SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute",
+							SavingsPlanType: "Compute",
+							Region:          "all",
+							InstanceFamily:  "all",
+							Commitment:      1.0,
+							AccountID:       "123456789012",
+						},
+					},
+					OnDemandPrices: map[string]float64{
+						"m5.xlarge:us-west-2": 0.192,
+					},
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				assert.NotPanics(t, func() {
+					calc.Calculate(tc.input)
+				}, "Scenario '%s' should not trigger invariant violation", tc.name)
+			})
+		}
+	})
+}
+
+// TestCalculatorInvariantViolationDetection tests that the validation DOES catch bugs.
+// This is critical - if the validation doesn't catch bugs, it's useless.
+//
+// NOTE: These tests verify the validation logic itself, not the cost calculation.
+// We're testing that validateSavingsPlansInvariants() correctly detects violations.
+func TestCalculatorInvariantViolationDetection(t *testing.T) {
+	calc := NewCalculator()
+
+	// We can't easily trigger violations through Calculate() because the algorithm
+	// is correct. Instead, we'll test the validation function directly with
+	// deliberately broken state to ensure it catches violations.
+
+	t.Run("Negative Cost Detection", func(t *testing.T) {
+		// Create a costs map with a negative effective cost
+		costs := map[string]*InstanceCost{
+			"i-negative": {
+				InstanceID:          "i-negative",
+				InstanceType:        "m5.xlarge",
+				Region:              "us-west-2",
+				AccountID:           "123456789012",
+				AvailabilityZone:    "us-west-2a",
+				ShelfPrice:          0.192,
+				EffectiveCost:       -0.05, // BUG: Negative cost!
+				RICoverage:          0.192,
+				SavingsPlanCoverage: 0.05,
+				CoverageType:        CoverageReservedInstance,
+			},
+		}
+
+		utilization := map[string]*SavingsPlanUtilization{}
+
+		// The validation should panic on negative cost
+		assert.Panics(t, func() {
+			calc.validateSavingsPlansInvariants([]aws.SavingsPlan{}, costs, utilization)
+		}, "Should panic on negative effective cost")
+	})
+
+	t.Run("Coverage Exceeds Shelf Price", func(t *testing.T) {
+		// Create a costs map where coverage exceeds shelf price
+		costs := map[string]*InstanceCost{
+			"i-overcovered": {
+				InstanceID:          "i-overcovered",
+				InstanceType:        "m5.xlarge",
+				Region:              "us-west-2",
+				AccountID:           "123456789012",
+				AvailabilityZone:    "us-west-2a",
+				ShelfPrice:          0.192,
+				EffectiveCost:       0.00,
+				RICoverage:          0.15, // RI coverage
+				SavingsPlanCoverage: 0.10, // SP coverage
+				CoverageType:        CoverageReservedInstance,
+				// Total: 0.15 + 0.10 = 0.25 > 0.192 ← BUG!
+			},
+		}
+
+		utilization := map[string]*SavingsPlanUtilization{}
+
+		// The validation should panic on over-coverage
+		assert.Panics(t, func() {
+			calc.validateSavingsPlansInvariants([]aws.SavingsPlan{}, costs, utilization)
+		}, "Should panic when total coverage exceeds shelf price")
+	})
+
+	t.Run("SP Commitment Balance Violation", func(t *testing.T) {
+		// Create an SP with utilization that doesn't match commitment
+		sp := aws.SavingsPlan{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-broken",
+			SavingsPlanType: "Compute",
+			Region:          "all",
+			InstanceFamily:  "all",
+			Commitment:      1.00, // Commitment is $1.00/hour
+			AccountID:       "123456789012",
+		}
+
+		costs := map[string]*InstanceCost{}
+
+		utilization := map[string]*SavingsPlanUtilization{
+			sp.SavingsPlanARN: {
+				SavingsPlanARN:         sp.SavingsPlanARN,
+				HourlyCommitment:       sp.Commitment,
+				CurrentUtilizationRate: 0.80, // Used $0.80/hour
+				RemainingCapacity:      0.30, // Remaining $0.30/hour
+				// Total: 0.80 + 0.30 = 1.10 ≠ 1.00 ← BUG!
+			},
+		}
+
+		// The validation should panic on commitment imbalance
+		assert.Panics(t, func() {
+			calc.validateSavingsPlansInvariants([]aws.SavingsPlan{sp}, costs, utilization)
+		}, "Should panic when SP utilization + remaining ≠ commitment")
+	})
+
+	t.Run("Valid State Does Not Panic", func(t *testing.T) {
+		// Create a valid costs map - should NOT panic
+		costs := map[string]*InstanceCost{
+			"i-valid": {
+				InstanceID:          "i-valid",
+				InstanceType:        "m5.xlarge",
+				Region:              "us-west-2",
+				AccountID:           "123456789012",
+				AvailabilityZone:    "us-west-2a",
+				ShelfPrice:          0.192,
+				EffectiveCost:       0.054, // Positive, reasonable cost
+				RICoverage:          0.0,
+				SavingsPlanCoverage: 0.138, // Coverage < shelf price ✓
+				CoverageType:        CoverageEC2InstanceSavingsPlan,
+			},
+		}
+
+		sp := aws.SavingsPlan{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-valid",
+			SavingsPlanType: "EC2Instance",
+			Region:          "us-west-2",
+			InstanceFamily:  "m5",
+			Commitment:      0.20,
+			AccountID:       "123456789012",
+		}
+
+		utilization := map[string]*SavingsPlanUtilization{
+			sp.SavingsPlanARN: {
+				SavingsPlanARN:         sp.SavingsPlanARN,
+				HourlyCommitment:       sp.Commitment,
+				CurrentUtilizationRate: 0.138, // Used $0.138/hour
+				RemainingCapacity:      0.062, // Remaining $0.062/hour
+				// Total: 0.138 + 0.062 = 0.20 ✓
+			},
+		}
+
+		// Valid state should NOT panic
+		assert.NotPanics(t, func() {
+			calc.validateSavingsPlansInvariants([]aws.SavingsPlan{sp}, costs, utilization)
+		}, "Valid state should not trigger invariant violation")
+	})
+}

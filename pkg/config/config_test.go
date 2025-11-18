@@ -637,3 +637,66 @@ func TestReconciliationIntervalValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadWithPricingData tests that pricing data is correctly loaded when using
+// flat map keys with colons and periods (which mapstructure would normally treat as delimiters).
+func TestLoadWithPricingData(t *testing.T) {
+	// Create a temporary config file with pricing data
+	yaml := `
+awsAccounts:
+  - accountId: "123456789012"
+    name: "test-account"
+    assumeRoleArn: "arn:aws:iam::123456789012:role/LuminaTestRole"
+
+testData:
+  pricing:
+    "us-west-2:m5.xlarge:Linux": 0.192
+    "us-west-2:c5.large:Linux": 0.085
+    "us-east-1:t3.medium:Windows": 0.0416
+`
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(yaml), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// Load the config
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify test data was loaded
+	if cfg.TestData == nil {
+		t.Fatal("TestData is nil")
+	}
+
+	// Verify pricing data was loaded correctly
+	pricing := cfg.TestData.Pricing()
+	if pricing == nil {
+		t.Fatal("Pricing() returned nil")
+	}
+
+	// Check the expected entries
+	expectedPricing := map[string]float64{
+		"us-west-2:m5.xlarge:linux":   0.192,
+		"us-west-2:c5.large:linux":    0.085,
+		"us-east-1:t3.medium:windows": 0.0416,
+	}
+
+	if len(pricing) != len(expectedPricing) {
+		t.Errorf("Pricing() returned %d entries, want %d", len(pricing), len(expectedPricing))
+	}
+
+	for key, expectedValue := range expectedPricing {
+		actualValue, ok := pricing[key]
+		if !ok {
+			t.Errorf("Pricing() missing key %q", key)
+			continue
+		}
+		if actualValue != expectedValue {
+			t.Errorf("Pricing()[%q] = %v, want %v", key, actualValue, expectedValue)
+		}
+	}
+}

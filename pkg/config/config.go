@@ -104,6 +104,10 @@ type ReconciliationConfig struct {
 	// Default: 24h
 	// Recommended: 24h (daily) - AWS pricing changes monthly, daily refresh is sufficient
 	Pricing string `yaml:"pricing,omitempty"`
+
+	// Cost reconciliation is event-driven (no configurable interval needed).
+	// Cost calculations trigger automatically when EC2, RISP, or Pricing caches update.
+	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.
 }
 
 // PricingConfig contains settings for AWS pricing data collection.
@@ -126,11 +130,18 @@ type TestData struct {
 	// Key format: "accountID"
 	SavingsPlans map[string][]TestSavingsPlan `yaml:"savingsPlans,omitempty"`
 
-	// Pricing contains mock pricing data for testing.
-	// Key format: "region:instanceType:operatingSystem"
-	// Example: "us-west-2:m5.large:Linux" -> 0.096
-	// This allows E2E tests to run without calling the real AWS Pricing API.
-	Pricing map[string]float64 `yaml:"pricing,omitempty"`
+	// PricingFlat contains mock pricing data in flat format for testing.
+	// Map keys are in format "region:instanceType:operatingSystem" -> price
+	// Example: {"us-west-2:m5.xlarge:Linux": 0.192}
+	// We use a flat structure because Viper's mapstructure decoder treats periods (.)
+	// as nested structure delimiters, which breaks instance type names like "m5.xlarge".
+	PricingFlat map[string]float64 `yaml:"pricing,omitempty"`
+}
+
+// Pricing returns the pricing data as a flattened map with keys in the format
+// "region:instanceType:operatingSystem" -> price.
+func (td *TestData) Pricing() map[string]float64 {
+	return td.PricingFlat
 }
 
 // TestSavingsPlan represents a mock Savings Plan for E2E testing.
@@ -197,6 +208,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("accountValidationInterval", "10m")
 	v.SetDefault("reconciliation.risp", "1h")
 	v.SetDefault("reconciliation.ec2", "5m")
+	// Cost reconciliation is event-driven (no default interval needed)
 
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
@@ -220,6 +232,30 @@ func Load(path string) (*Config, error) {
 	// coverage:ignore - Viper unmarshal errors are extremely rare and difficult to trigger
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+	}
+
+	// Handle test data pricing separately because Viper's mapstructure decoder
+	// treats both periods (.) and colons (:) as nested structure delimiters.
+	// This breaks map keys like "us-west-2:m5.xlarge:Linux".
+	//
+	// We use v.Get() to bypass mapstructure and read the raw data directly,
+	// then manually convert it to the expected type.
+	if rawPricing := v.Get("testData.pricing"); rawPricing != nil {
+		if pricingMap, ok := rawPricing.(map[string]interface{}); ok {
+			// Convert map[string]interface{} to map[string]float64
+			converted := make(map[string]float64, len(pricingMap))
+			for k, v := range pricingMap {
+				if floatVal, ok := v.(float64); ok {
+					converted[k] = floatVal
+				}
+			}
+
+			// Initialize TestData if nil
+			if cfg.TestData == nil {
+				cfg.TestData = &TestData{}
+			}
+			cfg.TestData.PricingFlat = converted
+		}
 	}
 
 	// Validate configuration
@@ -293,6 +329,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid Pricing reconciliation interval %q: %w", c.Reconciliation.Pricing, err)
 		}
 	}
+	// Cost reconciliation is event-driven (no interval validation needed)
 
 	// Validate pricing configuration
 	if len(c.Pricing.OperatingSystems) > 0 {
