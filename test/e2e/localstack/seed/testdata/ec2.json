@@ -3,7 +3,7 @@
     {
       "group_name": "lumina-test-sg",
       "description": "Security group for Lumina e2e testing",
-      "region": "us-west-2"
+      "region": "us-east-1"
     }
   ],
   "instances": [
@@ -11,7 +11,7 @@
       "image_id": "ami-12345678",
       "instance_type": "m5.xlarge",
       "count": 2,
-      "region": "us-west-2",
+      "region": "us-east-1",
       "tags": [
         {
           "Key": "Name",
@@ -27,7 +27,7 @@
       "image_id": "ami-12345678",
       "instance_type": "c5.large",
       "count": 1,
-      "region": "us-west-2",
+      "region": "us-east-1",
       "tags": [
         {
           "Key": "Name",
