@@ -52,7 +52,7 @@ var _ = Describe("Cost Reconciler", Ordered, func() {
 
 			g.Expect(runningPods).To(HaveLen(1), "expected 1 controller pod running")
 			controllerPodName = runningPods[0]
-		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		}, 20*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	Context("Cost Calculation", func() {
@@ -63,7 +63,7 @@ var _ = Describe("Cost Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("starting cost calculation cycle"),
 					"Cost reconciler should have started")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying cost calculation completed successfully")
 			Eventually(func(g Gomega) {
@@ -71,7 +71,7 @@ var _ = Describe("Cost Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("cost calculation completed"),
 					"Cost reconciler should have completed successfully")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying cost metrics were emitted")
 			Eventually(func(g Gomega) {
@@ -110,7 +110,7 @@ var _ = Describe("Cost Reconciler", Ordered, func() {
 				// Verify ec2_instance_hourly_cost metric exists
 				g.Expect(metricsOutput).To(ContainSubstring("ec2_instance_hourly_cost{"),
 					"ec2_instance_hourly_cost metric should be present")
-			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying ec2_instance_hourly_cost metric has correct labels")
 			Eventually(func(g Gomega) {

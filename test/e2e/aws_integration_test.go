@@ -51,7 +51,7 @@ var _ = Describe("LocalStack", Ordered, func() {
 			g.Expect(output).To(ContainSubstring(`"sts":`), "STS service not available in LocalStack")
 			g.Expect(output).To(ContainSubstring(`"iam":`), "IAM service not available in LocalStack")
 		}
-		Eventually(verifyLocalStackHealthy, 1*time.Minute, 5*time.Second).Should(Succeed())
+		Eventually(verifyLocalStackHealthy, 20*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	It("should have IAM roles created", func() {

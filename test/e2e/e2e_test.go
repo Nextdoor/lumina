@@ -80,7 +80,7 @@ var _ = Describe("Manager", Ordered, func() {
 		}
 	})
 
-	SetDefaultEventuallyTimeout(2 * time.Minute)
+	SetDefaultEventuallyTimeout(30 * time.Second)
 	SetDefaultEventuallyPollingInterval(time.Second)
 
 	Context("Manager", func() {
@@ -163,7 +163,7 @@ var _ = Describe("Manager", Ordered, func() {
 				// Verify we got valid Prometheus metrics format
 				g.Expect(metricsOutput).To(ContainSubstring("# HELP"), "Should contain Prometheus metrics")
 			}
-			Eventually(verifyMetricsAvailable, 2*time.Minute, 5*time.Second).Should(Succeed())
+			Eventually(verifyMetricsAvailable, 20*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should have AWS configuration for LocalStack", func() {
@@ -266,7 +266,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 					g.Expect(runningPods).To(HaveLen(1), "expected 1 controller pod running")
 					controllerPodName = runningPods[0]
-				}, 2*time.Minute, 2*time.Second).Should(Succeed())
+				}, 20*time.Second, 2*time.Second).Should(Succeed())
 			}
 			Expect(controllerPodName).NotTo(BeEmpty(), "Controller pod name must be set")
 		})
@@ -330,7 +330,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 				g.Expect(readyStatus).To(Equal("True"), "Pod should be marked as Ready")
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}, 20*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		It("should have readiness probe configured in pod", func() {
