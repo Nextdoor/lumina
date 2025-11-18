@@ -477,18 +477,10 @@ func TestPricingReconciler_Reconcile_TestData(t *testing.T) {
 		DefaultRegion: "us-east-1",
 		Regions:       []string{"us-west-2"},
 		TestData: &config.TestData{
-			PricingNested: map[string]map[string]map[string]float64{
-				"us-west-2": {
-					"m5.large": {
-						"Linux": 0.096,
-					},
-					"m5.xlarge": {
-						"Linux": 0.192,
-					},
-					"m5.2xlarge": {
-						"Linux": 0.384,
-					},
-				},
+			PricingFlat: map[string]float64{
+				"us-west-2:m5.large:Linux":   0.096,
+				"us-west-2:m5.xlarge:Linux":  0.192,
+				"us-west-2:m5.2xlarge:Linux": 0.384,
 			},
 		},
 	}
