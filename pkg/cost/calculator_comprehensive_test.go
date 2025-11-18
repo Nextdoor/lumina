@@ -120,7 +120,7 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 		{
 			name: "Scenario 2: RI + SP coverage",
 			description: "5 RIs, 1 SP with $3.00 commitment, 15 total instances. " +
-				"5 RI-covered, ~2.3 SP-covered (partial), rest on-demand. ",
+				"5 RI-covered, 4.14 SP-covered (with partial), rest on-demand.",
 			//nolint:dupl // Test data duplication is acceptable for clarity
 			instances: []aws.Instance{
 				// 15 m5.2xlarge instances
@@ -145,11 +145,20 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 				newTestRI("m5.2xlarge", "us-west-2a", 5),
 			},
 			savingsPlans: []aws.SavingsPlan{
-				// SP commitment is the DISCOUNT BUDGET (not payment amount)
+				// SP commitment is what you SPEND per hour on SP-covered instances
 				// With 66% Compute SP discount:
-				//   - SP rate: $2.00 * 0.34 = $0.68/hr
-				//   - Coverage per instance: $2.00 - $0.68 = $1.32/hr
-				//   - $3.00 commitment covers: 2 full instances + 0.27 of 3rd instance
+				//   - On-demand rate: $2.00/hr
+				//   - SP rate: $2.00 * 0.34 = $0.68/hr (what you PAY with SP)
+				//   - Instances covered: $3.00 / $0.68 = 4.41 instances
+				//
+				// Allocation order (oldest first, after RIs):
+				//   - i-006: Fully covered, pays $0.68 (commitment: $3.00 - $0.68 = $2.32)
+				//   - i-007: Fully covered, pays $0.68 (commitment: $2.32 - $0.68 = $1.64)
+				//   - i-008: Fully covered, pays $0.68 (commitment: $1.64 - $0.68 = $0.96)
+				//   - i-009: Fully covered, pays $0.68 (commitment: $0.96 - $0.68 = $0.28)
+				//   - i-010: Partially covered (only $0.28 left):
+				//            SP contributes $0.28, instance pays $2.00 - $0.28 = $1.72
+				//   - i-011 to i-015: On-demand, pay $2.00 each
 				newTestComputeSP("sp-001", 3.00),
 			},
 			//nolint:dupl // Test expectations duplication is acceptable for clarity
@@ -160,27 +169,41 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 				"i-003": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
 				"i-004": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
 				"i-005": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
-				// Next 2 instances get full SP coverage (66% discount)
-				"i-006": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
-				"i-007": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
-				// i-008 gets partial SP coverage (commitment exhausted)
-				"i-008": {ShelfPrice: 2.00, EffectiveCost: 1.64, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.36},
-				// Remaining 7 instances are on-demand (no SP budget left)
-				"i-009": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
-				"i-010": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
+				// Next 4 instances get full SP coverage (pay SP rate of $0.68)
+				"i-006": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
+				"i-007": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
+				"i-008": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
+				"i-009": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
+				// i-010 gets partial SP coverage (commitment exhausted, only $0.28 remains)
+				// SP contributes $0.28, instance pays remaining $1.72
+				"i-010": {ShelfPrice: 2.00, EffectiveCost: 1.72, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.28},
+				// Remaining 5 instances are on-demand (no SP commitment left)
 				"i-011": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-012": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-013": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-014": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 				"i-015": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
 			},
-			expectedTotalShelfPrice: 30.00, // 15 * $2.00
-			// Total cost: (5 RI * $0) + (2 SP * $0.68) + (1 partial * $1.64) + (7 OD * $2.00)
-			//           = 0 + 1.36 + 1.64 + 14 = 17
-			expectedTotalEstimatedCost: 17.00,
-			expectedTotalSavings:       13.00, // (5 RI * $2.00) + (2.27 SP * ~$1.32) = 10 + 3 = 13
-			expectedTotalRICoverage:    10.00, // 5 * $2.00
-			expectedTotalSPCoverage:    3.00,  // $1.32 + $1.32 + $0.36 (discount amounts)
+			expectedTotalShelfPrice: 30.00, // 15 instances * $2.00/hr = $30.00
+			// Total effective cost (what you actually pay):
+			//   - 5 RI instances: 5 * $0 = $0
+			//   - 4 full SP instances: 4 * $0.68 = $2.72
+			//   - 1 partial SP instance: $1.72
+			//   - 5 on-demand instances: 5 * $2.00 = $10.00
+			//   Total: $0 + $2.72 + $1.72 + $10.00 = $14.44
+			expectedTotalEstimatedCost: 14.44,
+			// Total savings (ShelfPrice - EffectiveCost):
+			//   - RI savings: 5 * ($2.00 - $0) = $10.00
+			//   - Full SP savings: 4 * ($2.00 - $0.68) = 4 * $1.32 = $5.28
+			//   - Partial SP savings: $2.00 - $1.72 = $0.28
+			//   - On-demand savings: 5 * $0 = $0
+			//   Total: $10.00 + $5.28 + $0.28 + $0 = $15.56
+			expectedTotalSavings: 15.56,
+			// Total RI coverage (what RIs contribute): 5 * $2.00 = $10.00
+			expectedTotalRICoverage: 10.00,
+			// Total SP coverage (SP commitment spent):
+			//   $0.68 + $0.68 + $0.68 + $0.68 + $0.28 = $3.00 (full $3.00 commitment used)
+			expectedTotalSPCoverage: 3.00,
 		},
 		{
 			name: "Scenario 3: RI coverage with spot instances (spot should NOT get RI coverage)",

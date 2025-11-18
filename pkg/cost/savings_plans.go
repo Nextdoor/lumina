@@ -234,23 +234,24 @@ func applyEC2InstanceSavingsPlan(
 
 	// STEP 3: Apply SP coverage to instances in priority order until commitment exhausted
 	//
-	// Each Savings Plan has a fixed hourly commitment (e.g., $150/hour). This is the maximum
-	// amount of discount the SP can provide per hour. We "spend" this commitment budget by
-	// applying coverage to instances in the sorted order from Step 2.
+	// Each Savings Plan has a fixed hourly commitment (e.g., $150/hour). This is what you
+	// SPEND per hour on SP-covered instances. We consume this commitment budget by
+	// applying the SP to instances in the sorted order from Step 2.
 	//
-	// The "coverage amount" for an instance is the difference between its on-demand rate
-	// and its SP rate. This is how much discount the SP provides for that instance.
+	// The SP pays the SP rate for each covered instance. This is what gets subtracted from
+	// the commitment budget.
 	//
 	// Example with $0.20/hour commitment:
-	//   - Instance 1: on-demand $0.192/hr, SP rate $0.054/hr → coverage = $0.138/hr
-	//   - Instance 2: on-demand $0.096/hr, SP rate $0.027/hr → coverage = $0.069/hr
+	//   - Instance 1: on-demand $0.192/hr, SP rate $0.054/hr → SP pays $0.054/hr
+	//   - Instance 2: on-demand $0.096/hr, SP rate $0.027/hr → SP pays $0.027/hr
 	//
-	// After covering instance 1: remaining commitment = $0.20 - $0.138 = $0.062/hr
-	// Instance 2 needs $0.069/hr coverage, but only $0.062/hr remains → partial coverage
+	// After covering instance 1: remaining commitment = $0.20 - $0.054 = $0.146/hr
+	// After covering instance 2: remaining commitment = $0.146 - $0.027 = $0.119/hr
 	//
 	// Result:
-	//   - Instance 1: fully covered by SP, effective cost = $0.054/hr (the SP rate)
-	//   - Instance 2: partially covered, gets $0.062/hr discount, pays remaining at on-demand
+	//   - Instance 1: fully covered by SP, pays $0.054/hr (the SP rate)
+	//   - Instance 2: fully covered by SP, pays $0.027/hr (the SP rate)
+	//   - Commitment used: $0.054 + $0.027 = $0.081/hr out of $0.20/hr available
 	remainingCommitment := sp.Commitment
 
 	for _, item := range eligible {
@@ -261,53 +262,62 @@ func applyEC2InstanceSavingsPlan(
 		inst := item.Instance
 		cost := costs[inst.InstanceID]
 
-		// Calculate how much coverage this instance needs
+		// Calculate how much the SP will pay for this instance
 		//
-		// The "coverage" is the discount amount ($/hour) that the SP provides.
-		// It's the difference between what you'd pay on-demand vs. with the SP.
+		// The SP commitment represents what you SPEND per hour on SP-covered instances.
+		// The SP rate is the discounted rate you pay when using the SP.
 		//
 		// Example:
 		//   - on-demand rate: $0.192/hour
-		//   - SP rate: $0.054/hour
-		//   - coverage: $0.192 - $0.054 = $0.138/hour discount
+		//   - SP rate: $0.054/hour (with 72% discount)
+		//   - SP will pay: $0.054/hour from the commitment
 		//
-		// This $0.138/hour comes from the SP's hourly commitment budget.
-		coverage := item.ODRate - item.SPRate
+		// This $0.054/hour is consumed from the SP's hourly commitment budget.
+		spCost := item.SPRate
 
-		if coverage > remainingCommitment {
-			// PARTIAL COVERAGE SCENARIO
-			//
-			// The SP doesn't have enough commitment left to fully cover this instance.
-			// This happens when the SP is running out of budget for the hour.
-			//
-			// Example:
-			//   - Instance needs $0.138/hr coverage
-			//   - SP only has $0.062/hr commitment remaining
-			//   - Instance gets $0.062/hr coverage (partial)
-			//   - Instance pays remaining $0.076/hr at on-demand rate
-			//
-			// After partial coverage:
-			//   - Original on-demand cost: $0.192/hr
-			//   - SP covers: $0.062/hr
-			//   - Instance still pays: $0.130/hr (combination of SP rate + on-demand spillover)
-			coverage = remainingCommitment
+		// FULL vs PARTIAL COVERAGE
+		//
+		// Full coverage: SP has enough commitment to pay the full SP rate
+		// Partial coverage: SP runs out of commitment, can only contribute what's left
+		//
+		// Example of partial coverage:
+		//   - SP rate: $0.068/hr (what the instance would cost with full SP)
+		//   - Remaining commitment: $0.028/hr (not enough!)
+		//   - SP contributes: $0.028/hr (partial)
+		//   - Instance pays: $0.192 - $0.028 = $0.164/hr (on-demand spillover)
+		//
+		// The instance gets partial benefit: pays less than on-demand but more than SP rate.
+		spContribution := spCost
+		if spContribution > remainingCommitment {
+			// Partial coverage: SP can only contribute what's left in the commitment
+			spContribution = remainingCommitment
 		}
 
-		// CRITICAL: Limit coverage to not exceed remaining effective cost
+		// CRITICAL: Limit SP contribution to not exceed remaining effective cost
 		// This prevents negative costs when an instance is already partially covered
-		// by Reserved Instances. The coverage cannot reduce EffectiveCost below zero.
-		if coverage > cost.EffectiveCost {
-			coverage = cost.EffectiveCost
+		// by Reserved Instances. The SP contribution cannot reduce EffectiveCost below zero.
+		if spContribution > cost.EffectiveCost {
+			spContribution = cost.EffectiveCost
 		}
 
-		// Apply coverage to this instance
+		// Apply SP contribution to this instance
 		//
-		// SavingsPlanCoverage tracks how much discount this instance gets ($/hour)
-		// EffectiveCost is reduced by the coverage amount
+		// SavingsPlanCoverage tracks how much the SP pays for this instance ($/hour)
 		// SavingsPlanARN links this instance to the specific SP providing coverage
-		cost.SavingsPlanCoverage += coverage
+		//
+		// For EffectiveCost:
+		//   - If fully covered (spContribution == spCost): you pay the SP rate
+		//   - If partially covered: SP pays what it can, you pay the rest at on-demand
+		cost.SavingsPlanCoverage += spContribution
 		cost.SavingsPlanARN = sp.SavingsPlanARN
-		cost.EffectiveCost -= coverage
+
+		if spContribution == spCost {
+			// Fully covered: you pay the SP rate
+			cost.EffectiveCost = spCost
+		} else {
+			// Partially covered: SP contributes, you pay the rest
+			cost.EffectiveCost -= spContribution
+		}
 
 		// OnDemandCost should remain at shelf price, not be modified by SP coverage
 		// (This field tracks what the instance would cost without any discounts)
@@ -318,7 +328,7 @@ func applyEC2InstanceSavingsPlan(
 
 		// Consume SP commitment
 		// This reduces the available budget for covering additional instances
-		remainingCommitment -= coverage
+		remainingCommitment -= spContribution
 	}
 
 	// STEP 4: Track SP utilization metrics for monitoring and alerting
@@ -497,24 +507,35 @@ func applyComputeSavingsPlan(
 		inst := item.Instance
 		cost := costs[inst.InstanceID]
 
-		// Calculate coverage (difference between on-demand and SP rate)
-		coverage := item.ODRate - item.SPRate
-		if coverage > remainingCommitment {
-			// Partial coverage scenario (see EC2 Instance SP comments for details)
-			coverage = remainingCommitment
+		// Calculate how much the SP will pay for this instance
+		// (Same logic as EC2 Instance SPs - see detailed comments there)
+		spCost := item.SPRate
+
+		// Handle full vs partial coverage
+		spContribution := spCost
+		if spContribution > remainingCommitment {
+			// Partial coverage: SP can only contribute what's left in the commitment
+			spContribution = remainingCommitment
 		}
 
-		// CRITICAL: Limit coverage to not exceed remaining effective cost
+		// CRITICAL: Limit SP contribution to not exceed remaining effective cost
 		// This prevents negative costs when an instance is already partially covered
-		// by RIs or EC2 Instance SPs. The coverage cannot reduce EffectiveCost below zero.
-		if coverage > cost.EffectiveCost {
-			coverage = cost.EffectiveCost
+		// by RIs or EC2 Instance SPs. The SP contribution cannot reduce EffectiveCost below zero.
+		if spContribution > cost.EffectiveCost {
+			spContribution = cost.EffectiveCost
 		}
 
-		// Apply coverage
-		cost.SavingsPlanCoverage += coverage
+		// Apply SP contribution (same logic as EC2 Instance SPs)
+		cost.SavingsPlanCoverage += spContribution
 		cost.SavingsPlanARN = sp.SavingsPlanARN
-		cost.EffectiveCost -= coverage
+
+		if spContribution == spCost {
+			// Fully covered: you pay the SP rate
+			cost.EffectiveCost = spCost
+		} else {
+			// Partially covered: SP contributes, you pay the rest
+			cost.EffectiveCost -= spContribution
+		}
 
 		// OnDemandCost should remain at shelf price, not be modified by SP coverage
 		// (This field tracks what the instance would cost without any discounts)
@@ -527,7 +548,7 @@ func applyComputeSavingsPlan(
 		}
 
 		// Consume SP commitment
-		remainingCommitment -= coverage
+		remainingCommitment -= spContribution
 	}
 
 	// STEP 4: Track SP utilization metrics
