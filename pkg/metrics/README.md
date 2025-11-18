@@ -34,18 +34,20 @@ This package provides operational metrics that enable monitoring and alerting fo
 - Buckets: 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s
 - Use: Identify slow or timing-out accounts
 
-### Data Freshness (Phase 2+)
+### Data Freshness
 
 **`lumina_data_freshness_seconds`** (gauge)
-- Seconds since last successful data collection
+- Unix timestamp of last successful data collection
 - Labels: `account_id`, `region`, `data_type`
-- Status: Structure defined, not yet populated
+- Values: Unix timestamp (seconds since epoch)
+- Data types: `ec2_instances`, `reserved_instances`, `savings_plans`, `pricing`
+- Use: Calculate data staleness with `time() - lumina_data_freshness_seconds`
 
 **`lumina_data_last_success`** (gauge)
 - Last data collection success indicator
 - Labels: `account_id`, `region`, `data_type`
 - Values: 1 = success, 0 = failed
-- Status: Structure defined, not yet populated
+- Use: Alert on collection failures
 
 ### Reserved Instances (Phase 3)
 
@@ -199,6 +201,21 @@ lumina_account_validation_status == 0
 
 # Alert if account hasn't been validated in 10 minutes
 time() - lumina_account_validation_last_success_timestamp > 600
+
+# Alert if data collection is stale (>10 minutes old)
+time() - lumina_data_freshness_seconds > 600
+
+# Data staleness by data type
+time() - lumina_data_freshness_seconds
+
+# Alert if pricing data is stale (>1 hour)
+time() - lumina_data_freshness_seconds{data_type="pricing"} > 3600
+
+# Alert if EC2 instance data is stale (>10 minutes)
+time() - lumina_data_freshness_seconds{data_type="ec2_instances"} > 600
+
+# Alert if any data collection is failing
+lumina_data_last_success == 0
 
 # Average validation time per account
 rate(lumina_account_validation_duration_seconds_sum[5m])
