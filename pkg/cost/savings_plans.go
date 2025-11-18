@@ -114,6 +114,13 @@ func applyEC2InstanceSavingsPlan(
 			continue
 		}
 
+		// Skip spot instances - Savings Plans don't apply to spot per AWS docs
+		// Spot instances always pay the spot market rate, they cannot use RIs or SPs
+		// Reference: https://docs.aws.amazon.com/savingsplans/latest/userguide/sp-applying.html
+		if inst.Lifecycle == lifecycleSpot {
+			continue
+		}
+
 		// Skip if already RI-covered
 		// Reserved Instances have already been applied (higher priority than SPs).
 		// If an instance is RI-covered, it won't benefit from SP coverage, so skip it.
@@ -380,6 +387,13 @@ func applyComputeSavingsPlan(
 		cost, exists := costs[inst.InstanceID]
 		if !exists {
 			// Instance not in costs map (pricing data missing or cache race)
+			continue
+		}
+
+		// Skip spot instances - Savings Plans don't apply to spot per AWS docs
+		// Spot instances always pay the spot market rate, they cannot use RIs or SPs
+		// Reference: https://docs.aws.amazon.com/savingsplans/latest/userguide/sp-applying.html
+		if inst.Lifecycle == lifecycleSpot {
 			continue
 		}
 

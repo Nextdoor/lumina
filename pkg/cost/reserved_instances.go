@@ -61,6 +61,13 @@ func applyReservedInstances(
 		for idx := range instances {
 			inst := &instances[idx]
 
+			// Skip spot instances - Reserved Instances don't apply to spot per AWS docs
+			// Spot instances always pay the spot market rate, they cannot use RIs or SPs
+			// Reference: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-spot-instances.html
+			if inst.Lifecycle == lifecycleSpot {
+				continue
+			}
+
 			// Skip if instance doesn't match RI criteria
 			if !matchesReservedInstance(inst, &ri) {
 				continue

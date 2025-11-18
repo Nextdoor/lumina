@@ -136,6 +136,7 @@ var _ = Describe("Cost Reconciler", Ordered, func() {
 				g.Expect(metricLine).To(ContainSubstring("instance_type="))
 				g.Expect(metricLine).To(ContainSubstring("cost_type="))
 				g.Expect(metricLine).To(ContainSubstring("availability_zone="))
+				g.Expect(metricLine).To(ContainSubstring("lifecycle="))
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying instance cost metric values are numeric")

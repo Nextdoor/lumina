@@ -122,6 +122,10 @@ type InstanceCost struct {
 
 	// IsSpot indicates whether this instance is a spot instance
 	IsSpot bool
+
+	// Lifecycle is the EC2 instance lifecycle type (e.g., "on-demand", "spot", "scheduled")
+	// This is used for metric labeling to distinguish instance types
+	Lifecycle string
 }
 
 // SavingsPlanUtilization represents the current utilization state of a single

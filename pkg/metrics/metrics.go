@@ -206,7 +206,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		EC2InstanceHourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_hourly_cost",
 			Help: "Effective hourly cost for an EC2 instance after applying all discounts (USD/hour)",
-		}, []string{"instance_id", "account_id", "region", "instance_type", "cost_type", "availability_zone"}),
+		}, []string{"instance_id", "account_id", "region", "instance_type", "cost_type", "availability_zone", "lifecycle"}),
 
 		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_current_utilization_rate",
