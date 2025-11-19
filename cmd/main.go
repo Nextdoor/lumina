@@ -216,35 +216,35 @@ func runStandalone(
 	// Start pricing reconciler FIRST (blocking initial load)
 	// This ensures pricing cache is populated before other reconcilers need it
 	go func() {
-		if err := recs.Pricing.RunStandalone(ctx); err != nil {
+		if err := recs.Pricing.Run(ctx); err != nil {
 			setupLog.Error(err, "pricing reconciler stopped with error")
 		}
 	}()
-	setupLog.Info("started pricing reconciler in standalone mode (initial load blocking)")
+	setupLog.Info("started pricing reconciler (initial load blocking)")
 
 	// Start RISP reconciler - it will signal via channel when ready
 	go func() {
-		if err := recs.RISP.RunStandalone(ctx); err != nil {
+		if err := recs.RISP.Run(ctx); err != nil {
 			setupLog.Error(err, "RISP reconciler stopped with error")
 		}
 	}()
-	setupLog.Info("started RISP reconciler in standalone mode")
+	setupLog.Info("started RISP reconciler")
 
 	// Start SP rates reconciler - waits for RISP to be ready via channel
 	go func() {
-		if err := recs.SPRates.RunStandalone(ctx); err != nil {
+		if err := recs.SPRates.Run(ctx); err != nil {
 			setupLog.Error(err, "SP rates reconciler stopped with error")
 		}
 	}()
-	setupLog.Info("started SP rates reconciler in standalone mode")
+	setupLog.Info("started SP rates reconciler")
 
 	// Start EC2 reconciler
 	go func() {
-		if err := recs.EC2.RunStandalone(ctx); err != nil {
+		if err := recs.EC2.Run(ctx); err != nil {
 			setupLog.Error(err, "EC2 reconciler stopped with error")
 		}
 	}()
-	setupLog.Info("started EC2 reconciler in standalone mode")
+	setupLog.Info("started EC2 reconciler")
 
 	// Create debouncer that triggers cost calculation 1 second after last cache update
 	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
@@ -261,11 +261,11 @@ func runStandalone(
 	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
 	go func() {
-		if err := recs.Cost.RunStandalone(ctx); err != nil {
+		if err := recs.Cost.Run(ctx); err != nil {
 			setupLog.Error(err, "cost reconciler stopped with error")
 		}
 	}()
-	setupLog.Info("started cost reconciler in event-driven mode (1s debounce)")
+	setupLog.Info("started cost reconciler (event-driven with 1s debounce)")
 
 	// Create credential monitor for AWS health checks
 	// The monitor runs background checks at the configured interval instead of on every healthz probe,
@@ -609,7 +609,7 @@ func main() {
 
 	// Start pricing reconciler
 	go func() {
-		if err := recs.Pricing.RunStandalone(ctx); err != nil {
+		if err := recs.Pricing.Run(ctx); err != nil {
 			setupLog.Error(err, "pricing reconciler stopped with error")
 		}
 	}()
@@ -617,7 +617,7 @@ func main() {
 
 	// Start RISP reconciler - signals via channel when ready
 	go func() {
-		if err := recs.RISP.RunStandalone(ctx); err != nil {
+		if err := recs.RISP.Run(ctx); err != nil {
 			setupLog.Error(err, "RISP reconciler stopped with error")
 		}
 	}()
@@ -625,7 +625,7 @@ func main() {
 
 	// Start SP rates reconciler - waits for RISP via channel
 	go func() {
-		if err := recs.SPRates.RunStandalone(ctx); err != nil {
+		if err := recs.SPRates.Run(ctx); err != nil {
 			setupLog.Error(err, "SP rates reconciler stopped with error")
 		}
 	}()

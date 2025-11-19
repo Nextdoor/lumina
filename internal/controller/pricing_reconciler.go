@@ -227,38 +227,20 @@ func (r *PricingReconciler) scheduleNextReconciliation(log logr.Logger) ctrl.Res
 	return ctrl.Result{RequeueAfter: requeueAfter}
 }
 
-// RunStandalone runs the reconciler in standalone mode without Kubernetes.
+// Run runs the reconciler as a goroutine with timer-based reconciliation.
 //
-// This method is designed for local development and testing, allowing the reconciler
-// to run without a Kubernetes cluster. It executes the same reconciliation logic as
-// Reconcile() but uses a simple time.Ticker instead of controller-runtime's requeue mechanism.
-//
-// Behavior:
-//   - Runs initial reconciliation immediately on startup (BLOCKING)
-//   - This ensures pricing cache is populated before serving metrics
-//   - Sets up ticker for periodic reconciliation at configured interval (default: 24 hours)
-//   - Continues running even if periodic reconciliation cycles fail
-//   - Stops gracefully when context is cancelled (SIGTERM/SIGINT)
-//
-// This is used when the controller is run with the --no-kubernetes flag via:
-//
-//	go run ./cmd/main.go --no-kubernetes --config=config.yaml
-//
-// or via the convenience Make target:
-//
-//	make run-local
-//
-// coverage:ignore - standalone mode, tested manually
-func (r *PricingReconciler) RunStandalone(ctx context.Context) error {
-	log := r.Log.WithValues("mode", "standalone")
-	log.Info("starting pricing reconciler in standalone mode")
+// Performs an initial BLOCKING reconciliation on startup to ensure pricing cache is
+// populated before serving cost metrics. Then sets up periodic reconciliation at the
+// configured interval (default: 24 hours).
+func (r *PricingReconciler) Run(ctx context.Context) error {
+	log := r.Log
+	log.Info("starting pricing reconciler")
 
 	// Run immediately on startup (BLOCKING)
 	// This is critical - we must have pricing data before serving cost metrics
 	log.Info("⏳ running initial pricing reconciliation (BLOCKING - this may take 30-60 seconds)")
 	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		// Initial pricing load failure is FATAL in standalone mode
-		// Without pricing data, cost calculations will fail
+		// Initial pricing load failure is FATAL - without pricing data, cost calculations will fail
 		log.Error(err, "❌ initial pricing reconciliation failed - exiting")
 		return fmt.Errorf("fatal: initial pricing load failed: %w", err)
 	}

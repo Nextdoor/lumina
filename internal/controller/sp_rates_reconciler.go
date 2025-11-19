@@ -72,8 +72,8 @@ type SPRatesReconciler struct {
 	Log logr.Logger
 
 	// RISPReadyChan is an optional channel that this reconciler will wait on
-	// before running its initial reconciliation in standalone mode. This ensures
-	// the RISP cache is populated with Savings Plans before we try to fetch rates.
+	// before running its initial reconciliation. This ensures the RISP cache is
+	// populated with Savings Plans before we try to fetch rates.
 	RISPReadyChan chan struct{}
 }
 
@@ -208,17 +208,12 @@ func (r *SPRatesReconciler) fetchRatesForSP(
 	return ratesMap, nil
 }
 
-// RunStandalone runs the SP rates reconciler in standalone mode without Kubernetes.
-// This mode is designed for local development and testing.
+// Run runs the SP rates reconciler as a goroutine with timer-based reconciliation.
 //
-// The reconciler:
-//   - Waits for RISP cache to be populated (via RISPReadyChan) before first run
-//   - Re-runs every 2 minutes to lazy-load rates for new Savings Plans
-//   - Gracefully shuts down when context is cancelled
-//
-// coverage:ignore - standalone mode, tested manually or via E2E
-func (r *SPRatesReconciler) RunStandalone(ctx context.Context) error {
-	r.Log.Info("SP rates reconciler starting in standalone mode", "interval", "2m")
+// Waits for RISP cache to be populated before first run, then re-runs every 2 minutes
+// to lazy-load rates for new Savings Plans.
+func (r *SPRatesReconciler) Run(ctx context.Context) error {
+	r.Log.Info("starting SP rates reconciler", "interval", "2m")
 
 	// Wait for RISP reconciler to complete its initial run and populate the cache
 	// This avoids a race condition where we try to fetch rates before any SPs are discovered
