@@ -102,25 +102,43 @@ Reserved Instances match based on ([AWS RI Matching Rules](https://docs.aws.amaz
 **RI coverage is binary**: An instance is either fully RI-covered or not covered at all.
 
 ```mermaid
-gantt
-    title Reserved Instance Allocation (5 RIs for m5.xlarge in us-west-2a)
-    dateFormat X
-    axisFormat %s
+flowchart TD
+    subgraph Pool["Reserved Instance Pool"]
+        RI["5 × RIs for m5.xlarge in us-west-2a"]
+    end
 
-    section Instance Timeline
-    i-001 (oldest)    :done, 0, 1
-    i-002             :done, 0, 1
-    i-003             :done, 0, 1
-    i-004             :done, 0, 1
-    i-005             :done, 0, 1
-    i-006 (newest)    :active, 0, 1
-    i-007             :active, 0, 1
-    i-008             :active, 0, 1
-    i-009             :active, 0, 1
-    i-010             :active, 0, 1
+    subgraph Covered["✅ RI-Covered Instances (oldest 5)"]
+        I1["i-001 (oldest)<br/>EffectiveCost: $0.00<br/>ShelfPrice saved: $1.00"]
+        I2["i-002<br/>EffectiveCost: $0.00<br/>ShelfPrice saved: $1.00"]
+        I3["i-003<br/>EffectiveCost: $0.00<br/>ShelfPrice saved: $1.00"]
+        I4["i-004<br/>EffectiveCost: $0.00<br/>ShelfPrice saved: $1.00"]
+        I5["i-005<br/>EffectiveCost: $0.00<br/>ShelfPrice saved: $1.00"]
+    end
 
-    section RI Coverage
-    5 RIs Available   :crit, 0, 1
+    subgraph NotCovered["❌ Not RI-Covered (newest 5)"]
+        I6["i-006<br/>Eligible for SP next"]
+        I7["i-007<br/>Eligible for SP next"]
+        I8["i-008<br/>Eligible for SP next"]
+        I9["i-009<br/>Eligible for SP next"]
+        I10["i-010 (newest)<br/>Eligible for SP next"]
+    end
+
+    RI -->|Covers| Covered
+    RI -.->|No capacity left| NotCovered
+
+    style Pool fill:#e1f5ff
+    style Covered fill:#99ff99
+    style NotCovered fill:#ffcc99
+    style I1 fill:#ccffcc
+    style I2 fill:#ccffcc
+    style I3 fill:#ccffcc
+    style I4 fill:#ccffcc
+    style I5 fill:#ccffcc
+    style I6 fill:#ffe6cc
+    style I7 fill:#ffe6cc
+    style I8 fill:#ffe6cc
+    style I9 fill:#ffe6cc
+    style I10 fill:#ffe6cc
 ```
 
 ### Example
