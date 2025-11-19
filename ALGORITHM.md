@@ -265,70 +265,68 @@ For each Savings Plan (in priority order: EC2 Instance SPs first, then Compute S
 
 ### Full vs Partial Coverage
 
-#### Scenario 1: Full Coverage
+#### Scenario 1: Full Coverage ✅
 
-**Full Coverage:**
-```
-Instance: m5.xlarge, ShelfPrice=$1.00, SP Rate=$0.34
-SP has $60 remaining commitment
-
-Result:
-- SP contributes: $0.34
-- Instance EffectiveCost: $0.34 (pays SP rate)
-- SP remaining: $59.66
-```
+**Setup:** Instance needs $0.34/hr, SP has $60.00/hr remaining (plenty!)
 
 ```mermaid
-graph LR
-    subgraph "Before"
-        SP1[Savings Plan<br/>$60.00/hr remaining]
-        Inst1[m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.34]
-    end
+flowchart LR
+    I1["m5.xlarge Instance<br/>━━━━━━━━━━━━━━━<br/>ShelfPrice: $1.00/hr<br/>SP Rate: $0.34/hr"]
 
-    subgraph "After"
-        SP2[Savings Plan<br/>$59.66/hr remaining]
-        Inst2[m5.xlarge<br/>EffectiveCost: $0.34<br/>SavingsPlanCoverage: $0.34]
-    end
+    SP1["Savings Plan<br/>━━━━━━━━━━━━━━━<br/>Before: $60.00/hr<br/>After: $59.66/hr<br/>━━━━━━━━━━━━━━━<br/>✅ Consumed: $0.34"]
 
-    SP1 -->|Full Coverage| SP2
-    Inst1 -->|Fully Covered| Inst2
+    Result["Instance Cost<br/>━━━━━━━━━━━━━━━<br/>EffectiveCost: $0.34<br/>SP Coverage: $0.34<br/>OD Spillover: $0.00<br/>━━━━━━━━━━━━━━━<br/>✅ Fully covered"]
 
-    style Inst2 fill:#99ccff
+    I1 -->|"Needs $0.34"| SP1
+    SP1 -->|"Provides full $0.34"| Result
+
+    style I1 fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    style SP1 fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style Result fill:#c8e6c9,stroke:#388e3c,stroke-width:3px,color:#000
 ```
 
-#### Scenario 2: Partial Coverage (SP running out)
+**Result:**
+- ✅ SP contributes: **$0.34** (full SP rate)
+- ✅ Instance pays: **$0.34** (fully discounted)
+- ✅ SP remaining: **$59.66** (plenty left)
+- ✅ No on-demand spillover
 
-**Partial Coverage (SP exhaustion with spillover):**
-```
-Instance: m5.xlarge, ShelfPrice=$1.00, SP Rate=$0.34
-SP has $0.10 remaining commitment (not enough!)
+---
 
-Result:
-- SP contributes: $0.10 (all it has left)
-- Instance EffectiveCost: $0.90 (pays $0.10 from SP + $0.90 on-demand spillover)
-- SP remaining: $0.00 (exhausted)
-```
+#### Scenario 2: Partial Coverage ⚠️ (SP Exhaustion)
+
+**Setup:** Instance needs $0.34/hr, but SP only has $0.10/hr remaining (not enough!)
 
 ```mermaid
-graph LR
-    subgraph "Before"
-        SP1[Savings Plan<br/>$0.10/hr remaining<br/>⚠️ Not enough!]
-        Inst1[m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.34]
-    end
+flowchart LR
+    I2["m5.xlarge Instance<br/>━━━━━━━━━━━━━━━<br/>ShelfPrice: $1.00/hr<br/>SP Rate: $0.34/hr<br/>⚠️ Needs $0.34"]
 
-    subgraph "After"
-        SP2[Savings Plan<br/>$0.00/hr remaining<br/>🚫 Exhausted]
-        Inst2[m5.xlarge<br/>EffectiveCost: $0.90<br/>SavingsPlanCoverage: $0.10<br/>On-Demand Spillover: $0.80]
-    end
+    SP2["Savings Plan<br/>━━━━━━━━━━━━━━━<br/>Before: $0.10/hr<br/>After: $0.00/hr<br/>━━━━━━━━━━━━━━━<br/>🚫 Only has $0.10"]
 
-    SP1 -->|Partial Coverage| SP2
-    Inst1 -->|Partially Covered| Inst2
+    Result2["Instance Cost<br/>━━━━━━━━━━━━━━━<br/>EffectiveCost: $0.90<br/>SP Coverage: $0.10<br/>OD Spillover: $0.80<br/>━━━━━━━━━━━━━━━<br/>⚠️ Partially covered"]
 
-    style SP2 fill:#ff9999
-    style Inst2 fill:#ffcc99
+    I2 -->|"Needs $0.34"| SP2
+    SP2 -->|"Only gives $0.10"| Result2
+    Result2 -.->|"+ $0.80 OD spillover"| Result2
+
+    style I2 fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    style SP2 fill:#ffccbc,stroke:#d84315,stroke-width:2px,color:#000
+    style Result2 fill:#fff3e0,stroke:#f57c00,stroke-width:3px,color:#000
 ```
 
-**Key insight:** When SP runs out, the instance gets partial SP coverage plus on-demand spillover. The `EffectiveCost` metric includes BOTH components ($0.10 SP + $0.80 OD = $0.90), which is why it can be higher than the SP utilization.
+**Result:**
+- ⚠️ SP contributes: **$0.10** (all it has left)
+- ⚠️ Instance pays: **$0.90** = $0.10 (from SP) + **$0.80 (on-demand spillover)**
+- 🚫 SP remaining: **$0.00** (exhausted)
+- 🔴 On-demand spillover: **$0.80**
+
+**Key insight:** The `EffectiveCost` metric ($0.90) is **higher** than the SP contribution ($0.10) because it includes on-demand spillover. This is why:
+
+```
+sum(ec2_instance_hourly_cost) ≥ sum(savings_plan_current_utilization_rate)
+```
+
+The difference represents **real on-demand costs** from partial coverage.
 
 ### Example: Large-Scale SP Allocation
 
