@@ -372,6 +372,122 @@ graph TD
 
 **Critical observation:** The SP-covered instance costs (**$59.84 + $1.00 = $60.84**) exceed SP utilization (**$60.00**) by **$0.84**, which is the on-demand spillover from instance #177's partial coverage.
 
+---
+
+## Real-World Test Scenarios
+
+The examples in this document are based on **actual test scenarios** with simple, easy-to-understand pricing. These tests validate that Lumina's cost calculations work correctly and match the documented algorithms.
+
+**Test Location:** [`pkg/cost/calculator_comprehensive_test.go`](../pkg/cost/calculator_comprehensive_test.go)
+**Test Function:** `TestCalculatorComprehensiveScenarios`
+
+### Test Pricing Scheme
+
+All test scenarios use consistent, simple pricing to make the math easy to follow:
+
+| Instance Type | On-Demand | Compute SP (66% discount) | Spot Market |
+|--------------|-----------|---------------------------|-------------|
+| m5.2xlarge   | $2.00/hr  | $0.68/hr                  | N/A         |
+| m5.xlarge    | $1.00/hr  | $0.34/hr                  | $0.50/hr    |
+| c5.xlarge    | $1.00/hr  | $0.34/hr                  | $0.40/hr    |
+| t3.medium    | $0.50/hr  | $0.17/hr                  | $0.20/hr    |
+
+**Note:** EC2 Instance Savings Plans provide 72% discount (higher than Compute SP's 66%).
+
+### Scenario 1: RI Coverage Only
+
+**Test:** `calculator_comprehensive_test.go:68-120`
+**Description:** 5 RIs for m5.2xlarge, 15 m5.2xlarge instances running
+
+**Setup:**
+- **Reserved Instances:** 5 RIs for m5.2xlarge in us-west-2a
+- **Instances:** 15 m5.2xlarge instances (all on-demand lifecycle)
+- **Savings Plans:** None
+
+**Expected Results:**
+- **First 5 instances (oldest):** RI-covered
+  - EffectiveCost: $0.00 (RIs are pre-paid)
+  - RICoverage: $2.00 (what RI contributed)
+  - CoverageType: `reserved_instance`
+- **Last 10 instances:** On-demand
+  - EffectiveCost: $2.00 (full on-demand rate)
+  - CoverageType: `on_demand`
+
+**Totals:**
+- ShelfPrice: $30.00/hr (15 × $2.00)
+- EffectiveCost: $20.00/hr (10 × $2.00, since 5 are RI-covered)
+- Savings: $10.00/hr (5 × $2.00 from RI coverage)
+
+**Key Validation:** Oldest 5 instances get RI coverage (by launch time), newest 10 pay on-demand.
+
+### Scenario 2: RI + SP Coverage
+
+**Test:** `calculator_comprehensive_test.go:122-208`
+**Description:** 5 RIs, 1 Compute SP with $3.00/hr commitment, 15 total instances
+
+**Setup:**
+- **Reserved Instances:** 5 RIs for m5.2xlarge in us-west-2a
+- **Instances:** 15 m5.xlarge instances (mixed on-demand and spot)
+- **Savings Plans:** 1 Compute SP with $3.00/hr commitment (66% discount → $0.34 SP rate for m5.xlarge)
+
+**Expected Results:**
+- **First 5 instances:** RI-covered (EffectiveCost: $0.00)
+- **Next ~8.8 instances:** SP-covered
+  - $3.00 commitment ÷ $0.34 SP rate = ~8.8 instances
+  - Last instance gets partial coverage (SP exhaustion + on-demand spillover)
+- **Remaining instances:** On-demand (EffectiveCost: $1.00)
+
+**Key Validation:**
+- RI coverage applied first (priority)
+- SP coverage applied to remaining instances
+- One instance shows partial SP coverage with on-demand spillover
+- Spot instances pay spot rate (no RI/SP coverage)
+
+### Scenario 3: Spot Instances Don't Get RI/SP Coverage
+
+**Test:** `calculator_comprehensive_test.go:210-279`
+**Description:** Validates that spot instances NEVER get RI or SP coverage
+
+**Setup:**
+- **Reserved Instances:** 5 RIs for m5.2xlarge in us-west-2a
+- **Instances:**
+  - 10 m5.2xlarge on-demand
+  - 10 m5.xlarge spot
+- **Savings Plans:** None
+
+**Expected Results:**
+- **First 5 m5.2xlarge on-demand:** RI-covered (EffectiveCost: $0.00)
+- **Next 5 m5.2xlarge on-demand:** On-demand (EffectiveCost: $2.00)
+- **All 10 m5.xlarge spot:** Spot rate (EffectiveCost: $0.50)
+  - **CRITICAL:** Spot instances do NOT get RI coverage even though:
+    - RIs exist for m5 family
+    - RIs are in same AZ
+  - Spot always pays spot market rate
+
+**Key Validation:** Priority order is strictly enforced - spot pricing comes before RI/SP, so spot instances never benefit from reservations.
+
+### Using These Tests
+
+These test scenarios serve multiple purposes:
+
+1. **Validation:** Ensure Lumina's calculations match documented algorithms
+2. **Examples:** Simple pricing makes test expectations easy to verify by hand
+3. **Regression:** Catch any changes to cost allocation logic
+4. **Documentation:** Living examples that stay in sync with code
+
+**To run the tests:**
+```bash
+# Run all comprehensive scenarios
+go test -v -run TestCalculatorComprehensiveScenarios ./pkg/cost
+
+# Run specific scenario
+go test -v -run "TestCalculatorComprehensiveScenarios/Scenario_1" ./pkg/cost
+```
+
+**To add new scenarios:** Follow the pattern in `calculator_comprehensive_test.go` using simple dollar amounts ($1, $2, etc.) to make expectations obvious.
+
+---
+
 ## Simplified Model Decisions
 
 Lumina uses a **simplified Savings Plans model** that differs from AWS's actual billing in one critical way.
