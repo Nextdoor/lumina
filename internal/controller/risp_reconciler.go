@@ -21,11 +21,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/nextdoor/lumina/internal/cache"
 	"github.com/nextdoor/lumina/pkg/aws"
@@ -56,6 +52,12 @@ type RISPReconciler struct {
 	// Regions to query for RIs (RIs are regional)
 	// If empty, defaults to common regions
 	Regions []string
+
+	// ReadyChan is an optional channel that will be closed after the initial
+	// reconciliation completes successfully in standalone mode. This allows
+	// downstream reconcilers (like SPRatesReconciler) to wait for RISP data
+	// to be populated before they start their work.
+	ReadyChan chan struct{}
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -418,6 +420,14 @@ func (r *RISPReconciler) RunStandalone(ctx context.Context) error {
 		// Don't exit - continue with periodic reconciliation
 	}
 
+	// Signal that initial reconciliation is complete (if channel was provided)
+	// This allows downstream reconcilers (e.g., SPRatesReconciler) to wait for
+	// RISP data to be populated before starting their work
+	if r.ReadyChan != nil {
+		close(r.ReadyChan)
+		log.V(1).Info("signaled that RISP cache is ready for dependent reconcilers")
+	}
+
 	// Parse reconciliation interval from config, with default fallback to 1 hour
 	interval := 1 * time.Hour // Default
 	if r.Config.Reconciliation.RISP != "" {
@@ -448,58 +458,4 @@ func (r *RISPReconciler) RunStandalone(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-// SetupWithManager sets up the reconciler with the Manager.
-// coverage:ignore - controller-runtime boilerplate, tested via E2E
-func (r *RISPReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// This is a timer-based controller that requeues itself every hour using RequeueAfter.
-	// Controller-runtime requires at least one watch, so we watch ConfigMaps but filter
-	// to only watch a specific dummy ConfigMap that we'll create to trigger the reconciler.
-	// Once triggered, the Reconcile() method returns RequeueAfter which causes controller-runtime
-	// to automatically schedule subsequent reconciliations.
-	err := ctrl.NewControllerManagedBy(mgr).
-		Named("risp").
-		For(&corev1.ConfigMap{}).
-		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-			// Only reconcile for our specific trigger ConfigMap
-			return obj.GetNamespace() == "lumina-system" && obj.GetName() == "risp-reconciler-trigger"
-		})).
-		Complete(r)
-	if err != nil {
-		return err
-	}
-
-	// Create a dummy ConfigMap to trigger the initial reconciliation.
-	// This ConfigMap doesn't need any real data - it just needs to exist so the controller
-	// sees a "create" event and calls Reconcile() once. After that, Reconcile() uses
-	// RequeueAfter to schedule all subsequent runs automatically.
-	go func() {
-		// Wait for the manager to start and the cache to sync
-		<-mgr.Elected()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// Create the trigger ConfigMap in the controller's namespace
-		triggerCM := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "risp-reconciler-trigger",
-				Namespace: "lumina-system",
-			},
-			Data: map[string]string{
-				"purpose": "Trigger initial RISP reconciliation. Do not delete.",
-			},
-		}
-
-		// Try to create it (ignore error if it already exists)
-		if err := mgr.GetClient().Create(ctx, triggerCM); err != nil {
-			// If it already exists, that's fine - the reconciler will trigger anyway
-			r.Log.V(1).Info("trigger ConfigMap already exists or failed to create", "error", err)
-		} else {
-			r.Log.Info("created trigger ConfigMap to start reconciliation cycle")
-		}
-	}()
-
-	return nil
 }

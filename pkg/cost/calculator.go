@@ -40,12 +40,38 @@ const (
 // don't modify shared state. Each Calculate() call operates on its input
 // parameters and returns new result objects.
 type Calculator struct {
-	// No state needed - calculator is stateless
+	// PricingCache provides access to per-SP rates from DescribeSavingsPlanRates API
+	// Used for tier-1 lookup in getSavingsPlanRate()
+	// Optional: if nil, only config-based fallback rates will be used
+	PricingCache PricingCacheReader
+
+	// Config provides fallback discount multipliers when API rates aren't available
+	// Used for tier-2 lookup in getSavingsPlanRate()
+	// Optional: if nil, conservative defaults (0.72 multiplier) will be used
+	Config ConfigReader
+}
+
+// PricingCacheReader interface for reading Savings Plan rates from cache.
+// This allows for easier testing with mocks.
+type PricingCacheReader interface {
+	GetSPRate(spArn, instanceType, region string) (float64, bool)
+}
+
+// ConfigReader interface for reading configuration values.
+// This allows for easier testing with mocks.
+type ConfigReader interface {
+	GetEC2InstanceDiscount() float64
+	GetComputeDiscount() float64
 }
 
 // NewCalculator creates a new cost calculator instance.
-func NewCalculator() *Calculator {
-	return &Calculator{}
+// Both pricingCache and config are optional (can be nil).
+// If nil, getSavingsPlanRate will use conservative default multipliers.
+func NewCalculator(pricingCache PricingCacheReader, config ConfigReader) *Calculator {
+	return &Calculator{
+		PricingCache: pricingCache,
+		Config:       config,
+	}
 }
 
 // Calculate runs the full cost calculation algorithm on the provided input.
@@ -88,7 +114,7 @@ func (c *Calculator) Calculate(input CalculationInput) CalculationResult {
 
 	// Step 4: Apply Savings Plans
 	// This handles both EC2 Instance SPs and Compute SPs in priority order
-	applySavingsPlans(input.Instances, input.SavingsPlans, costsPtrs, spUtilPtrs)
+	applySavingsPlans(c, input.Instances, input.SavingsPlans, costsPtrs, spUtilPtrs)
 
 	// Step 4.5: Validate Savings Plans math invariants
 	// This runtime check ensures the algorithm calculated costs correctly

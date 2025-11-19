@@ -289,19 +289,25 @@ type MockSavingsPlansClient struct {
 	// SavingsPlans is the mock Savings Plans data
 	SavingsPlans []SavingsPlan
 
+	// SavingsPlanRates is the mock SP rates data (keyed by SP ID)
+	SavingsPlanRates map[string][]SavingsPlanRate
+
 	// Error injection for testing error paths
-	DescribeSavingsPlansError error
-	GetSavingsPlanByARNError  error
+	DescribeSavingsPlansError     error
+	GetSavingsPlanByARNError      error
+	DescribeSavingsPlanRatesError error
 
 	// CallCounts tracks method call counts
-	DescribeSavingsPlansCallCount int
-	GetSavingsPlanByARNCallCount  int
+	DescribeSavingsPlansCallCount     int
+	GetSavingsPlanByARNCallCount      int
+	DescribeSavingsPlanRatesCallCount int
 }
 
 // NewMockSavingsPlansClient creates a new MockSavingsPlansClient.
 func NewMockSavingsPlansClient() *MockSavingsPlansClient {
 	return &MockSavingsPlansClient{
-		SavingsPlans: []SavingsPlan{},
+		SavingsPlans:     []SavingsPlan{},
+		SavingsPlanRates: make(map[string][]SavingsPlanRate),
 	}
 }
 
@@ -332,6 +338,29 @@ func (m *MockSavingsPlansClient) GetSavingsPlanByARN(ctx context.Context, arn st
 	}
 
 	return nil, nil
+}
+
+// DescribeSavingsPlanRates returns the mock rates for a specific Savings Plan.
+func (m *MockSavingsPlansClient) DescribeSavingsPlanRates(
+	ctx context.Context,
+	savingsPlanId string,
+) ([]SavingsPlanRate, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	m.DescribeSavingsPlanRatesCallCount++
+
+	// Return error if set (for testing error paths)
+	if m.DescribeSavingsPlanRatesError != nil {
+		return nil, m.DescribeSavingsPlanRatesError
+	}
+
+	// Return rates for this SP ID
+	if rates, exists := m.SavingsPlanRates[savingsPlanId]; exists {
+		return rates, nil
+	}
+
+	// Return empty list if no rates for this SP
+	return []SavingsPlanRate{}, nil
 }
 
 // MockPricingClient is a mock implementation of PricingClient for testing.

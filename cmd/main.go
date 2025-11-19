@@ -61,6 +61,81 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// reconcilers holds all initialized reconcilers.
+// This struct reduces code duplication between standalone and Kubernetes modes.
+type reconcilers struct {
+	RISP    *controller.RISPReconciler
+	EC2     *controller.EC2Reconciler
+	Pricing *controller.PricingReconciler
+	SPRates *controller.SPRatesReconciler
+	Cost    *controller.CostReconciler
+	ReadyCh chan struct{} // Channel for RISP->SPRates coordination
+}
+
+// initializeReconcilers creates all reconciler instances with their dependencies.
+// This function is shared between standalone and Kubernetes modes to reduce duplication.
+func initializeReconcilers(
+	awsClient aws.Client,
+	cfg *config.Config,
+	rispCache *cache.RISPCache,
+	ec2Cache *cache.EC2Cache,
+	pricingCache *cache.PricingCache,
+	luminaMetrics *metrics.Metrics,
+	costCalculator *cost.Calculator,
+) *reconcilers {
+	// Create channel for RISP -> SPRates coordination
+	// RISP closes this after initial run, SPRates waits on it before starting
+	rispReadyCh := make(chan struct{})
+
+	return &reconcilers{
+		RISP: &controller.RISPReconciler{
+			AWSClient: awsClient,
+			Config:    cfg,
+			Cache:     rispCache,
+			Metrics:   luminaMetrics,
+			Log:       ctrl.Log.WithName("risp-reconciler"),
+			Regions:   cfg.Regions,
+			ReadyChan: rispReadyCh,
+		},
+		EC2: &controller.EC2Reconciler{
+			AWSClient: awsClient,
+			Config:    cfg,
+			Cache:     ec2Cache,
+			Metrics:   luminaMetrics,
+			Log:       ctrl.Log.WithName("ec2-reconciler"),
+			Regions:   cfg.Regions,
+		},
+		Pricing: &controller.PricingReconciler{
+			AWSClient:        awsClient,
+			Config:           cfg,
+			Cache:            pricingCache,
+			Metrics:          luminaMetrics,
+			Log:              ctrl.Log.WithName("pricing-reconciler"),
+			Regions:          cfg.Regions,
+			OperatingSystems: []string{"Linux", "Windows"},
+		},
+		SPRates: &controller.SPRatesReconciler{
+			AWSClient:     awsClient,
+			Config:        cfg,
+			RISPCache:     rispCache,
+			PricingCache:  pricingCache,
+			Metrics:       luminaMetrics,
+			Log:           ctrl.Log.WithName("sp-rates-reconciler"),
+			RISPReadyChan: rispReadyCh,
+		},
+		Cost: &controller.CostReconciler{
+			Calculator:   costCalculator,
+			Config:       cfg,
+			EC2Cache:     ec2Cache,
+			RISPCache:    rispCache,
+			PricingCache: pricingCache,
+			Metrics:      luminaMetrics,
+			Log:          ctrl.Log.WithName("cost-reconciler"),
+		},
+		ReadyCh: rispReadyCh,
+	}
+}
+
 // runStandalone runs the controller in standalone mode without Kubernetes integration.
 //
 // This mode is designed for local development and testing, enabling developers to run
@@ -128,42 +203,12 @@ func runStandalone(
 	pricingCache := cache.NewPricingCache()
 	setupLog.Info("initialized pricing cache")
 
-	// Create RISP reconciler for standalone mode
-	// In standalone mode, we'll run it on a timer instead of K8s reconciliation
-	// Regions will be read from cfg.Regions with account-specific overrides
-	rispReconciler := &controller.RISPReconciler{
-		AWSClient: awsClient,
-		Config:    cfg,
-		Cache:     rispCache,
-		Metrics:   luminaMetrics,
-		Log:       ctrl.Log.WithName("risp-reconciler"),
-		Regions:   cfg.Regions,
-	}
+	// Create cost calculator (needed before initializing reconcilers)
+	costCalculator := cost.NewCalculator(pricingCache, cfg)
 
-	// Create EC2 reconciler for standalone mode
-	// EC2 reconciler runs every 5 minutes (more frequent than RI/SP hourly updates)
-	ec2Reconciler := &controller.EC2Reconciler{
-		AWSClient: awsClient,
-		Config:    cfg,
-		Cache:     ec2Cache,
-		Metrics:   luminaMetrics,
-		Log:       ctrl.Log.WithName("ec2-reconciler"),
-		Regions:   cfg.Regions,
-	}
-
-	// Create pricing reconciler for standalone mode
-	// Pricing reconciler runs every 24 hours (AWS pricing changes monthly)
-	// IMPORTANT: This runs FIRST and BLOCKS until initial pricing data is loaded
-	// Without pricing data, cost calculations will fail
-	pricingReconciler := &controller.PricingReconciler{
-		AWSClient:        awsClient,
-		Config:           cfg,
-		Cache:            pricingCache,
-		Metrics:          luminaMetrics,
-		Log:              ctrl.Log.WithName("pricing-reconciler"),
-		Regions:          cfg.Regions,
-		OperatingSystems: []string{"Linux", "Windows"},
-	}
+	// Initialize all reconcilers using the helper function
+	// This reduces code duplication between standalone and Kubernetes modes
+	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, luminaMetrics, costCalculator)
 
 	// Start reconcilers in background goroutines
 	ctx := ctrl.SetupSignalHandler()
@@ -171,56 +216,52 @@ func runStandalone(
 	// Start pricing reconciler FIRST (blocking initial load)
 	// This ensures pricing cache is populated before other reconcilers need it
 	go func() {
-		if err := pricingReconciler.RunStandalone(ctx); err != nil {
+		if err := recs.Pricing.RunStandalone(ctx); err != nil {
 			setupLog.Error(err, "pricing reconciler stopped with error")
 		}
 	}()
 	setupLog.Info("started pricing reconciler in standalone mode (initial load blocking)")
 
+	// Start RISP reconciler - it will signal via channel when ready
 	go func() {
-		if err := rispReconciler.RunStandalone(ctx); err != nil {
+		if err := recs.RISP.RunStandalone(ctx); err != nil {
 			setupLog.Error(err, "RISP reconciler stopped with error")
 		}
 	}()
 	setupLog.Info("started RISP reconciler in standalone mode")
 
+	// Start SP rates reconciler - waits for RISP to be ready via channel
 	go func() {
-		if err := ec2Reconciler.RunStandalone(ctx); err != nil {
+		if err := recs.SPRates.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "SP rates reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started SP rates reconciler in standalone mode")
+
+	// Start EC2 reconciler
+	go func() {
+		if err := recs.EC2.RunStandalone(ctx); err != nil {
 			setupLog.Error(err, "EC2 reconciler stopped with error")
 		}
 	}()
 	setupLog.Info("started EC2 reconciler in standalone mode")
 
-	// Create cost reconciler with event-driven architecture
-	// Cost calculations trigger automatically when any cache (EC2, RISP, Pricing) updates.
-	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.
-	costCalculator := cost.NewCalculator()
-	costReconciler := &controller.CostReconciler{
-		Calculator:   costCalculator,
-		Config:       cfg,
-		EC2Cache:     ec2Cache,
-		RISPCache:    rispCache,
-		PricingCache: pricingCache,
-		Metrics:      luminaMetrics,
-		Log:          ctrl.Log.WithName("cost-reconciler"),
-	}
-
 	// Create debouncer that triggers cost calculation 1 second after last cache update
 	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
-	costReconciler.Debouncer = cache.NewDebouncer(1*time.Second, func() {
-		if _, err := costReconciler.Reconcile(ctx, ctrl.Request{}); err != nil {
+	recs.Cost.Debouncer = cache.NewDebouncer(1*time.Second, func() {
+		if _, err := recs.Cost.Reconcile(ctx, ctrl.Request{}); err != nil {
 			setupLog.Error(err, "cost calculation triggered by cache update failed")
 		}
 	})
 
 	// Register cost reconciler with all caches
 	// Any cache update will trigger the debouncer, which triggers cost recalculation
-	ec2Cache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
-	rispCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
-	pricingCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+	ec2Cache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	rispCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
 	go func() {
-		if err := costReconciler.RunStandalone(ctx); err != nil {
+		if err := recs.Cost.RunStandalone(ctx); err != nil {
 			setupLog.Error(err, "cost reconciler stopped with error")
 		}
 	}()
@@ -554,71 +595,49 @@ func main() {
 	pricingCache := cache.NewPricingCache()
 	setupLog.Info("initialized pricing cache")
 
-	// Setup RISP reconciler for hourly data collection
-	// This reconciler queries AWS APIs for Reserved Instances and Savings Plans
-	// and maintains an in-memory cache for cost calculation (future phases)
-	// Regions will be read from cfg.Regions with account-specific overrides
-	if err := (&controller.RISPReconciler{
-		AWSClient: awsClient,
-		Config:    cfg,
-		Cache:     rispCache,
-		Metrics:   luminaMetrics,
-		Log:       ctrl.Log.WithName("risp-reconciler"),
-		Regions:   cfg.Regions,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RISP")
-		os.Exit(1)
-	}
-	setupLog.Info("registered RISP reconciler for hourly data collection")
+	// Create cost calculator (needed before initializing reconcilers)
+	costCalculator := cost.NewCalculator(pricingCache, cfg)
 
-	// Setup EC2 reconciler for 5-minute data collection
-	// This reconciler queries AWS APIs for EC2 instance inventory
-	// and maintains an in-memory cache for cost calculation and metrics
-	// Regions will be read from cfg.Regions with account-specific overrides
-	if err := (&controller.EC2Reconciler{
-		AWSClient: awsClient,
-		Config:    cfg,
-		Cache:     ec2Cache,
-		Metrics:   luminaMetrics,
-		Log:       ctrl.Log.WithName("ec2-reconciler"),
-		Regions:   cfg.Regions,
-	}).SetupWithManager(mgr); err != nil {
+	// Initialize all reconcilers using the helper function
+	// This reduces code duplication between standalone and Kubernetes modes
+	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, luminaMetrics, costCalculator)
+
+	// Start timer-based reconcilers as background goroutines
+	// These don't benefit from controller-runtime's event-driven machinery
+	// Using goroutines is simpler and cleaner than the ConfigMap workaround
+	ctx := context.Background() // Manager handles lifecycle
+
+	// Start pricing reconciler
+	go func() {
+		if err := recs.Pricing.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "pricing reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started pricing reconciler (goroutine)")
+
+	// Start RISP reconciler - signals via channel when ready
+	go func() {
+		if err := recs.RISP.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "RISP reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started RISP reconciler (goroutine)")
+
+	// Start SP rates reconciler - waits for RISP via channel
+	go func() {
+		if err := recs.SPRates.RunStandalone(ctx); err != nil {
+			setupLog.Error(err, "SP rates reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started SP rates reconciler (goroutine)")
+
+	// Setup EC2 reconciler as event-driven controller
+	// This watches Node resources and reconciles on changes
+	if err := recs.EC2.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "EC2")
 		os.Exit(1)
 	}
-	setupLog.Info("registered EC2 reconciler for 5-minute data collection")
-
-	// Setup pricing reconciler for 24-hour data collection
-	// This reconciler bulk-loads all AWS EC2 pricing data and refreshes daily
-	// Pricing data is required for cost calculations and changes infrequently (monthly)
-	// Regions will be read from cfg.Regions
-	if err := (&controller.PricingReconciler{
-		AWSClient:        awsClient,
-		Config:           cfg,
-		Cache:            pricingCache,
-		Metrics:          luminaMetrics,
-		Log:              ctrl.Log.WithName("pricing-reconciler"),
-		Regions:          cfg.Regions,
-		OperatingSystems: []string{"Linux", "Windows"},
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Pricing")
-		os.Exit(1)
-	}
-	setupLog.Info("registered pricing reconciler for 24-hour data collection")
-
-	// Setup cost reconciler with event-driven architecture
-	// Cost calculations trigger automatically when any cache (EC2, RISP, Pricing) updates.
-	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.
-	costCalculator := cost.NewCalculator()
-	costReconciler := &controller.CostReconciler{
-		Calculator:   costCalculator,
-		Config:       cfg,
-		EC2Cache:     ec2Cache,
-		RISPCache:    rispCache,
-		PricingCache: pricingCache,
-		Metrics:      luminaMetrics,
-		Log:          ctrl.Log.WithName("cost-reconciler"),
-	}
+	setupLog.Info("registered EC2 reconciler (event-driven)")
 
 	// Create a context for the debouncer callbacks
 	// We use context.Background() because the debouncer runs in the manager's lifecycle
@@ -626,19 +645,19 @@ func main() {
 
 	// Create debouncer that triggers cost calculation 1 second after last cache update
 	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
-	costReconciler.Debouncer = cache.NewDebouncer(1*time.Second, func() {
-		if _, err := costReconciler.Reconcile(debouncerCtx, ctrl.Request{}); err != nil {
+	recs.Cost.Debouncer = cache.NewDebouncer(1*time.Second, func() {
+		if _, err := recs.Cost.Reconcile(debouncerCtx, ctrl.Request{}); err != nil {
 			setupLog.Error(err, "cost calculation triggered by cache update failed")
 		}
 	})
 
 	// Register cost reconciler with all caches
 	// Any cache update will trigger the debouncer, which triggers cost recalculation
-	ec2Cache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
-	rispCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
-	pricingCache.RegisterUpdateNotifier(costReconciler.Debouncer.Trigger)
+	ec2Cache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	rispCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
-	if err := costReconciler.SetupWithManager(mgr); err != nil {
+	if err := recs.Cost.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cost")
 		os.Exit(1)
 	}

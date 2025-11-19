@@ -227,3 +227,44 @@ type CostEstimate struct {
 	// Timestamp is when this estimate was calculated
 	Timestamp time.Time
 }
+
+// SavingsPlanRate represents the actual rate for a specific purchased Savings Plan.
+// This is the PURCHASE-TIME rate that was locked in when the SP was bought.
+type SavingsPlanRate struct {
+	// SavingsPlanId is the SP ID (e.g., "a0ea018f-ddb7-44b1-ae44-ae2dd4292dda")
+	SavingsPlanId string
+
+	// SavingsPlanARN is the full SP ARN
+	SavingsPlanARN string
+
+	// InstanceType is the EC2 instance type (e.g., "c6i.large")
+	InstanceType string
+
+	// Region is the AWS region extracted from usageType (e.g., "ap-northeast-1")
+	Region string
+
+	// Rate is the Savings Plan rate in USD per hour
+	// This is the actual discounted rate for this SP
+	Rate float64
+
+	// Currency is typically "USD"
+	Currency string
+
+	// Unit is typically "Hrs"
+	Unit string
+
+	// ProductType is typically "EC2"
+	ProductType string
+
+	// ServiceCode is typically "AmazonEC2"
+	ServiceCode string
+
+	// UsageType is the full usage type (e.g., "APN1-DedicatedUsage:c6i.large")
+	UsageType string
+
+	// Operation is the operation (e.g., "RunInstances:0202")
+	Operation string
+
+	// Tenancy is "shared", "dedicated", or "host"
+	Tenancy string
+}

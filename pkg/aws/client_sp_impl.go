@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
@@ -135,6 +136,153 @@ func (c *RealSPClient) GetSavingsPlanByARN(ctx context.Context, arn string) (*Sa
 
 	sp := convertSavingsPlan(output.SavingsPlans[0], c.accountID)
 	return &sp, nil
+}
+
+// DescribeSavingsPlanRates returns the actual rates for a specific purchased Savings Plan.
+// This API returns the PURCHASE-TIME rates that were locked in when the SP was bought,
+// not current market offering rates.
+// coverage:ignore - requires real AWS credentials, tested via E2E with LocalStack
+func (c *RealSPClient) DescribeSavingsPlanRates(
+	ctx context.Context,
+	savingsPlanId string,
+) ([]SavingsPlanRate, error) {
+	var allRates []SavingsPlanRate
+
+	// Build input - query for a specific Savings Plan ID
+	input := &savingsplans.DescribeSavingsPlanRatesInput{
+		SavingsPlanId: aws.String(savingsPlanId),
+	}
+
+	// Handle pagination
+	for {
+		output, err := c.client.DescribeSavingsPlanRates(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe savings plan rates for %s: %w", savingsPlanId, err)
+		}
+
+		// Convert AWS SDK types to our types
+		for _, rate := range output.SearchResults {
+			convertedRate := convertSavingsPlanRate(rate, savingsPlanId)
+			if convertedRate != nil {
+				allRates = append(allRates, *convertedRate)
+			}
+		}
+
+		// Check for more pages
+		if output.NextToken == nil {
+			break
+		}
+		input.NextToken = output.NextToken
+	}
+
+	return allRates, nil
+}
+
+// convertSavingsPlanRate converts an AWS SDK SavingsPlanRate to our type.
+// Returns nil if the rate cannot be parsed.
+func convertSavingsPlanRate(rate types.SavingsPlanRate, savingsPlanId string) *SavingsPlanRate {
+	// Parse the rate value
+	rateValue := 0.0
+	if rate.Rate != nil {
+		if parsed, err := strconv.ParseFloat(aws.ToString(rate.Rate), 64); err == nil {
+			rateValue = parsed
+		}
+	}
+
+	// Extract instance type and tenancy from properties
+	instanceType := ""
+	tenancy := "shared" // Default to shared
+
+	for _, prop := range rate.Properties {
+		name := string(prop.Name) // Name is SavingsPlanRatePropertyKey type (string)
+		value := aws.ToString(prop.Value)
+
+		switch name {
+		case "instanceType":
+			instanceType = value
+		case "tenancy":
+			tenancy = value
+		}
+	}
+
+	// Skip rates without instance type
+	if instanceType == "" {
+		return nil
+	}
+
+	// Extract region from usageType
+	// Format: "APN1-DedicatedUsage:c6i.large" or "USW2-BoxUsage:m5.xlarge"
+	region := extractRegionFromUsageType(aws.ToString(rate.UsageType))
+
+	return &SavingsPlanRate{
+		SavingsPlanId:  savingsPlanId,
+		SavingsPlanARN: "", // Will be populated by caller if needed
+		InstanceType:   instanceType,
+		Region:         region,
+		Rate:           rateValue,
+		Currency:       string(rate.Currency),
+		Unit:           string(rate.Unit),
+		ProductType:    string(rate.ProductType),
+		ServiceCode:    string(rate.ServiceCode),
+		UsageType:      aws.ToString(rate.UsageType),
+		Operation:      aws.ToString(rate.Operation),
+		Tenancy:        tenancy,
+	}
+}
+
+// extractRegionFromUsageType extracts the AWS region from a usage type string.
+// Usage type format: "{REGION_CODE}-{USAGE_CATEGORY}:{INSTANCE_TYPE}"
+// Examples:
+//   - "APN1-DedicatedUsage:c6i.large" -> "ap-northeast-1"
+//   - "USW2-BoxUsage:m5.xlarge" -> "us-west-2"
+//   - "USE1-BoxUsage:t3.micro" -> "us-east-1"
+func extractRegionFromUsageType(usageType string) string {
+	// Split on hyphen to get region code
+	parts := strings.Split(usageType, "-")
+	if len(parts) == 0 {
+		return ""
+	}
+
+	regionCode := parts[0]
+
+	// Map of AWS usage type region codes to actual region names
+	// Based on: https://docs.aws.amazon.com/cur/latest/userguide/usagetype.html
+	regionMap := map[string]string{
+		"USE1": "us-east-1",
+		"USE2": "us-east-2",
+		"USW1": "us-west-1",
+		"USW2": "us-west-2",
+		"AFS1": "af-south-1",
+		"APE1": "ap-east-1",
+		"APS1": "ap-south-1",
+		"APS2": "ap-south-2",
+		"APN1": "ap-northeast-1",
+		"APN2": "ap-northeast-2",
+		"APN3": "ap-northeast-3",
+		"APS3": "ap-southeast-1",
+		"APS4": "ap-southeast-2",
+		"APS5": "ap-southeast-3",
+		"APS6": "ap-southeast-4",
+		"CAN1": "ca-central-1",
+		"EUC1": "eu-central-1",
+		"EUC2": "eu-central-2",
+		"EUW1": "eu-west-1",
+		"EUW2": "eu-west-2",
+		"EUW3": "eu-west-3",
+		"EUS1": "eu-south-1",
+		"EUS2": "eu-south-2",
+		"EUN1": "eu-north-1",
+		"MES1": "me-south-1",
+		"MEC1": "me-central-1",
+		"SAE1": "sa-east-1",
+	}
+
+	if region, ok := regionMap[regionCode]; ok {
+		return region
+	}
+
+	// If not found, return the code as-is
+	return strings.ToLower(regionCode)
 }
 
 // convertSavingsPlan converts an AWS SDK SavingsPlan to our type.
