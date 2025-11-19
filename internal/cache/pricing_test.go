@@ -300,3 +300,173 @@ func TestConcurrency(t *testing.T) {
 		t.Error("concurrent access resulted in invalid state")
 	}
 }
+
+// TestAddSPRates tests adding Savings Plan rates to the cache.
+func TestAddSPRates(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Add initial SP rates
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2":  0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.2xlarge:us-west-2": 0.1074,
+		"arn:aws:savingsplans::456:savingsplan/def:c5.xlarge:us-east-1":  0.0450,
+	}
+
+	newCount := cache.AddSPRates(rates)
+	if newCount != 3 {
+		t.Errorf("expected 3 new rates, got %d", newCount)
+	}
+
+	// Verify rates can be retrieved
+	rate, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2")
+	if !exists {
+		t.Error("expected SP rate to exist")
+	}
+	if rate != 0.0537 {
+		t.Errorf("expected rate 0.0537, got %.4f", rate)
+	}
+
+	// Add overlapping rates (should not count as new)
+	rates2 := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2": 0.0537, // Duplicate
+		"arn:aws:savingsplans::123:savingsplan/abc:r5.xlarge:us-west-2": 0.0600, // New
+	}
+
+	newCount = cache.AddSPRates(rates2)
+	if newCount != 1 {
+		t.Errorf("expected 1 new rate, got %d", newCount)
+	}
+
+	stats := cache.GetSPRateStats()
+	if stats.TotalRates != 4 {
+		t.Errorf("expected 4 total rates, got %d", stats.TotalRates)
+	}
+}
+
+// TestHasSPRate tests checking for specific SP rate existence.
+func TestHasSPRate(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache
+	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2") {
+		t.Error("expected rate not to exist in empty cache")
+	}
+
+	// Add rates
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2":  0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.2xlarge:us-west-2": 0.1074,
+	}
+	cache.AddSPRates(rates)
+
+	// Check existing rate
+	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2") {
+		t.Error("expected rate to exist")
+	}
+
+	// Check non-existent rate (different instance type)
+	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "c5.xlarge", "us-west-2") {
+		t.Error("expected rate not to exist")
+	}
+
+	// Check non-existent rate (different SP)
+	if cache.HasSPRate("arn:aws:savingsplans::456:savingsplan/def", "m5.xlarge", "us-west-2") {
+		t.Error("expected rate not to exist")
+	}
+}
+
+// TestHasAnySPRate tests the efficient SP rate existence check.
+func TestHasAnySPRate(t *testing.T) {
+	cache := NewPricingCache()
+
+	spArn1 := "arn:aws:savingsplans::123:savingsplan/abc"
+	spArn2 := "arn:aws:savingsplans::456:savingsplan/def"
+	spArn3 := "arn:aws:savingsplans::789:savingsplan/ghi"
+
+	// Empty cache - no rates exist
+	if cache.HasAnySPRate(spArn1) {
+		t.Error("expected no rates for SP in empty cache")
+	}
+
+	// Add rates for SP1 and SP2
+	rates := map[string]float64{
+		spArn1 + ":m5.xlarge:us-west-2":  0.0537,
+		spArn1 + ":m5.2xlarge:us-west-2": 0.1074,
+		spArn1 + ":c5.xlarge:us-east-1":  0.0450,
+		spArn2 + ":r5.xlarge:us-west-2":  0.0600,
+	}
+	cache.AddSPRates(rates)
+
+	// SP1 has rates
+	if !cache.HasAnySPRate(spArn1) {
+		t.Error("expected SP1 to have rates")
+	}
+
+	// SP2 has rates
+	if !cache.HasAnySPRate(spArn2) {
+		t.Error("expected SP2 to have rates")
+	}
+
+	// SP3 has no rates
+	if cache.HasAnySPRate(spArn3) {
+		t.Error("expected SP3 to have no rates")
+	}
+
+	// Test case-insensitive matching
+	spArnUpper := "ARN:AWS:SAVINGSPLANS::123:SAVINGSPLAN/ABC"
+	if !cache.HasAnySPRate(spArnUpper) {
+		t.Error("expected case-insensitive match for SP1")
+	}
+}
+
+// TestGetAllSPRates tests retrieving all SP rates.
+func TestGetAllSPRates(t *testing.T) {
+	cache := NewPricingCache()
+
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2": 0.0537,
+		"arn:aws:savingsplans::456:savingsplan/def:c5.xlarge:us-east-1": 0.0450,
+	}
+	cache.AddSPRates(rates)
+
+	allRates := cache.GetAllSPRates()
+	if len(allRates) != 2 {
+		t.Errorf("expected 2 rates, got %d", len(allRates))
+	}
+
+	// Verify it's a copy (modifications don't affect cache)
+	allRates["test:key:region"] = 999.99
+	if cache.HasSPRate("test", "key", "region") {
+		t.Error("external modifications should not affect cache")
+	}
+}
+
+// TestSPRateStats tests SP rate statistics.
+func TestSPRateStats(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache stats
+	stats := cache.GetSPRateStats()
+	if stats.TotalRates != 0 {
+		t.Errorf("expected 0 rates, got %d", stats.TotalRates)
+	}
+
+	// Add rates
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2":  0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc:m5.2xlarge:us-west-2": 0.1074,
+		"arn:aws:savingsplans::456:savingsplan/def:c5.xlarge:us-east-1":  0.0450,
+	}
+	cache.AddSPRates(rates)
+
+	stats = cache.GetSPRateStats()
+	if stats.TotalRates != 3 {
+		t.Errorf("expected 3 rates, got %d", stats.TotalRates)
+	}
+	if stats.AgeHours < 0 {
+		t.Errorf("age should be non-negative, got %.2f", stats.AgeHours)
+	}
+	if stats.AgeHours > 1 {
+		t.Errorf("fresh cache should be < 1 hour old, got %.2f", stats.AgeHours)
+	}
+}
