@@ -126,19 +126,19 @@ flowchart TD
     RI -->|Covers| Covered
     RI -.->|No capacity left| NotCovered
 
-    style Pool fill:#e1f5ff
-    style Covered fill:#99ff99
-    style NotCovered fill:#ffcc99
-    style I1 fill:#ccffcc
-    style I2 fill:#ccffcc
-    style I3 fill:#ccffcc
-    style I4 fill:#ccffcc
-    style I5 fill:#ccffcc
-    style I6 fill:#ffe6cc
-    style I7 fill:#ffe6cc
-    style I8 fill:#ffe6cc
-    style I9 fill:#ffe6cc
-    style I10 fill:#ffe6cc
+    style Pool fill:#e1f5ff,color:#000
+    style Covered fill:#99ff99,color:#000
+    style NotCovered fill:#ffcc99,color:#000
+    style I1 fill:#ccffcc,color:#000
+    style I2 fill:#ccffcc,color:#000
+    style I3 fill:#ccffcc,color:#000
+    style I4 fill:#ccffcc,color:#000
+    style I5 fill:#ccffcc,color:#000
+    style I6 fill:#ffe6cc,color:#000
+    style I7 fill:#ffe6cc,color:#000
+    style I8 fill:#ffe6cc,color:#000
+    style I9 fill:#ffe6cc,color:#000
+    style I10 fill:#ffe6cc,color:#000
 ```
 
 ### Example
@@ -174,16 +174,16 @@ graph LR
     RI4 -.-> I4
     RI5 -.-> I5
 
-    style I1 fill:#99ff99
-    style I2 fill:#99ff99
-    style I3 fill:#99ff99
-    style I4 fill:#99ff99
-    style I5 fill:#99ff99
-    style I6 fill:#ffcc99
-    style I7 fill:#ffcc99
-    style I8 fill:#ffcc99
-    style I9 fill:#ffcc99
-    style I10 fill:#ffcc99
+    style I1 fill:#99ff99,color:#000
+    style I2 fill:#99ff99,color:#000
+    style I3 fill:#99ff99,color:#000
+    style I4 fill:#99ff99,color:#000
+    style I5 fill:#99ff99,color:#000
+    style I6 fill:#ffcc99,color:#000
+    style I7 fill:#ffcc99,color:#000
+    style I8 fill:#ffcc99,color:#000
+    style I9 fill:#ffcc99,color:#000
+    style I10 fill:#ffcc99,color:#000
 ```
 
 **Result:**
@@ -278,9 +278,9 @@ flowchart LR
     I1 -->|"Needs $0.34"| SP1
     SP1 -->|"✅ Fully covers"| Result
 
-    style I1 fill:#fff,stroke:#1976d2,stroke-width:3px
-    style SP1 fill:#fff,stroke:#2e7d32,stroke-width:3px
-    style Result fill:#c8e6c9,stroke:#2e7d32,stroke-width:4px
+    style I1 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
+    style SP1 fill:#fff,stroke:#2e7d32,stroke-width:3px,color:#000
+    style Result fill:#c8e6c9,stroke:#2e7d32,stroke-width:4px,color:#000
 ```
 
 **Result:**
@@ -304,9 +304,9 @@ flowchart LR
     I2 -->|"Needs $0.34"| SP2
     SP2 -->|"⚠️ Partial only"| Result2
 
-    style I2 fill:#fff,stroke:#1976d2,stroke-width:3px
-    style SP2 fill:#fff,stroke:#d32f2f,stroke-width:3px
-    style Result2 fill:#ffe0b2,stroke:#e65100,stroke-width:4px
+    style I2 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
+    style SP2 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#000
+    style Result2 fill:#ffe0b2,stroke:#e65100,stroke-width:4px,color:#000
 ```
 
 **Result:**
@@ -343,10 +343,10 @@ graph TD
     Status2[SP Status:<br/>Remaining: $0.00<br/>🔴 Exhausted]
     Status3[23 instances on On-Demand]
 
-    style Phase1 fill:#99ccff
-    style Phase2 fill:#ffcc99
-    style Phase3 fill:#ff9999
-    style Status2 fill:#ff9999
+    style Phase1 fill:#99ccff,color:#000
+    style Phase2 fill:#ffcc99,color:#000
+    style Phase3 fill:#ff9999,color:#000
+    style Status2 fill:#ff9999,color:#000
 ```
 
 **Allocation breakdown:**
@@ -390,7 +390,7 @@ graph TB
         Instance1 -->|Gets $0.18 more| ComputeSP1
         Result1[Instance EffectiveCost: $0.68<br/>✅ Multiple SPs applied]
 
-        style Result1 fill:#99ff99
+        style Result1 fill:#99ff99,color:#000
     end
 
     subgraph "Lumina's Simplified Model"
@@ -402,8 +402,8 @@ graph TB
         Instance2 -.->|Already covered!| ComputeSP2
         Result2[Instance EffectiveCost: $1.50<br/>⚠️ Only one SP applied<br/>On-Demand Spillover: $1.00]
 
-        style Result2 fill:#ffcc99
-        style ComputeSP2 fill:#ff9999
+        style Result2 fill:#ffcc99,color:#000
+        style ComputeSP2 fill:#ff9999,color:#000
     end
 ```
 
@@ -612,8 +612,8 @@ graph LR
     M1 -.-> Diff
     M2 -.-> Diff
 
-    style I2 fill:#ffcc99
-    style Diff fill:#ff9999
+    style I2 fill:#ffcc99,color:#000
+    style Diff fill:#ff9999,color:#000
 ```
 
 **Invariant 2: SP utilization ≤ SP commitment**
