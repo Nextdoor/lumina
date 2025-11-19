@@ -234,10 +234,16 @@ For each Savings Plan (in priority order: EC2 Instance SPs first, then Compute S
    - Savings % = (ShelfPrice - SP Rate) / ShelfPrice
 
 3. Sort instances by priority:
-   a. Highest savings % first (maximize cost reduction)
-   b. Tie-breaker: lowest SP rate first (stretch commitment further)
-   c. Tie-breaker: oldest launch time (stability)
-   d. Tie-breaker: instance ID (determinism)
+   a. Highest savings % first (maximize cost reduction) - AWS behavior
+   b. Tie-breaker: lowest SP rate first (stretch commitment further) - AWS behavior
+   c. Tie-breaker: oldest launch time (stability) - **Lumina-specific for stable metrics**
+   d. Tie-breaker: instance ID (determinism) - **Lumina-specific for stable metrics**
+
+   **Note:** Tie-breakers (c) and (d) are Lumina's own decisions, not AWS's documented behavior.
+   We use launch time and instance ID to ensure that SP allocation remains consistent across
+   reconciliation loops (every 5 minutes). Without these tie-breakers, instances with identical
+   savings percentages could receive different SP coverage on each calculation cycle, causing
+   metrics to fluctuate unnecessarily.
 
 4. Apply SP coverage in priority order:
    For each instance:
