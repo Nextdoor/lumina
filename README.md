@@ -38,6 +38,8 @@ Lumina runs as a Kubernetes controller in each cluster and:
 3. **Calculates** effective costs per instance using AWS's Savings Plans allocation algorithm
 4. **Exposes** Prometheus metrics for monitoring and alerting
 
+> **📖 See [ALGORITHM.md](ALGORITHM.md) for detailed documentation of cost calculation algorithms, known limitations, and differences from AWS billing.**
+
 ```
 ┌─────────────────────────────────────┐
 │   Kubernetes Cluster                │
@@ -205,6 +207,7 @@ make deploy IMG=lumina:dev
 
 ## Documentation
 
+- [ALGORITHM.md](ALGORITHM.md) - **Cost calculation algorithms, limitations, and known differences from AWS billing**
 - [CLAUDE.md](CLAUDE.md) - Project coding guidelines
 - [pkg/aws/README.md](pkg/aws/README.md) - AWS client package documentation
 
