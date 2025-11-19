@@ -271,18 +271,16 @@ For each Savings Plan (in priority order: EC2 Instance SPs first, then Compute S
 
 ```mermaid
 flowchart LR
-    I1["m5.xlarge Instance<br/>━━━━━━━━━━━━━━━<br/>ShelfPrice: $1.00/hr<br/>SP Rate: $0.34/hr"]
-
-    SP1["Savings Plan<br/>━━━━━━━━━━━━━━━<br/>Before: $60.00/hr<br/>After: $59.66/hr<br/>━━━━━━━━━━━━━━━<br/>✅ Consumed: $0.34"]
-
-    Result["Instance Cost<br/>━━━━━━━━━━━━━━━<br/>EffectiveCost: $0.34<br/>SP Coverage: $0.34<br/>OD Spillover: $0.00<br/>━━━━━━━━━━━━━━━<br/>✅ Fully covered"]
+    I1["m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.34"]
+    SP1["Savings Plan<br/>$60.00 available"]
+    Result["Final Cost<br/>$0.34/hr"]
 
     I1 -->|"Needs $0.34"| SP1
-    SP1 -->|"Provides full $0.34"| Result
+    SP1 -->|"✅ Fully covers"| Result
 
-    style I1 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
-    style SP1 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#000
-    style Result fill:#e8f5e9,stroke:#2e7d32,stroke-width:4px,color:#000
+    style I1 fill:#fff,stroke:#1976d2,stroke-width:3px
+    style SP1 fill:#fff,stroke:#2e7d32,stroke-width:3px
+    style Result fill:#c8e6c9,stroke:#2e7d32,stroke-width:4px
 ```
 
 **Result:**
@@ -299,19 +297,16 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    I2["m5.xlarge Instance<br/>━━━━━━━━━━━━━━━<br/>ShelfPrice: $1.00/hr<br/>SP Rate: $0.34/hr<br/>⚠️ Needs $0.34"]
-
-    SP2["Savings Plan<br/>━━━━━━━━━━━━━━━<br/>Before: $0.10/hr<br/>After: $0.00/hr<br/>━━━━━━━━━━━━━━━<br/>🚫 Only has $0.10"]
-
-    Result2["Instance Cost<br/>━━━━━━━━━━━━━━━<br/>EffectiveCost: $0.90<br/>SP Coverage: $0.10<br/>OD Spillover: $0.80<br/>━━━━━━━━━━━━━━━<br/>⚠️ Partially covered"]
+    I2["m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.34"]
+    SP2["Savings Plan<br/>⚠️ Only $0.10 left"]
+    Result2["Final Cost<br/>$0.90/hr<br/>$0.10 SP + $0.80 OD"]
 
     I2 -->|"Needs $0.34"| SP2
-    SP2 -->|"Only gives $0.10"| Result2
-    Result2 -.->|"+ $0.80 OD spillover"| Result2
+    SP2 -->|"⚠️ Partial only"| Result2
 
-    style I2 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
-    style SP2 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#000
-    style Result2 fill:#fff3e0,stroke:#e65100,stroke-width:4px,color:#000
+    style I2 fill:#fff,stroke:#1976d2,stroke-width:3px
+    style SP2 fill:#fff,stroke:#d32f2f,stroke-width:3px
+    style Result2 fill:#ffe0b2,stroke:#e65100,stroke-width:4px
 ```
 
 **Result:**
