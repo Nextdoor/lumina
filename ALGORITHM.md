@@ -66,11 +66,11 @@ flowchart TD
     ComputeSPCovered --> End
     OnDemand --> End
 
-    style SpotRate fill:#ff9999
-    style RICovered fill:#99ff99
-    style EC2SPCovered fill:#99ccff
-    style ComputeSPCovered fill:#9999ff
-    style OnDemand fill:#ffcc99
+    style SpotRate fill:#ff9999,color:#000
+    style RICovered fill:#99ff99,color:#000
+    style EC2SPCovered fill:#99ccff,color:#000
+    style ComputeSPCovered fill:#9999ff,color:#000
+    style OnDemand fill:#ffcc99,color:#000
 ```
 
 ## Reserved Instances Algorithm
