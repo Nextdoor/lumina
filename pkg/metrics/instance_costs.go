@@ -78,6 +78,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult) {
 			"cost_type":         costType,
 			"availability_zone": ic.AvailabilityZone,
 			"lifecycle":         ic.Lifecycle,
+			"pricing_accuracy":  string(ic.PricingAccuracy),
 		}).Set(ic.EffectiveCost)
 	}
 

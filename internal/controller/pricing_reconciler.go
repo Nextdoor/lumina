@@ -20,11 +20,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/nextdoor/lumina/internal/cache"
 	"github.com/nextdoor/lumina/pkg/aws"
@@ -231,38 +227,20 @@ func (r *PricingReconciler) scheduleNextReconciliation(log logr.Logger) ctrl.Res
 	return ctrl.Result{RequeueAfter: requeueAfter}
 }
 
-// RunStandalone runs the reconciler in standalone mode without Kubernetes.
+// Run runs the reconciler as a goroutine with timer-based reconciliation.
 //
-// This method is designed for local development and testing, allowing the reconciler
-// to run without a Kubernetes cluster. It executes the same reconciliation logic as
-// Reconcile() but uses a simple time.Ticker instead of controller-runtime's requeue mechanism.
-//
-// Behavior:
-//   - Runs initial reconciliation immediately on startup (BLOCKING)
-//   - This ensures pricing cache is populated before serving metrics
-//   - Sets up ticker for periodic reconciliation at configured interval (default: 24 hours)
-//   - Continues running even if periodic reconciliation cycles fail
-//   - Stops gracefully when context is cancelled (SIGTERM/SIGINT)
-//
-// This is used when the controller is run with the --no-kubernetes flag via:
-//
-//	go run ./cmd/main.go --no-kubernetes --config=config.yaml
-//
-// or via the convenience Make target:
-//
-//	make run-local
-//
-// coverage:ignore - standalone mode, tested manually
-func (r *PricingReconciler) RunStandalone(ctx context.Context) error {
-	log := r.Log.WithValues("mode", "standalone")
-	log.Info("starting pricing reconciler in standalone mode")
+// Performs an initial BLOCKING reconciliation on startup to ensure pricing cache is
+// populated before serving cost metrics. Then sets up periodic reconciliation at the
+// configured interval (default: 24 hours).
+func (r *PricingReconciler) Run(ctx context.Context) error {
+	log := r.Log
+	log.Info("starting pricing reconciler")
 
 	// Run immediately on startup (BLOCKING)
 	// This is critical - we must have pricing data before serving cost metrics
 	log.Info("⏳ running initial pricing reconciliation (BLOCKING - this may take 30-60 seconds)")
 	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		// Initial pricing load failure is FATAL in standalone mode
-		// Without pricing data, cost calculations will fail
+		// Initial pricing load failure is FATAL - without pricing data, cost calculations will fail
 		log.Error(err, "❌ initial pricing reconciliation failed - exiting")
 		return fmt.Errorf("fatal: initial pricing load failed: %w", err)
 	}
@@ -299,58 +277,4 @@ func (r *PricingReconciler) RunStandalone(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-// SetupWithManager sets up the reconciler with the Manager.
-// coverage:ignore - controller-runtime boilerplate, tested via E2E
-func (r *PricingReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// This is a timer-based controller that requeues itself every 24 hours using RequeueAfter.
-	// Controller-runtime requires at least one watch, so we watch ConfigMaps but filter
-	// to only watch a specific dummy ConfigMap that we'll create to trigger the reconciler.
-	// Once triggered, the Reconcile() method returns RequeueAfter which causes controller-runtime
-	// to automatically schedule subsequent reconciliations.
-	err := ctrl.NewControllerManagedBy(mgr).
-		Named("pricing").
-		For(&corev1.ConfigMap{}).
-		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-			// Only reconcile for our specific trigger ConfigMap
-			return obj.GetNamespace() == "lumina-system" && obj.GetName() == "pricing-reconciler-trigger"
-		})).
-		Complete(r)
-	if err != nil {
-		return err
-	}
-
-	// Create a dummy ConfigMap to trigger the initial reconciliation.
-	// This ConfigMap doesn't need any real data - it just needs to exist so the controller
-	// sees a "create" event and calls Reconcile() once. After that, Reconcile() uses
-	// RequeueAfter to schedule all subsequent runs automatically.
-	go func() {
-		// Wait for the manager to start and the cache to sync
-		<-mgr.Elected()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// Create the trigger ConfigMap in the controller's namespace
-		triggerCM := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pricing-reconciler-trigger",
-				Namespace: "lumina-system",
-			},
-			Data: map[string]string{
-				"purpose": "Trigger initial pricing reconciliation. Do not delete.",
-			},
-		}
-
-		// Try to create it (ignore error if it already exists)
-		if err := mgr.GetClient().Create(ctx, triggerCM); err != nil {
-			// If it already exists, that's fine - the reconciler will trigger anyway
-			r.Log.V(1).Info("trigger ConfigMap already exists or failed to create", "error", err)
-		} else {
-			r.Log.Info("created trigger ConfigMap to start reconciliation cycle")
-		}
-	}()
-
-	return nil
 }

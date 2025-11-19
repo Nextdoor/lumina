@@ -33,7 +33,7 @@ func testBaseTime() time.Time {
 // TestCalculatorBasicFlow tests the basic happy path: on-demand instances
 // with no RIs or Savings Plans.
 func TestCalculatorBasicFlow(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	input := CalculationInput{
@@ -97,7 +97,7 @@ func TestCalculatorBasicFlow(t *testing.T) {
 // TestCalculatorWithReservedInstances tests that RIs are applied correctly
 // before any Savings Plans.
 func TestCalculatorWithReservedInstances(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 
 	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -158,7 +158,7 @@ func TestCalculatorWithReservedInstances(t *testing.T) {
 
 // TestCalculatorWithEC2InstanceSavingsPlan tests EC2 Instance SP application.
 func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	input := CalculationInput{
@@ -202,45 +202,48 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 	result := calc.Calculate(input)
 
 	// Verify both instances get full EC2 Instance SP coverage
-	// With 72% EC2 Instance SP discount:
-	//   - m5.xlarge: $1.00 OD → $0.28 SP rate
-	//   - m5.2xlarge: $2.00 OD → $0.56 SP rate
-	// Total commitment used: $0.28 + $0.56 = $0.84 (out of $1.00 available)
+	// With 28% EC2 Instance SP discount (1-year commitment):
+	//   - m5.xlarge: $1.00 OD → $0.72 SP rate
+	//   - m5.2xlarge: $2.00 OD → $1.44 SP rate
+	// Total commitment used: $0.72 + $1.44 = $2.16 (exceeds $1.00 commitment)
+	// Result: Only first instance fully covered, second gets partial coverage
 
-	// Check first instance (m5.xlarge)
+	// Check first instance (m5.xlarge) - should get full SP coverage
 	cost1 := result.InstanceCosts["i-001"]
 	assert.Equal(t, "i-001", cost1.InstanceID)
 	assert.Equal(t, 1.00, cost1.ShelfPrice)
-	assert.InDelta(t, 0.28, cost1.EffectiveCost, 0.01)       // Pays SP rate
-	assert.InDelta(t, 0.28, cost1.SavingsPlanCoverage, 0.01) // SP commitment consumed
+	assert.InDelta(t, 0.72, cost1.EffectiveCost, 0.01)       // Pays SP rate
+	assert.InDelta(t, 0.72, cost1.SavingsPlanCoverage, 0.01) // SP commitment consumed
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost1.CoverageType)
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN)
 
-	// Check second instance (m5.2xlarge)
+	// Check second instance (m5.2xlarge) - should get partial SP coverage
+	// Commitment: $1.00 total, $0.72 used by first instance, $0.28 remaining
+	// SP contributes $0.28, instance pays $2.00 - $0.28 = $1.72
 	cost2 := result.InstanceCosts["i-002"]
 	assert.Equal(t, "i-002", cost2.InstanceID)
 	assert.Equal(t, 2.00, cost2.ShelfPrice)
-	assert.InDelta(t, 0.56, cost2.EffectiveCost, 0.01)       // Pays SP rate
-	assert.InDelta(t, 0.56, cost2.SavingsPlanCoverage, 0.01) // SP commitment consumed
+	assert.InDelta(t, 1.72, cost2.EffectiveCost, 0.01)       // Pays mostly on-demand
+	assert.InDelta(t, 0.28, cost2.SavingsPlanCoverage, 0.01) // SP commitment consumed (remaining)
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost2.CoverageType)
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost2.SavingsPlanARN)
 
 	// Check SP utilization metrics
 	spUtil := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-001"]
 	assert.Equal(t, 1.00, spUtil.HourlyCommitment)
-	assert.InDelta(t, 0.84, spUtil.CurrentUtilizationRate, 0.01) // $0.28 + $0.56
-	assert.InDelta(t, 0.16, spUtil.RemainingCapacity, 0.01)      // $1.00 - $0.84
-	assert.InDelta(t, 84.0, spUtil.UtilizationPercent, 1.0)      // 84%
+	assert.InDelta(t, 1.00, spUtil.CurrentUtilizationRate, 0.01) // $0.72 + $0.28 = $1.00 (fully utilized)
+	assert.InDelta(t, 0.00, spUtil.RemainingCapacity, 0.01)      // $1.00 - $1.00 = $0 (exhausted)
+	assert.InDelta(t, 100.0, spUtil.UtilizationPercent, 1.0)     // 100%
 
 	// Check aggregate totals
 	assert.InDelta(t, 3.00, result.TotalShelfPrice, 0.01)    // $1.00 + $2.00
-	assert.InDelta(t, 0.84, result.TotalEstimatedCost, 0.01) // $0.28 + $0.56
-	assert.InDelta(t, 2.16, result.TotalSavings, 0.01)       // $3.00 - $0.84
+	assert.InDelta(t, 2.44, result.TotalEstimatedCost, 0.01) // $0.72 + $1.72
+	assert.InDelta(t, 0.56, result.TotalSavings, 0.01)       // $3.00 - $2.44
 }
 
 // TestCalculatorSpotPricing tests that spot instances use spot market prices.
 func TestCalculatorSpotPricing(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	input := CalculationInput{
@@ -282,7 +285,7 @@ func TestCalculatorSpotPricing(t *testing.T) {
 // TestCalculatorPriorityOrder tests that discounts are applied in correct priority:
 // RIs → EC2 Instance SPs → Compute SPs → OnDemand
 func TestCalculatorPriorityOrder(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 
 	// Use fixed launch times to ensure deterministic ordering
 	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -346,7 +349,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.56, // Enough to cover m5.2xlarge SP rate ($2.00 * 0.28 = $0.56)
+				Commitment:      1.44, // Enough to cover m5.2xlarge SP rate ($2.00 * 0.72 = $1.44)
 				AccountID:       "123456789012",
 			},
 			{
@@ -354,7 +357,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 				SavingsPlanType: "Compute",
 				Region:          "all",
 				InstanceFamily:  "all",
-				Commitment:      0.3399, // Just under c5.xlarge SP rate ($1.00 * 0.34), nothing left for r5.xlarge
+				Commitment:      0.7199, // Just under c5.xlarge SP rate ($1.00 * 0.72), nothing left for r5.xlarge
 				AccountID:       "123456789012",
 			},
 		},
@@ -377,7 +380,7 @@ func TestCalculatorPriorityOrder(t *testing.T) {
 
 // TestCalculatorEmptyInput tests calculator behavior with no instances.
 func TestCalculatorEmptyInput(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 
 	input := CalculationInput{
 		Instances:         []aws.Instance{},
@@ -399,7 +402,7 @@ func TestCalculatorEmptyInput(t *testing.T) {
 // TestCalculatorSPUtilizationMetrics tests that SP utilization metrics are
 // calculated correctly.
 func TestCalculatorSPUtilizationMetrics(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	endTime := time.Now().Add(365 * 24 * time.Hour) // SP expires in 1 year
@@ -436,21 +439,22 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 	result := calc.Calculate(input)
 
 	// Verify instance got SP coverage
-	// With 72% EC2 Instance SP discount:
-	//   - m5.xlarge: $1.00 OD → $0.28 SP rate
-	//   - Commitment: $0.50 (enough to fully cover the instance)
+	// With 28% EC2 Instance SP discount (1-year commitment):
+	//   - m5.xlarge: $1.00 OD → $0.72 SP rate
+	//   - Commitment: $0.50 (NOT enough to fully cover, only partial coverage)
+	//   - SP contributes: $0.50, instance pays remaining $0.22 on-demand
 	cost := result.InstanceCosts["i-001"]
 	assert.Equal(t, 1.00, cost.ShelfPrice)
-	assert.InDelta(t, 0.28, cost.EffectiveCost, 0.01)
-	assert.InDelta(t, 0.28, cost.SavingsPlanCoverage, 0.01) // SP commitment consumed
+	assert.InDelta(t, 0.50, cost.EffectiveCost, 0.01)       // Pays $0.50 (SP exhausted)
+	assert.InDelta(t, 0.50, cost.SavingsPlanCoverage, 0.01) // SP commitment consumed (all of it)
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost.CoverageType)
 
 	// Verify SP utilization metrics
 	spUtil := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-001"]
 	assert.Equal(t, 0.50, spUtil.HourlyCommitment)
-	assert.InDelta(t, 0.28, spUtil.CurrentUtilizationRate, 0.01) // Instance uses $0.28 of commitment
-	assert.InDelta(t, 0.22, spUtil.RemainingCapacity, 0.01)      // $0.50 - $0.28 remaining
-	assert.InDelta(t, 56.0, spUtil.UtilizationPercent, 1.0)      // 56% utilized
+	assert.InDelta(t, 0.50, spUtil.CurrentUtilizationRate, 0.01) // Instance uses full $0.50 commitment
+	assert.InDelta(t, 0.00, spUtil.RemainingCapacity, 0.01)      // $0.50 - $0.50 = $0 remaining (exhausted)
+	assert.InDelta(t, 100.0, spUtil.UtilizationPercent, 1.0)     // 100% utilized (commitment exhausted)
 	assert.Greater(t, spUtil.RemainingHours, 0.0)
 	assert.InDelta(t, 365*24, spUtil.RemainingHours, 24) // Within 24 hours of 1 year
 	assert.Equal(t, endTime, spUtil.EndTime)
@@ -459,7 +463,7 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 // TestCalculatorLaunchTimeStability tests that older instances get SP coverage first,
 // providing stable discount assignment when instances have identical savings characteristics.
 func TestCalculatorLaunchTimeStability(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 
 	// Create a scenario where two m5.xlarge instances have identical:
 	// - Instance type (same savings %, same SP rate)
@@ -498,7 +502,7 @@ func TestCalculatorLaunchTimeStability(t *testing.T) {
 				SavingsPlanType: "EC2Instance",
 				Region:          "us-west-2",
 				InstanceFamily:  "m5",
-				Commitment:      0.28, // Exactly ONE m5.xlarge SP rate ($1.00 * 0.28)
+				Commitment:      0.72, // Exactly ONE m5.xlarge SP rate ($1.00 * 0.72)
 				AccountID:       "123456789012",
 			},
 		},
@@ -524,7 +528,7 @@ func TestCalculatorLaunchTimeStability(t *testing.T) {
 
 // TestCalculatorMultipleAccounts tests cost calculation across multiple AWS accounts.
 func TestCalculatorMultipleAccounts(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	input := CalculationInput{
@@ -588,7 +592,7 @@ func TestCalculatorMultipleAccounts(t *testing.T) {
 //  3. Coverage limited to remaining EffectiveCost ($0)
 //  4. Final EffectiveCost remains $0 ✅
 func TestCalculatorRIAndSPInteraction(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	input := CalculationInput{
@@ -675,7 +679,7 @@ func TestCalculatorRIAndSPInteraction(t *testing.T) {
 //
 // This tests the coverage limiting logic for BOTH EC2 Instance SPs and Compute SPs.
 func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	input := CalculationInput{
@@ -733,8 +737,8 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 		"SP coverage exceeded shelf price - should be capped")
 
 	// Calculate expected values based on SIMPLIFIED model (only ONE SP applies)
-	// 1. EC2 Instance SP (72% discount): rate = $1.00 * 0.28 = $0.28
-	//    Commitment $0.10 < rate $0.28, so PARTIAL coverage
+	// 1. EC2 Instance SP (28% discount): rate = $1.00 * 0.72 = $0.72
+	//    Commitment $0.10 < rate $0.72, so PARTIAL coverage
 	//    Contributes $0.10, EffectiveCost = $1.00 - $0.10 = $0.90
 	//    SavingsPlanCoverage = $0.10 (SP commitment consumed)
 	//
@@ -758,7 +762,7 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 // TestCalculatorNegativeCostPrevention is a comprehensive test ensuring no combination
 // of RIs and SPs can cause negative costs.
 func TestCalculatorNegativeCostPrevention(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	// Test multiple scenarios that previously could cause negative costs
@@ -907,7 +911,7 @@ func TestCalculatorNegativeCostPrevention(t *testing.T) {
 // TestCalculatorInvariantValidation tests that the runtime invariant validation
 // catches calculation bugs before they reach metrics.
 func TestCalculatorInvariantValidation(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	// SCENARIO 1: Valid calculation - should NOT panic
@@ -1062,7 +1066,7 @@ func TestCalculatorInvariantValidation(t *testing.T) {
 // NOTE: These tests verify the validation logic itself, not the cost calculation.
 // We're testing that validateSavingsPlansInvariants() correctly detects violations.
 func TestCalculatorInvariantViolationDetection(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 
 	// We can't easily trigger violations through Calculate() because the algorithm
 	// is correct. Instead, we'll test the validation function directly with
@@ -1200,7 +1204,7 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 // Bug: Each SP adds its rate to SavingsPlanCoverage, causing it to exceed shelf price.
 // Fix: SavingsPlanCoverage now tracks the actual cost reduction, not the SP rate.
 func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	// Create an instance with a relatively low shelf price
@@ -1242,8 +1246,8 @@ func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
 	}
 
 	// This should NOT panic with the fix
-	// Before the fix: SavingsPlanCoverage would accumulate to ~$0.14 (5 * $0.028)
-	// After the fix: SavingsPlanCoverage should be the actual discount (~$0.072)
+	// Before the fix: SavingsPlanCoverage would accumulate to ~$0.36 (5 * $0.072)
+	// After the fix: SavingsPlanCoverage should be the actual SP commitment consumed (~$0.072)
 	result := calc.Calculate(input)
 
 	// Verify the instance cost
@@ -1298,7 +1302,7 @@ func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
 //
 // The fix prevents multiple SPs of the same type from applying to the same instance.
 func TestCalculatorMultipleComputeSPsMatchCommitment(t *testing.T) {
-	calc := NewCalculator()
+	calc := NewCalculator(nil, nil)
 	baseTime := testBaseTime()
 
 	// Create 10 instances that can be covered by Compute SPs

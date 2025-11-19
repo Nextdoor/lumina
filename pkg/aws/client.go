@@ -64,6 +64,23 @@ type SavingsPlansClient interface {
 	// GetSavingsPlanByARN returns a specific Savings Plan by ARN.
 	// Returns nil if the Savings Plan is not found.
 	GetSavingsPlanByARN(ctx context.Context, arn string) (*SavingsPlan, error)
+
+	// DescribeSavingsPlanRates returns the actual rates for a specific purchased Savings Plan.
+	// This queries the AWS Savings Plans API for the rates that were locked in at purchase time.
+	//
+	// Parameters:
+	//   - savingsPlanId: The Savings Plan ID (e.g., "a0ea018f-ddb7-44b1-ae44-ae2dd4292dda")
+	//
+	// Returns:
+	//   - Slice of SavingsPlanRate with the actual rates for this specific SP
+	//   - These are the PURCHASE-TIME rates that apply to this SP, not current market rates
+	//
+	// Example:
+	//   rates, err := client.DescribeSavingsPlanRates(ctx, "a0ea018f-ddb7-44b1-ae44-ae2dd4292dda")
+	DescribeSavingsPlanRates(
+		ctx context.Context,
+		savingsPlanId string,
+	) ([]SavingsPlanRate, error)
 }
 
 // PricingClient provides access to AWS Pricing API operations.

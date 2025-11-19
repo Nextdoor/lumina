@@ -261,30 +261,14 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 	return nil
 }
 
-// RunStandalone runs the reconciler in standalone mode without Kubernetes.
+// Run runs the reconciler as a goroutine with timer-based reconciliation.
 //
-// This method is designed for local development and testing, allowing the reconciler
-// to run without a Kubernetes cluster. It executes the same reconciliation logic as
-// Reconcile() but uses a simple time.Ticker instead of controller-runtime's requeue mechanism.
-//
-// Behavior:
-//   - Runs initial reconciliation immediately on startup
-//   - Sets up ticker for periodic reconciliation at configured interval (default: 5 minutes)
-//   - Continues running even if individual reconciliation cycles fail
-//   - Stops gracefully when context is cancelled (SIGTERM/SIGINT)
-//
-// This is used when the controller is run with the --no-kubernetes flag via:
-//
-//	go run ./cmd/main.go --no-kubernetes --config=config.yaml
-//
-// or via the convenience Make target:
-//
-//	make run-local
-//
-// coverage:ignore - standalone mode, tested manually
-func (r *EC2Reconciler) RunStandalone(ctx context.Context) error {
-	log := r.Log.WithValues("mode", "standalone")
-	log.Info("starting EC2 reconciler in standalone mode")
+// Uses a simple time.Ticker for periodic reconciliation instead of controller-runtime's
+// requeue mechanism. Continues running even if individual cycles fail, and stops
+// gracefully when context is cancelled.
+func (r *EC2Reconciler) Run(ctx context.Context) error {
+	log := r.Log
+	log.Info("starting EC2 reconciler")
 
 	// Run immediately on startup
 	log.Info("running initial reconciliation")

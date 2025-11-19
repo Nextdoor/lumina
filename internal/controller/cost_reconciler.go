@@ -148,29 +148,13 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	return ctrl.Result{}, nil
 }
 
-// RunStandalone runs the reconciler in standalone mode without Kubernetes.
+// Run runs the reconciler as a goroutine with event-driven reconciliation.
 //
-// This method is designed for local development and testing, allowing the reconciler
-// to run without a Kubernetes cluster. In the event-driven architecture, this method
-// simply runs an initial calculation and then waits for context cancellation.
-//
-// The debouncer automatically triggers subsequent calculations when cache data updates.
-//
-// Behavior:
-//   - Runs initial reconciliation immediately on startup
-//   - Waits for context cancellation (SIGTERM/SIGINT)
-//   - Cache updates automatically trigger recalculations via debouncer
-//
-// This is used when the controller is run with the --no-kubernetes flag via:
-//
-//	go run ./cmd/main.go --no-kubernetes --config=config.yaml
-//
-// or via the convenience Make target:
-//
-//	make run-local
-func (r *CostReconciler) RunStandalone(ctx context.Context) error {
-	log := r.Log.WithValues("mode", "standalone")
-	log.Info("starting cost reconciler in standalone event-driven mode")
+// Runs an initial calculation on startup, then waits for the debouncer to trigger
+// subsequent calculations when cache data updates (EC2, RISP, or Pricing).
+func (r *CostReconciler) Run(ctx context.Context) error {
+	log := r.Log
+	log.Info("starting cost reconciler")
 
 	// Run immediately on startup
 	log.Info("running initial cost calculation")

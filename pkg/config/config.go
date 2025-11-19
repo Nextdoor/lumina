@@ -120,6 +120,54 @@ type PricingConfig struct {
 	//   - ["Linux", "Windows"] - Load both Linux and Windows pricing
 	//   - [] - Empty list defaults to ["Linux", "Windows"]
 	OperatingSystems []string `yaml:"operatingSystems,omitempty"`
+
+	// DefaultDiscounts specifies fallback discount multipliers to use when actual
+	// Savings Plan rates are not available from the DescribeSavingsPlanRates API.
+	// These are MULTIPLIERS representing what you PAY (not discount percentage).
+	//
+	// The cost calculator uses a two-tier lookup:
+	//   1. First: Try to get actual rate from DescribeSavingsPlanRates API cache
+	//   2. Fallback: If API rate not available, apply these multipliers
+	//
+	// Typical AWS Savings Plan rates:
+	//   - 1-year commitment: ~28% OFF on-demand → you pay 72% → multiplier 0.72
+	//   - 3-year commitment: ~50% OFF on-demand → you pay 50% → multiplier 0.50
+	//
+	// Note: Actual discount percentages vary by instance type, region, and market conditions.
+	// These are conservative estimates. Use the DescribeSavingsPlanRates API for accurate rates.
+	//
+	// Example config for 1-year rates:
+	//   pricing:
+	//     defaultDiscounts:
+	//       ec2Instance: 0.72  # ~28% discount off on-demand
+	//       compute: 0.72      # ~28% discount off on-demand
+	//
+	// Example config for 3-year rates:
+	//   pricing:
+	//     defaultDiscounts:
+	//       ec2Instance: 0.50  # ~50% discount off on-demand
+	//       compute: 0.50      # ~50% discount off on-demand
+	DefaultDiscounts *SavingsPlanDiscounts `yaml:"defaultDiscounts,omitempty"`
+}
+
+// SavingsPlanDiscounts defines fallback discount multipliers for Savings Plans.
+// These are used when actual rates from the AWS API are not available.
+// Values are MULTIPLIERS (what you pay), not discount percentages.
+//
+// Formula: effectiveCost = onDemandPrice * multiplier
+// Example: $1.00 on-demand * 0.72 = $0.72 with 28% discount
+type SavingsPlanDiscounts struct {
+	// EC2Instance is the rate multiplier for EC2 Instance Savings Plans.
+	// Default: 0.72 (~28% discount off on-demand, typical 1-year commitment)
+	// For 3-year: use 0.50 (~50% discount)
+	// Formula: effectiveCost = onDemandPrice * ec2Instance
+	EC2Instance float64 `yaml:"ec2Instance,omitempty"`
+
+	// Compute is the rate multiplier for Compute Savings Plans.
+	// Default: 0.72 (~28% discount off on-demand, typical 1-year commitment)
+	// For 3-year: use 0.50 (~50% discount)
+	// Formula: effectiveCost = onDemandPrice * compute
+	Compute float64 `yaml:"compute,omitempty"`
 }
 
 // TestData contains mock data for E2E testing.
@@ -209,6 +257,12 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("reconciliation.risp", "1h")
 	v.SetDefault("reconciliation.ec2", "5m")
 	// Cost reconciliation is event-driven (no default interval needed)
+
+	// Set default Savings Plan rate multipliers (1-year, typical)
+	// These are fallback values used when actual rates are not available from AWS API
+	// Values are multipliers (what you pay), not discount percentages
+	v.SetDefault("pricing.defaultDiscounts.ec2Instance", 0.72) // ~28% OFF → pay 72%
+	v.SetDefault("pricing.defaultDiscounts.compute", 0.72)     // ~28% OFF → pay 72%
 
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
@@ -346,6 +400,16 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate default discounts if specified
+	if c.Pricing.DefaultDiscounts != nil {
+		if c.Pricing.DefaultDiscounts.EC2Instance < 0 || c.Pricing.DefaultDiscounts.EC2Instance > 1 {
+			return fmt.Errorf("invalid EC2Instance discount %f, must be between 0 and 1", c.Pricing.DefaultDiscounts.EC2Instance)
+		}
+		if c.Pricing.DefaultDiscounts.Compute < 0 || c.Pricing.DefaultDiscounts.Compute > 1 {
+			return fmt.Errorf("invalid Compute discount %f, must be between 0 and 1", c.Pricing.DefaultDiscounts.Compute)
+		}
+	}
+
 	return nil
 }
 
@@ -430,4 +494,26 @@ func (c *Config) GetDefaultAccount() AWSAccount {
 	}
 	// Default to first account if default account not specified
 	return c.AWSAccounts[0]
+}
+
+// GetEC2InstanceDiscount returns the default rate multiplier for EC2 Instance Savings Plans.
+// Returns 0.72 (~28% discount) if not configured.
+// This is used as a fallback when actual rates from DescribeSavingsPlanRates are not available.
+// Formula: effectiveCost = onDemandPrice * multiplier
+func (c *Config) GetEC2InstanceDiscount() float64 {
+	if c.Pricing.DefaultDiscounts != nil && c.Pricing.DefaultDiscounts.EC2Instance > 0 {
+		return c.Pricing.DefaultDiscounts.EC2Instance
+	}
+	return 0.72 // Default 1-year rate: ~28% OFF → pay 72%
+}
+
+// GetComputeDiscount returns the default rate multiplier for Compute Savings Plans.
+// Returns 0.72 (~28% discount) if not configured.
+// This is used as a fallback when actual rates from DescribeSavingsPlanRates are not available.
+// Formula: effectiveCost = onDemandPrice * multiplier
+func (c *Config) GetComputeDiscount() float64 {
+	if c.Pricing.DefaultDiscounts != nil && c.Pricing.DefaultDiscounts.Compute > 0 {
+		return c.Pricing.DefaultDiscounts.Compute
+	}
+	return 0.72 // Default 1-year rate: ~28% OFF → pay 72%
 }

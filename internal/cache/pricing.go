@@ -24,12 +24,11 @@ import (
 )
 
 // PricingCache provides thread-safe access to AWS pricing data.
-// It stores on-demand pricing for EC2 instances and can be extended to support
-// Savings Plans and Reserved Instance pricing in the future.
+// It stores on-demand pricing for EC2 instances and Savings Plan offering rates.
 //
-// The cache is populated by the pricing reconciler via bulk loading from the
-// AWS Pricing API. Pricing data is refreshed periodically (typically every 24 hours)
-// as AWS pricing changes infrequently (monthly).
+// The cache is populated by:
+//   - On-demand prices: Pricing reconciler via bulk loading (every 24h)
+//   - SP rates: SP Rates reconciler via lazy loading (every 1-2m)
 //
 // All keys are normalized to lowercase for case-insensitive lookups. This ensures
 // consistent behavior regardless of the input casing from AWS APIs or configuration.
@@ -43,9 +42,16 @@ type PricingCache struct {
 	// Example key: "us-west-2:m5.xlarge:linux" → 0.192
 	onDemandPrices map[string]float64
 
+	// spRates stores actual Savings Plan rates keyed by "spArn:instanceType:region"
+	// All keys are lowercase for case-insensitive lookups.
+	// Example key: "arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2" → 0.0537
+	// These are PURCHASE-TIME rates that were locked in when the SP was bought.
+	spRates map[string]float64
+
 	// Metadata
-	lastUpdated time.Time
-	isPopulated bool
+	lastUpdated        time.Time
+	spRatesLastUpdated time.Time
+	isPopulated        bool
 
 	// notifiers are callbacks invoked after cache updates
 	// Separate mutex to prevent deadlock during notification
@@ -57,6 +63,7 @@ type PricingCache struct {
 func NewPricingCache() *PricingCache {
 	return &PricingCache{
 		onDemandPrices: make(map[string]float64),
+		spRates:        make(map[string]float64),
 		isPopulated:    false,
 	}
 }
@@ -215,4 +222,95 @@ func (c *PricingCache) IsStale(maxAge time.Duration) bool {
 	}
 
 	return time.Since(c.lastUpdated) > maxAge
+}
+
+// GetSPRate returns the Savings Plan rate for a specific SP ARN, instance type, and region.
+// Returns the rate and true if found, or 0 and false if not found.
+//
+// This is an O(1) lookup operation.
+//
+// All keys are normalized to lowercase for consistent lookups regardless of input casing.
+func (c *PricingCache) GetSPRate(spArn, instanceType, region string) (float64, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Normalize to lowercase for case-insensitive lookups
+	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", spArn, instanceType, region))
+	rate, exists := c.spRates[key]
+	return rate, exists
+}
+
+// AddSPRates adds new Savings Plan rates to the cache without removing existing rates.
+// This is used by the SP rates reconciler to add rates for each Savings Plan.
+//
+// The input map should use keys in the format "spArn:instanceType:region".
+// Example: "arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2" -> 0.0537
+// All keys are normalized to lowercase for case-insensitive lookups.
+//
+// Returns the number of NEW rates added (doesn't count updates to existing rates).
+func (c *PricingCache) AddSPRates(rates map[string]float64) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	newRatesCount := 0
+	for key, rate := range rates {
+		normalizedKey := strings.ToLower(key)
+		// Count as new if the key didn't exist before
+		if _, exists := c.spRates[normalizedKey]; !exists {
+			newRatesCount++
+		}
+		c.spRates[normalizedKey] = rate
+	}
+
+	c.spRatesLastUpdated = time.Now()
+
+	// Notify subscribers after adding rates
+	// This triggers cost recalculation when new rates are available
+	c.notifyUpdate()
+
+	return newRatesCount
+}
+
+// GetAllSPRates returns a copy of all Savings Plan rates.
+// Useful for debugging or exporting cache contents.
+func (c *PricingCache) GetAllSPRates() map[string]float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Return a copy to prevent external modifications
+	copy := make(map[string]float64, len(c.spRates))
+	for k, v := range c.spRates {
+		copy[k] = v
+	}
+	return copy
+}
+
+// GetSPRateStats returns statistics about the SP rates cache.
+func (c *PricingCache) GetSPRateStats() SPRateStats {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return SPRateStats{
+		TotalRates:  len(c.spRates),
+		LastUpdated: c.spRatesLastUpdated,
+		AgeHours:    time.Since(c.spRatesLastUpdated).Hours(),
+	}
+}
+
+// SPRateStats contains statistics about the SP rates cache.
+type SPRateStats struct {
+	TotalRates  int
+	LastUpdated time.Time
+	AgeHours    float64
+}
+
+// HasSPRate checks if a rate exists for the given SP ARN, instance type, and region.
+// This is useful for the reconciler to determine which rates are missing.
+func (c *PricingCache) HasSPRate(spArn, instanceType, region string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", spArn, instanceType, region))
+	_, exists := c.spRates[key]
+	return exists
 }
