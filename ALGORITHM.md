@@ -396,7 +396,7 @@ All test scenarios use consistent, simple pricing to make the math easy to follo
 
 ### Scenario 1: RI Coverage Only
 
-**Test:** `calculator_comprehensive_test.go:68-120`
+**Test:** [`calculator_comprehensive_test.go:68-120`](../pkg/cost/calculator_comprehensive_test.go#L68-L120)
 **Description:** 5 RIs for m5.2xlarge, 15 m5.2xlarge instances running
 
 **Setup:**
@@ -422,7 +422,7 @@ All test scenarios use consistent, simple pricing to make the math easy to follo
 
 ### Scenario 2: RI + SP Coverage
 
-**Test:** `calculator_comprehensive_test.go:122-208`
+**Test:** [`calculator_comprehensive_test.go:122-208`](../pkg/cost/calculator_comprehensive_test.go#L122-L208)
 **Description:** 5 RIs, 1 Compute SP with $3.00/hr commitment, 15 total instances
 
 **Setup:**
@@ -445,7 +445,7 @@ All test scenarios use consistent, simple pricing to make the math easy to follo
 
 ### Scenario 3: Spot Instances Don't Get RI/SP Coverage
 
-**Test:** `calculator_comprehensive_test.go:210-279`
+**Test:** [`calculator_comprehensive_test.go:210-279`](../pkg/cost/calculator_comprehensive_test.go#L210-L279)
 **Description:** Validates that spot instances NEVER get RI or SP coverage
 
 **Setup:**
@@ -532,7 +532,7 @@ graph TB
 - Once a Savings Plan covers an instance, no other SPs can apply
 - This prevents double-counting and commitment waste
 
-**Implementation** (in `pkg/cost/savings_plans.go:line_204`):
+**Implementation:** [`pkg/cost/savings_plans.go:204`](../pkg/cost/savings_plans.go#L204)
 ```go
 // Skip if already covered by ANY Savings Plan
 if cost.SavingsPlanCoverage > 0 {
