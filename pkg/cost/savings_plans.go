@@ -302,13 +302,16 @@ func applyEC2InstanceSavingsPlan(
 
 		// Apply SP contribution to this instance
 		//
-		// SavingsPlanCoverage tracks how much the SP pays for this instance ($/hour)
+		// CRITICAL: SavingsPlanCoverage must track the DISCOUNT (cost reduction),
+		// not the SP rate. This prevents the coverage from exceeding shelf price
+		// when multiple SPs apply to the same instance.
+		//
 		// SavingsPlanARN links this instance to the specific SP providing coverage
 		//
 		// For EffectiveCost:
 		//   - If fully covered (spContribution == spCost): you pay the SP rate
 		//   - If partially covered: SP pays what it can, you pay the rest at on-demand
-		cost.SavingsPlanCoverage += spContribution
+		previousCost := cost.EffectiveCost
 		cost.SavingsPlanARN = sp.SavingsPlanARN
 
 		if spContribution == spCost {
@@ -318,6 +321,11 @@ func applyEC2InstanceSavingsPlan(
 			// Partially covered: SP contributes, you pay the rest
 			cost.EffectiveCost -= spContribution
 		}
+
+		// Add the actual cost reduction (discount) to coverage tracking
+		// This is the difference between what the cost was before and after the SP
+		costReduction := previousCost - cost.EffectiveCost
+		cost.SavingsPlanCoverage += costReduction
 
 		// OnDemandCost should remain at shelf price, not be modified by SP coverage
 		// (This field tracks what the instance would cost without any discounts)
@@ -526,7 +534,11 @@ func applyComputeSavingsPlan(
 		}
 
 		// Apply SP contribution (same logic as EC2 Instance SPs)
-		cost.SavingsPlanCoverage += spContribution
+		//
+		// CRITICAL: SavingsPlanCoverage must track the DISCOUNT (cost reduction),
+		// not the SP rate. This prevents the coverage from exceeding shelf price
+		// when multiple SPs apply to the same instance.
+		previousCost := cost.EffectiveCost
 		cost.SavingsPlanARN = sp.SavingsPlanARN
 
 		if spContribution == spCost {
@@ -536,6 +548,11 @@ func applyComputeSavingsPlan(
 			// Partially covered: SP contributes, you pay the rest
 			cost.EffectiveCost -= spContribution
 		}
+
+		// Add the actual cost reduction (discount) to coverage tracking
+		// This is the difference between what the cost was before and after the SP
+		costReduction := previousCost - cost.EffectiveCost
+		cost.SavingsPlanCoverage += costReduction
 
 		// OnDemandCost should remain at shelf price, not be modified by SP coverage
 		// (This field tracks what the instance would cost without any discounts)

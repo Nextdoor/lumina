@@ -169,13 +169,13 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 				"i-003": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
 				"i-004": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
 				"i-005": {ShelfPrice: 2.00, EffectiveCost: 0.00, CoverageType: CoverageReservedInstance, RICoverage: 2.00},
-				// Next 4 instances get full SP coverage (pay SP rate of $0.68)
-				"i-006": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
-				"i-007": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
-				"i-008": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
-				"i-009": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.68},
+				// Next 4 instances get full SP coverage (pay SP rate of $0.68, discount of $1.32)
+				"i-006": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
+				"i-007": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
+				"i-008": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
+				"i-009": {ShelfPrice: 2.00, EffectiveCost: 0.68, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 1.32},
 				// i-010 gets partial SP coverage (commitment exhausted, only $0.28 remains)
-				// SP contributes $0.28, instance pays remaining $1.72
+				// SP contributes $0.28, instance pays remaining $1.72, discount is $0.28
 				"i-010": {ShelfPrice: 2.00, EffectiveCost: 1.72, CoverageType: CoverageComputeSavingsPlan, SPCoverage: 0.28},
 				// Remaining 5 instances are on-demand (no SP commitment left)
 				"i-011": {ShelfPrice: 2.00, EffectiveCost: 2.00, CoverageType: CoverageOnDemand, OnDemandCost: 2.00},
@@ -201,9 +201,9 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 			expectedTotalSavings: 15.56,
 			// Total RI coverage (what RIs contribute): 5 * $2.00 = $10.00
 			expectedTotalRICoverage: 10.00,
-			// Total SP coverage (SP commitment spent):
-			//   $0.68 + $0.68 + $0.68 + $0.68 + $0.28 = $3.00 (full $3.00 commitment used)
-			expectedTotalSPCoverage: 3.00,
+			// Total SP coverage (total discount provided by SPs):
+			//   4 * $1.32 + $0.28 = $5.56
+			expectedTotalSPCoverage: 5.56,
 		},
 		{
 			name: "Scenario 3: RI coverage with spot instances (spot should NOT get RI coverage)",
