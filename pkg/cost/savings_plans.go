@@ -128,6 +128,20 @@ func applyEC2InstanceSavingsPlan(
 			continue
 		}
 
+		// Skip if already covered by ANY Savings Plan
+		//
+		// SIMPLIFIED MODEL: Once an instance is covered by any Savings Plan (EC2 Instance
+		// or Compute), no additional Savings Plans should apply. This prevents:
+		// 1. SP commitment waste (paying twice for the same instance hour)
+		// 2. EffectiveCost calculation errors
+		// 3. Mismatch between sum(instance costs) and sum(SP utilization)
+		//
+		// This is a conservative model that prioritizes correctness over maximizing
+		// SP utilization in edge cases (e.g., partial coverage fill-in).
+		if cost.SavingsPlanCoverage > 0 {
+			continue
+		}
+
 		// Check if instance matches SP criteria (family + region)
 		// For example, an EC2 Instance SP for "m5" family in "us-west-2" will only match
 		// m5.* instances (m5.large, m5.xlarge, etc.) running in us-west-2.
@@ -302,17 +316,19 @@ func applyEC2InstanceSavingsPlan(
 
 		// Apply SP contribution to this instance
 		//
-		// CRITICAL: SavingsPlanCoverage must track the DISCOUNT (cost reduction),
-		// not the SP rate. This prevents the coverage from exceeding shelf price
-		// when multiple SPs apply to the same instance.
+		// SavingsPlanCoverage tracks the SP COMMITMENT consumed (what the SP pays),
+		// which is spContribution. This is NOT the discount amount!
+		//
+		// For fully covered: spContribution = SP rate = $0.34
+		// For partially covered: spContribution = remaining commitment = e.g. $0.12
 		//
 		// SavingsPlanARN links this instance to the specific SP providing coverage
 		//
 		// For EffectiveCost:
 		//   - If fully covered (spContribution == spCost): you pay the SP rate
 		//   - If partially covered: SP pays what it can, you pay the rest at on-demand
-		previousCost := cost.EffectiveCost
 		cost.SavingsPlanARN = sp.SavingsPlanARN
+		cost.SavingsPlanCoverage += spContribution
 
 		if spContribution == spCost {
 			// Fully covered: you pay the SP rate
@@ -321,11 +337,6 @@ func applyEC2InstanceSavingsPlan(
 			// Partially covered: SP contributes, you pay the rest
 			cost.EffectiveCost -= spContribution
 		}
-
-		// Add the actual cost reduction (discount) to coverage tracking
-		// This is the difference between what the cost was before and after the SP
-		costReduction := previousCost - cost.EffectiveCost
-		cost.SavingsPlanCoverage += costReduction
 
 		// OnDemandCost should remain at shelf price, not be modified by SP coverage
 		// (This field tracks what the instance would cost without any discounts)
@@ -421,20 +432,17 @@ func applyComputeSavingsPlan(
 			continue
 		}
 
-		// Skip if already fully covered by EC2 Instance SP
+		// Skip if already covered by ANY Savings Plan
 		//
-		// EC2 Instance SPs apply before Compute SPs (higher priority).
-		// If an EC2 Instance SP already covers the full cost, there's nothing
-		// left for a Compute SP to discount.
+		// SIMPLIFIED MODEL: Once an instance is covered by any Savings Plan (EC2 Instance
+		// or Compute), no additional Savings Plans should apply. This prevents:
+		// 1. SP commitment waste (paying twice for the same instance hour)
+		// 2. EffectiveCost calculation errors
+		// 3. Mismatch between sum(instance costs) and sum(SP utilization)
 		//
-		// Example:
-		//   - Instance on-demand cost: $0.192/hr
-		//   - EC2 Instance SP already provided: $0.192/hr coverage
-		//   - Remaining cost: $0 → skip, Compute SP can't help
-		//
-		// However, if EC2 Instance SP only partially covered the instance
-		// (SP ran out of commitment), Compute SP can cover the remainder.
-		if cost.SavingsPlanCoverage >= cost.ShelfPrice {
+		// This is a conservative model that prioritizes correctness over maximizing
+		// SP utilization in edge cases (e.g., partial coverage fill-in).
+		if cost.SavingsPlanCoverage > 0 {
 			continue
 		}
 
@@ -535,11 +543,10 @@ func applyComputeSavingsPlan(
 
 		// Apply SP contribution (same logic as EC2 Instance SPs)
 		//
-		// CRITICAL: SavingsPlanCoverage must track the DISCOUNT (cost reduction),
-		// not the SP rate. This prevents the coverage from exceeding shelf price
-		// when multiple SPs apply to the same instance.
-		previousCost := cost.EffectiveCost
+		// SavingsPlanCoverage tracks the SP COMMITMENT consumed (what the SP pays),
+		// which is spContribution. This is NOT the discount amount!
 		cost.SavingsPlanARN = sp.SavingsPlanARN
+		cost.SavingsPlanCoverage += spContribution
 
 		if spContribution == spCost {
 			// Fully covered: you pay the SP rate
@@ -548,11 +555,6 @@ func applyComputeSavingsPlan(
 			// Partially covered: SP contributes, you pay the rest
 			cost.EffectiveCost -= spContribution
 		}
-
-		// Add the actual cost reduction (discount) to coverage tracking
-		// This is the difference between what the cost was before and after the SP
-		costReduction := previousCost - cost.EffectiveCost
-		cost.SavingsPlanCoverage += costReduction
 
 		// OnDemandCost should remain at shelf price, not be modified by SP coverage
 		// (This field tracks what the instance would cost without any discounts)

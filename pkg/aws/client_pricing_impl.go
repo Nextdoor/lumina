@@ -280,8 +280,15 @@ func (c *RealPricingClient) LoadAllPricing(
 	// Rate limiting: AWS Pricing API allows ~10 requests/second
 	// We'll be conservative and allow max 3 concurrent region+OS workers
 	// Each worker makes multiple paginated requests (~6-8 pages per region/OS)
-	// This gives us ~3-5 req/sec burst rate, well under the 10 req/sec limit
+	// with a 200ms delay between pages to avoid throttling.
+	// This gives us ~15 req/sec theoretical max (3 workers * 5 req/sec each),
+	// but in practice we stay well under 10 req/sec due to API response latency.
 	semaphore := make(chan struct{}, 3)
+
+	// Delay between pagination requests to avoid AWS throttling.
+	// 200ms gives us max 5 requests/second per worker, or 15 req/sec total
+	// with 3 workers. In practice, API latency keeps us under 10 req/sec.
+	const paginationDelay = 200 * time.Millisecond
 
 	// Iterate through each region and OS combination in parallel
 	for _, region := range regions {
@@ -402,6 +409,13 @@ func (c *RealPricingClient) LoadAllPricing(
 						break // No more pages
 					}
 					nextToken = output.NextToken
+
+					// Add delay before next pagination request to avoid AWS throttling.
+					// This prevents "ThrottlingException: Rate exceeded" errors that occur
+					// when making rapid-fire paginated requests (typically on page 4+).
+					// The delay is applied after checking NextToken to avoid unnecessary
+					// delay after the final page.
+					time.Sleep(paginationDelay)
 				}
 			}(region, os)
 		}
