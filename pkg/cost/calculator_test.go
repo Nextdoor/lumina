@@ -17,6 +17,7 @@ limitations under the License.
 package cost
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -211,7 +212,7 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 	assert.Equal(t, "i-001", cost1.InstanceID)
 	assert.Equal(t, 1.00, cost1.ShelfPrice)
 	assert.InDelta(t, 0.28, cost1.EffectiveCost, 0.01)       // Pays SP rate
-	assert.InDelta(t, 0.72, cost1.SavingsPlanCoverage, 0.01) // Discount: $1.00 - $0.28
+	assert.InDelta(t, 0.28, cost1.SavingsPlanCoverage, 0.01) // SP commitment consumed
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost1.CoverageType)
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN)
 
@@ -220,7 +221,7 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 	assert.Equal(t, "i-002", cost2.InstanceID)
 	assert.Equal(t, 2.00, cost2.ShelfPrice)
 	assert.InDelta(t, 0.56, cost2.EffectiveCost, 0.01)       // Pays SP rate
-	assert.InDelta(t, 1.44, cost2.SavingsPlanCoverage, 0.01) // Discount: $2.00 - $0.56
+	assert.InDelta(t, 0.56, cost2.SavingsPlanCoverage, 0.01) // SP commitment consumed
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost2.CoverageType)
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost2.SavingsPlanARN)
 
@@ -441,7 +442,7 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 	cost := result.InstanceCosts["i-001"]
 	assert.Equal(t, 1.00, cost.ShelfPrice)
 	assert.InDelta(t, 0.28, cost.EffectiveCost, 0.01)
-	assert.InDelta(t, 0.72, cost.SavingsPlanCoverage, 0.01) // Discount: $1.00 - $0.28
+	assert.InDelta(t, 0.28, cost.SavingsPlanCoverage, 0.01) // SP commitment consumed
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost.CoverageType)
 
 	// Verify SP utilization metrics
@@ -731,31 +732,27 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 	assert.LessOrEqual(t, cost.SavingsPlanCoverage, cost.ShelfPrice,
 		"SP coverage exceeded shelf price - should be capped")
 
-	// Calculate expected values based on CORRECT algorithm
+	// Calculate expected values based on SIMPLIFIED model (only ONE SP applies)
 	// 1. EC2 Instance SP (72% discount): rate = $1.00 * 0.28 = $0.28
-	//    Commitment $0.10 < rate $0.28, so partial coverage
+	//    Commitment $0.10 < rate $0.28, so PARTIAL coverage
 	//    Contributes $0.10, EffectiveCost = $1.00 - $0.10 = $0.90
-	//    SavingsPlanCoverage += $0.10 (the cost reduction)
+	//    SavingsPlanCoverage = $0.10 (SP commitment consumed)
 	//
-	// 2. Compute SP (66% discount): rate = $0.90 * 0.34 = $0.34
-	//    Commitment $2.00 > rate $0.34, so full coverage
-	//    EffectiveCost = $0.34 (pay SP rate)
-	//    SavingsPlanCoverage += ($0.90 - $0.34) = $0.56 (the cost reduction)
+	// 2. Compute SP DOES NOT APPLY (instance already has SP coverage)
+	//    Our simplified model prevents multiple SPs from applying to same instance
 	//
-	// Total SavingsPlanCoverage = $0.10 + $0.56 = $0.66 (the total discount)
-	// Final EffectiveCost = $0.34
+	// Final state:
+	// - EffectiveCost: $0.90 (partially covered, $0.80 spillover at on-demand)
+	// - SavingsPlanCoverage: $0.10 (what EC2 SP contributed)
 
-	expectedEC2Discount := 0.10            // Limited by commitment
-	expectedComputeDiscount := 0.90 - 0.34 // Cost reduction from Compute SP
-	expectedComputeSPRate := 0.34          // 66% discount on remaining $0.90
+	expectedSPCoverage := 0.10    // EC2 Instance SP contributed its full commitment
+	expectedEffectiveCost := 0.90 // $1.00 - $0.10 = $0.90
 
-	expectedEffectiveCost := expectedComputeSPRate // Fully covered by Compute SP
 	assert.InDelta(t, expectedEffectiveCost, cost.EffectiveCost, 0.001,
-		"EffectiveCost should equal Compute SP rate when fully covered")
+		"EffectiveCost should be $0.90 (partial EC2 SP coverage)")
 
-	expectedTotalSPCoverage := expectedEC2Discount + expectedComputeDiscount
-	assert.InDelta(t, expectedTotalSPCoverage, cost.SavingsPlanCoverage, 0.001,
-		"Total SP coverage should be sum of both SP discounts (not rates)")
+	assert.InDelta(t, expectedSPCoverage, cost.SavingsPlanCoverage, 0.001,
+		"SP coverage should be $0.10 (only EC2 SP applies, Compute SP blocked)")
 }
 
 // TestCalculatorNegativeCostPrevention is a comprehensive test ensuring no combination
@@ -1266,11 +1263,11 @@ func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
 	assert.Greater(t, cost.EffectiveCost, 0.0, "Effective cost should be positive")
 	assert.Less(t, cost.EffectiveCost, cost.ShelfPrice, "Effective cost should be less than shelf price")
 
-	// Verify the cost reduction makes sense:
-	// ShelfPrice = EffectiveCost + SavingsPlanCoverage
-	expectedDiscount := cost.ShelfPrice - cost.EffectiveCost
-	assert.InDelta(t, expectedDiscount, cost.SavingsPlanCoverage, 0.001,
-		"SavingsPlanCoverage should equal the actual discount (ShelfPrice - EffectiveCost)")
+	// Verify SavingsPlanCoverage tracks SP commitment consumed (not discount):
+	// For a fully covered instance: SavingsPlanCoverage == EffectiveCost (both = SP rate)
+	// Our simplified model: only ONE SP applies, so this should hold
+	assert.InDelta(t, cost.EffectiveCost, cost.SavingsPlanCoverage, 0.001,
+		"SavingsPlanCoverage should equal SP commitment consumed (EffectiveCost for fully covered)")
 
 	// Verify SP utilization is tracked correctly
 	// At least one SP should have utilization (the first one that matched)
@@ -1288,4 +1285,147 @@ func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
 	assert.Equal(t, 0.10, result.TotalShelfPrice, "Total shelf price should match instance shelf price")
 	assert.Greater(t, result.TotalSavings, 0.0, "Should have savings from SP coverage")
 	assert.Less(t, result.TotalEstimatedCost, result.TotalShelfPrice, "Estimated cost should be less than shelf price")
+}
+
+// TestCalculatorMultipleComputeSPsMatchCommitment tests that when multiple Compute
+// Savings Plans exist, only ONE applies to each instance, and the sum of instance
+// EffectiveCosts equals the sum of SP commitment consumed.
+//
+// This is a regression test for the bug where multiple Compute SPs would all try to
+// apply to the same instance, each reducing EffectiveCost, causing a mismatch between:
+// - sum(ec2_instance_hourly_cost{cost_type="compute_savings_plan"}) [too low]
+// - sum(savings_plan_current_utilization_rate) [correct]
+//
+// The fix prevents multiple SPs of the same type from applying to the same instance.
+func TestCalculatorMultipleComputeSPsMatchCommitment(t *testing.T) {
+	calc := NewCalculator()
+	baseTime := testBaseTime()
+
+	// Create 10 instances that can be covered by Compute SPs
+	instances := []aws.Instance{}
+	onDemandPrices := make(map[string]float64)
+
+	for i := 1; i <= 10; i++ {
+		instanceID := fmt.Sprintf("i-compute-sp-%d", i)
+		instances = append(instances, aws.Instance{
+			InstanceID:       instanceID,
+			InstanceType:     "m5.xlarge",
+			Region:           "us-west-2",
+			AccountID:        "123456789012",
+			AvailabilityZone: "us-west-2a",
+			State:            "running",
+			Lifecycle:        "on-demand",
+			LaunchTime:       baseTime,
+		})
+	}
+	onDemandPrices["m5.xlarge:us-west-2"] = 0.192 // $0.192/hour shelf price
+
+	// Create 5 Compute Savings Plans (matching production scenario)
+	// Total commitment: $258/hour (similar to production)
+	savingsPlans := []aws.SavingsPlan{
+		{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-1",
+			SavingsPlanType: "Compute",
+			Region:          "all", // Compute SPs apply to any region
+			InstanceFamily:  "all", // Compute SPs apply to any family
+			Commitment:      60.0,  // $60/hour
+			AccountID:       "123456789012",
+			Start:           baseTime.Add(-24 * time.Hour),
+			End:             baseTime.Add(365 * 24 * time.Hour),
+		},
+		{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-2",
+			SavingsPlanType: "Compute",
+			Region:          "all",
+			InstanceFamily:  "all",
+			Commitment:      57.0, // $57/hour
+			AccountID:       "123456789012",
+			Start:           baseTime.Add(-24 * time.Hour),
+			End:             baseTime.Add(365 * 24 * time.Hour),
+		},
+		{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-3",
+			SavingsPlanType: "Compute",
+			Region:          "all",
+			InstanceFamily:  "all",
+			Commitment:      96.0, // $96/hour
+			AccountID:       "123456789012",
+			Start:           baseTime.Add(-24 * time.Hour),
+			End:             baseTime.Add(365 * 24 * time.Hour),
+		},
+		{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-4",
+			SavingsPlanType: "Compute",
+			Region:          "all",
+			InstanceFamily:  "all",
+			Commitment:      26.0, // $26/hour
+			AccountID:       "123456789012",
+			Start:           baseTime.Add(-24 * time.Hour),
+			End:             baseTime.Add(365 * 24 * time.Hour),
+		},
+		{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-5",
+			SavingsPlanType: "Compute",
+			Region:          "all",
+			InstanceFamily:  "all",
+			Commitment:      19.0, // $19/hour
+			AccountID:       "123456789012",
+			Start:           baseTime.Add(-24 * time.Hour),
+			End:             baseTime.Add(365 * 24 * time.Hour),
+		},
+	}
+	// Total SP commitment: $258/hour
+
+	input := CalculationInput{
+		Instances:         instances,
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans:      savingsPlans,
+		SpotPrices:        make(map[string]float64),
+		OnDemandPrices:    onDemandPrices,
+	}
+
+	result := calc.Calculate(input)
+
+	// Calculate sum of EffectiveCost for SP-covered instances
+	totalSPInstanceCost := 0.0
+	for _, cost := range result.InstanceCosts {
+		if cost.CoverageType == CoverageComputeSavingsPlan {
+			totalSPInstanceCost += cost.EffectiveCost
+		}
+	}
+
+	// Calculate sum of SP commitment consumed
+	totalSPUtilization := 0.0
+	for _, util := range result.SavingsPlanUtilization {
+		totalSPUtilization += util.CurrentUtilizationRate
+	}
+
+	// CRITICAL: These must match!
+	// If multiple SPs incorrectly applied to the same instance, totalSPInstanceCost
+	// would be artificially low (instances pay less than they should), while
+	// totalSPUtilization would be correct (each SP consumes its commitment).
+	assert.InDelta(t, totalSPUtilization, totalSPInstanceCost, 0.01,
+		"Sum of EffectiveCost for SP-covered instances must equal sum of SP commitment consumed")
+
+	// Verify each instance is covered by at most one Compute SP
+	for _, cost := range result.InstanceCosts {
+		if cost.CoverageType == CoverageComputeSavingsPlan {
+			// Instance should have exactly one SP ARN
+			assert.NotEmpty(t, cost.SavingsPlanARN, "SP-covered instance should have SP ARN")
+
+			// EffectiveCost should equal the SP rate (what you pay)
+			// This is approximately 72% discount for Compute SPs (varies by instance type)
+			assert.Greater(t, cost.EffectiveCost, 0.0, "Effective cost should be positive")
+			assert.Less(t, cost.EffectiveCost, cost.ShelfPrice, "Effective cost should be less than shelf price")
+		}
+	}
+
+	// Verify SP utilization metrics are sane
+	for _, sp := range savingsPlans {
+		util, exists := result.SavingsPlanUtilization[sp.SavingsPlanARN]
+		assert.True(t, exists, "SP utilization should be tracked")
+		assert.GreaterOrEqual(t, util.CurrentUtilizationRate, 0.0, "Utilization rate should be non-negative")
+		assert.LessOrEqual(t, util.CurrentUtilizationRate, sp.Commitment,
+			"Utilization rate should not exceed commitment (no over-utilization in this test)")
+	}
 }
