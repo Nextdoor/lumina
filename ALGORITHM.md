@@ -280,9 +280,9 @@ flowchart LR
     I1 -->|"Needs $0.34"| SP1
     SP1 -->|"Provides full $0.34"| Result
 
-    style I1 fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    style SP1 fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
-    style Result fill:#c8e6c9,stroke:#388e3c,stroke-width:3px,color:#000
+    style I1 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
+    style SP1 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#000
+    style Result fill:#e8f5e9,stroke:#2e7d32,stroke-width:4px,color:#000
 ```
 
 **Result:**
@@ -309,9 +309,9 @@ flowchart LR
     SP2 -->|"Only gives $0.10"| Result2
     Result2 -.->|"+ $0.80 OD spillover"| Result2
 
-    style I2 fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    style SP2 fill:#ffccbc,stroke:#d84315,stroke-width:2px,color:#000
-    style Result2 fill:#fff3e0,stroke:#f57c00,stroke-width:3px,color:#000
+    style I2 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
+    style SP2 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#000
+    style Result2 fill:#fff3e0,stroke:#e65100,stroke-width:4px,color:#000
 ```
 
 **Result:**
