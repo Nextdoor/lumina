@@ -331,9 +331,9 @@ The difference represents **real on-demand costs** from partial coverage.
 graph TD
     Start[Compute Savings Plan<br/>Commitment: $60.00/hr<br/>Available: $60.00/hr] --> Sort[Sort 200 instances<br/>by savings priority]
 
-    Sort --> Phase1[Cover instances 1-176<br/>176 × $0.34 = $59.84]
-    Phase1 --> Phase2[Instance 177 partial<br/>SP: $0.16, OD: $0.84<br/>Total: $1.00]
-    Phase2 --> Phase3[Instances 178-200<br/>23 × $1.00 = $23.00 OD]
+    Sort --> Phase1[Cover instances 1-176<br/>176 × $0.34 = $59.84<br/>✅ Fully covered]
+    Phase1 --> Phase2[Instance 177 partial<br/>EffectiveCost: $1.00<br/>SP: $0.16 + OD: $0.84]
+    Phase2 --> Phase3[Instances 178-200<br/>23 × $1.00 OD each<br/>🚫 No SP coverage]
 
     Phase1 -.->|Commitment consumed: $59.84| Status1
     Phase2 -.->|Commitment consumed: $60.00| Status2
@@ -354,8 +354,9 @@ graph TD
 2. **Cover first 176 instances fully**: 176 × $0.34 = $59.84 consumed
 3. **Instance #177 gets partial coverage**:
    - SP contributes: $0.16 (all that's left)
-   - Instance pays: $1.00 ($0.16 from SP + $0.84 on-demand spillover)
-4. **Remaining 23 instances**: On-demand ($1.00 each)
+   - On-demand spillover: $0.84 (remainder at OD rate)
+   - **EffectiveCost: $1.00** (what instance pays: $0.16 SP + $0.84 OD)
+4. **Remaining 23 instances**: On-demand ($1.00 each, no SP coverage)
 
 **SP Metrics:**
 - Commitment: $60.00/hr
@@ -363,13 +364,13 @@ graph TD
 - Remaining: $0.00/hr
 
 **Instance Cost Metrics:**
-- Instances 1-176: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 0.34` × 176 = $59.84
-- Instance 177: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 1.00` (includes spillover!)
-- Instances 178-200: `ec2_instance_hourly_cost{cost_type="on_demand"} = 1.00` × 23 = $23.00
+- Instances 1-176: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 0.34` × 176 = **$59.84** (fully covered)
+- Instance 177: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 1.00` (**EffectiveCost includes $0.84 OD spillover!**)
+- Instances 178-200: `ec2_instance_hourly_cost{cost_type="on_demand"} = 1.00` × 23 = **$23.00** (no SP coverage)
 
 **Total instance costs: $59.84 + $1.00 + $23.00 = $83.84/hr**
 
-**Critical observation:** The SP-covered instance costs ($59.84 + $1.00 = $60.84) exceed SP utilization ($60.00) by $0.84, which is the on-demand spillover from instance #177.
+**Critical observation:** The SP-covered instance costs (**$59.84 + $1.00 = $60.84**) exceed SP utilization (**$60.00**) by **$0.84**, which is the on-demand spillover from instance #177's partial coverage.
 
 ## Simplified Model Decisions
 
