@@ -314,3 +314,27 @@ func (c *PricingCache) HasSPRate(spArn, instanceType, region string) bool {
 	_, exists := c.spRates[key]
 	return exists
 }
+
+// HasAnySPRate checks if ANY rate exists for the given Savings Plan ARN.
+// This is more efficient than GetAllSPRates() when you just need to know if rates exist.
+// Returns true if at least one rate is cached for this SP ARN.
+//
+// This is used by the SP Rates Reconciler to determine which SPs need rate fetching.
+func (c *PricingCache) HasAnySPRate(spArn string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Normalize SP ARN to lowercase for case-insensitive comparison
+	normalizedArn := strings.ToLower(spArn)
+	arnPrefix := normalizedArn + ":"
+
+	// Check if any key starts with this SP ARN
+	// Keys are formatted as "spArn:instanceType:region"
+	for key := range c.spRates {
+		if strings.HasPrefix(key, arnPrefix) {
+			return true
+		}
+	}
+
+	return false
+}

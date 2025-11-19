@@ -148,24 +148,12 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 func (r *SPRatesReconciler) findMissingSPRates(savingsPlans []aws.SavingsPlan) []aws.SavingsPlan {
 	var missingSPs []aws.SavingsPlan
 
-	// Get all currently cached SP rates to check which SPs are missing
-	cachedRates := r.PricingCache.GetAllSPRates()
-
 	for _, sp := range savingsPlans {
-		// Check if we have ANY rate cached for this SP ARN
+		// Check if we have ANY rate cached for this SP ARN using efficient O(n) lookup
+		// This avoids copying the entire cache (128k+ entries) on every reconciliation cycle
 		// If we have at least one rate, we assume all rates for this SP are cached
 		// (because DescribeSavingsPlanRates returns all rates in one call)
-		hasAnyRate := false
-		for key := range cachedRates {
-			// Key format: "spArn:instanceType:region"
-			// Check if this key starts with the SP ARN
-			if len(key) > len(sp.SavingsPlanARN) && key[:len(sp.SavingsPlanARN)] == sp.SavingsPlanARN {
-				hasAnyRate = true
-				break
-			}
-		}
-
-		if !hasAnyRate {
+		if !r.PricingCache.HasAnySPRate(sp.SavingsPlanARN) {
 			missingSPs = append(missingSPs, sp)
 		}
 	}
