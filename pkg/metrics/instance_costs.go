@@ -59,6 +59,17 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult) {
 		// Convert CoverageType constants to string representation
 		costType := string(ic.CoverageType)
 
+		// Always export EffectiveCost - this represents what the instance actually pays.
+		//
+		// For SP-covered instances with partial coverage:
+		//   EffectiveCost = SP contribution + on-demand spillover
+		//
+		// This means:
+		//   sum(ec2_instance_hourly_cost{cost_type="compute_savings_plan"}) >=
+		//   sum(savings_plan_current_utilization_rate)
+		//
+		// The difference represents on-demand spillover from partially covered instances
+		// and is real cost that should be visible in metrics.
 		m.EC2InstanceHourlyCost.With(prometheus.Labels{
 			"instance_id":       ic.InstanceID,
 			"account_id":        ic.AccountID,
