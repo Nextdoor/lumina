@@ -255,7 +255,7 @@ func (c *Calculator) applySpotPricing(input CalculationInput, costs map[string]*
 		} else {
 			cost.PricingAccuracy = PricingEstimated // Using fallback (currently $0, will be on-demand estimate in future)
 		}
-		cost.IsSpot = true           // Mark as spot instance
+		cost.IsSpot = true // Mark as spot instance
 		// Note: cost is already a pointer, no need to reassign
 	}
 }

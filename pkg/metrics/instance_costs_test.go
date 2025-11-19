@@ -42,18 +42,18 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15, // Covered by RI
 				CoverageType:     cost.CoverageReservedInstance,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 			"i-def456": {
-				InstanceID:          "i-def456",
-				InstanceType:        "c5.2xlarge",
-				Region:              "us-east-1",
-				AccountID:           "222222222222",
-				AvailabilityZone:    "us-east-1b",
-				EffectiveCost:       0.10, // Covered by SP
-				CoverageType:        cost.CoverageComputeSavingsPlan,
-			PricingAccuracy:  cost.PricingAccurate,				SavingsPlanCoverage: 0.10, // SP commitment consumed
-				Lifecycle:           "on-demand",
+				InstanceID:       "i-def456",
+				InstanceType:     "c5.2xlarge",
+				Region:           "us-east-1",
+				AccountID:        "222222222222",
+				AvailabilityZone: "us-east-1b",
+				EffectiveCost:    0.10, // Covered by SP
+				CoverageType:     cost.CoverageComputeSavingsPlan,
+				PricingAccuracy:  cost.PricingAccurate, SavingsPlanCoverage: 0.10, // SP commitment consumed
+				Lifecycle: "on-demand",
 			},
 			"i-ghi789": {
 				InstanceID:       "i-ghi789",
@@ -63,7 +63,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 				AvailabilityZone: "us-west-2b",
 				EffectiveCost:    0.0416, // On-demand
 				CoverageType:     cost.CoverageOnDemand,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 		},
 		SavingsPlanUtilization: map[string]cost.SavingsPlanUtilization{
@@ -101,7 +101,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 		"cost_type":         "reserved_instance",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	assert.Equal(t, 0.10, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-def456",
@@ -111,7 +111,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 		"cost_type":         "compute_savings_plan",
 		"availability_zone": "us-east-1b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	assert.Equal(t, 0.0416, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ghi789",
@@ -121,7 +121,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	// Verify SP utilization metrics - EC2 Instance SP
 	assert.Equal(t, 75.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
@@ -199,7 +199,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15,
 				CoverageType:     cost.CoverageOnDemand,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 			"i-def456": {
 				InstanceID:       "i-def456",
@@ -209,7 +209,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 				AvailabilityZone: "us-east-1b",
 				EffectiveCost:    0.34,
 				CoverageType:     cost.CoverageOnDemand,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 		},
 		SavingsPlanUtilization: map[string]cost.SavingsPlanUtilization{},
@@ -227,7 +227,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	// Second update with only one instance (i-def456 terminated)
 	result2 := cost.CalculationResult{
@@ -240,7 +240,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15,
 				CoverageType:     cost.CoverageOnDemand,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 		},
 		SavingsPlanUtilization: map[string]cost.SavingsPlanUtilization{},
@@ -258,7 +258,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	// Verify i-def456 was removed (metric should be 0 or not exist after reset)
 	// After reset and not setting the metric, it should return 0
@@ -270,7 +270,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-east-1b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 }
 
 func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
@@ -289,7 +289,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15,
 				CoverageType:     cost.CoverageReservedInstance,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 			"i-ec2sp": {
 				InstanceID:          "i-ec2sp",
@@ -300,18 +300,18 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				EffectiveCost:       0.25,
 				SavingsPlanCoverage: 0.25, // SP commitment consumed
 				CoverageType:        cost.CoverageEC2InstanceSavingsPlan,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:           "on-demand",
+				PricingAccuracy:     cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 			"i-computesp": {
-				InstanceID:          "i-computesp",
-				InstanceType:        "c5.2xlarge",
-				Region:              "us-east-1",
-				AccountID:           "222222222222",
-				AvailabilityZone:    "us-east-1b",
-				EffectiveCost:       0.34,
-				CoverageType:        cost.CoverageComputeSavingsPlan,
-			PricingAccuracy:  cost.PricingAccurate,				SavingsPlanCoverage: 0.34, // SP commitment consumed
-				Lifecycle:           "on-demand",
+				InstanceID:       "i-computesp",
+				InstanceType:     "c5.2xlarge",
+				Region:           "us-east-1",
+				AccountID:        "222222222222",
+				AvailabilityZone: "us-east-1b",
+				EffectiveCost:    0.34,
+				CoverageType:     cost.CoverageComputeSavingsPlan,
+				PricingAccuracy:  cost.PricingAccurate, SavingsPlanCoverage: 0.34, // SP commitment consumed
+				Lifecycle: "on-demand",
 			},
 			"i-spot": {
 				InstanceID:       "i-spot",
@@ -321,7 +321,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				AvailabilityZone: "us-west-2b",
 				EffectiveCost:    0.05,
 				CoverageType:     cost.CoverageSpot,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "spot",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "spot",
 			},
 			"i-od": {
 				InstanceID:       "i-od",
@@ -331,7 +331,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				AvailabilityZone: "us-west-2c",
 				EffectiveCost:    0.0416,
 				CoverageType:     cost.CoverageOnDemand,
-			PricingAccuracy:  cost.PricingAccurate,				Lifecycle:        "on-demand",
+				PricingAccuracy:  cost.PricingAccurate, Lifecycle: "on-demand",
 			},
 		},
 		SavingsPlanUtilization: map[string]cost.SavingsPlanUtilization{},
@@ -350,7 +350,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "reserved_instance",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	assert.Equal(t, 0.25, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ec2sp",
@@ -360,7 +360,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "ec2_instance_savings_plan",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	assert.Equal(t, 0.34, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-computesp",
@@ -370,7 +370,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "compute_savings_plan",
 		"availability_zone": "us-east-1b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	assert.Equal(t, 0.05, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-spot",
@@ -380,7 +380,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "spot",
 		"availability_zone": "us-west-2b",
 		"lifecycle":         "spot",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 
 	assert.Equal(t, 0.0416, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-od",
@@ -390,7 +390,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2c",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy": "accurate",	})))
+		"pricing_accuracy":  "accurate"})))
 }
 
 func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
