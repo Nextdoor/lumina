@@ -210,8 +210,8 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 	cost1 := result.InstanceCosts["i-001"]
 	assert.Equal(t, "i-001", cost1.InstanceID)
 	assert.Equal(t, 1.00, cost1.ShelfPrice)
-	assert.InDelta(t, 0.28, cost1.EffectiveCost, 0.01) // Pays SP rate
-	assert.InDelta(t, 0.28, cost1.SavingsPlanCoverage, 0.01)
+	assert.InDelta(t, 0.28, cost1.EffectiveCost, 0.01)       // Pays SP rate
+	assert.InDelta(t, 0.72, cost1.SavingsPlanCoverage, 0.01) // Discount: $1.00 - $0.28
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost1.CoverageType)
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN)
 
@@ -219,8 +219,8 @@ func TestCalculatorWithEC2InstanceSavingsPlan(t *testing.T) {
 	cost2 := result.InstanceCosts["i-002"]
 	assert.Equal(t, "i-002", cost2.InstanceID)
 	assert.Equal(t, 2.00, cost2.ShelfPrice)
-	assert.InDelta(t, 0.56, cost2.EffectiveCost, 0.01) // Pays SP rate
-	assert.InDelta(t, 0.56, cost2.SavingsPlanCoverage, 0.01)
+	assert.InDelta(t, 0.56, cost2.EffectiveCost, 0.01)       // Pays SP rate
+	assert.InDelta(t, 1.44, cost2.SavingsPlanCoverage, 0.01) // Discount: $2.00 - $0.56
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost2.CoverageType)
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost2.SavingsPlanARN)
 
@@ -441,7 +441,7 @@ func TestCalculatorSPUtilizationMetrics(t *testing.T) {
 	cost := result.InstanceCosts["i-001"]
 	assert.Equal(t, 1.00, cost.ShelfPrice)
 	assert.InDelta(t, 0.28, cost.EffectiveCost, 0.01)
-	assert.InDelta(t, 0.28, cost.SavingsPlanCoverage, 0.01)
+	assert.InDelta(t, 0.72, cost.SavingsPlanCoverage, 0.01) // Discount: $1.00 - $0.28
 	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost.CoverageType)
 
 	// Verify SP utilization metrics
@@ -731,28 +731,31 @@ func TestCalculatorPartialRIAndSPOverlap(t *testing.T) {
 	assert.LessOrEqual(t, cost.SavingsPlanCoverage, cost.ShelfPrice,
 		"SP coverage exceeded shelf price - should be capped")
 
-	// Calculate expected values based on NEW algorithm
+	// Calculate expected values based on CORRECT algorithm
 	// 1. EC2 Instance SP (72% discount): rate = $1.00 * 0.28 = $0.28
 	//    Commitment $0.10 < rate $0.28, so partial coverage
 	//    Contributes $0.10, EffectiveCost = $1.00 - $0.10 = $0.90
+	//    SavingsPlanCoverage += $0.10 (the cost reduction)
 	//
-	// 2. Compute SP (66% discount): rate = $1.00 * 0.34 = $0.34
+	// 2. Compute SP (66% discount): rate = $0.90 * 0.34 = $0.34
 	//    Commitment $2.00 > rate $0.34, so full coverage
-	//    Contributes $0.34, EffectiveCost = $0.34 (pay SP rate)
+	//    EffectiveCost = $0.34 (pay SP rate)
+	//    SavingsPlanCoverage += ($0.90 - $0.34) = $0.56 (the cost reduction)
 	//
-	// Total SavingsPlanCoverage = $0.10 + $0.34 = $0.44
+	// Total SavingsPlanCoverage = $0.10 + $0.56 = $0.66 (the total discount)
 	// Final EffectiveCost = $0.34
 
-	expectedEC2Contribution := 0.10      // Limited by commitment
-	expectedComputeSPRate := 1.00 * 0.34 // 66% discount
+	expectedEC2Discount := 0.10            // Limited by commitment
+	expectedComputeDiscount := 0.90 - 0.34 // Cost reduction from Compute SP
+	expectedComputeSPRate := 0.34          // 66% discount on remaining $0.90
 
 	expectedEffectiveCost := expectedComputeSPRate // Fully covered by Compute SP
 	assert.InDelta(t, expectedEffectiveCost, cost.EffectiveCost, 0.001,
 		"EffectiveCost should equal Compute SP rate when fully covered")
 
-	expectedTotalSPCoverage := expectedEC2Contribution + expectedComputeSPRate
+	expectedTotalSPCoverage := expectedEC2Discount + expectedComputeDiscount
 	assert.InDelta(t, expectedTotalSPCoverage, cost.SavingsPlanCoverage, 0.001,
-		"Total SP coverage should be sum of both SP contributions")
+		"Total SP coverage should be sum of both SP discounts (not rates)")
 }
 
 // TestCalculatorNegativeCostPrevention is a comprehensive test ensuring no combination
@@ -1189,4 +1192,100 @@ func TestCalculatorInvariantViolationDetection(t *testing.T) {
 			calc.validateSavingsPlansInvariants([]aws.SavingsPlan{sp}, costs, utilization)
 		}, "Valid state should not trigger invariant violation")
 	})
+}
+
+// TestCalculatorMultipleSavingsPlansOnSameInstance tests the scenario where
+// multiple Savings Plans can apply to the same instance. This is the regression
+// test for the production bug where SavingsPlanCoverage was accumulating SP rates
+// instead of actual discounts, causing total coverage to exceed shelf price.
+//
+// Scenario: An instance with 5 Savings Plans that could all apply to it.
+// Bug: Each SP adds its rate to SavingsPlanCoverage, causing it to exceed shelf price.
+// Fix: SavingsPlanCoverage now tracks the actual cost reduction, not the SP rate.
+func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
+	calc := NewCalculator()
+	baseTime := testBaseTime()
+
+	// Create an instance with a relatively low shelf price
+	instance := aws.Instance{
+		InstanceID:       "i-multi-sp",
+		InstanceType:     "m5.large",
+		Region:           "us-west-2",
+		AccountID:        "123456789012",
+		AvailabilityZone: "us-west-2a",
+		State:            "running",
+		Lifecycle:        "on-demand",
+		LaunchTime:       baseTime,
+	}
+
+	// Create 5 EC2 Instance Savings Plans that all match the instance
+	// Each has enough commitment to partially cover the instance
+	savingsPlans := []aws.SavingsPlan{}
+	for i := 1; i <= 5; i++ {
+		savingsPlans = append(savingsPlans, aws.SavingsPlan{
+			SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-" + string(rune('0'+i)),
+			SavingsPlanType: "EC2Instance",
+			Region:          "us-west-2",
+			InstanceFamily:  "m5",
+			Commitment:      0.05, // Each SP has $0.05/hour commitment
+			AccountID:       "123456789012",
+			Start:           baseTime.Add(-24 * time.Hour),
+			End:             baseTime.Add(365 * 24 * time.Hour),
+		})
+	}
+
+	input := CalculationInput{
+		Instances:         []aws.Instance{instance},
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans:      savingsPlans,
+		SpotPrices:        make(map[string]float64),
+		OnDemandPrices: map[string]float64{
+			"m5.large:us-west-2": 0.10, // $0.10/hour shelf price
+		},
+	}
+
+	// This should NOT panic with the fix
+	// Before the fix: SavingsPlanCoverage would accumulate to ~$0.14 (5 * $0.028)
+	// After the fix: SavingsPlanCoverage should be the actual discount (~$0.072)
+	result := calc.Calculate(input)
+
+	// Verify the instance cost
+	cost := result.InstanceCosts["i-multi-sp"]
+	assert.Equal(t, "i-multi-sp", cost.InstanceID)
+	assert.Equal(t, 0.10, cost.ShelfPrice)
+
+	// The instance should be covered by multiple SPs
+	assert.Greater(t, cost.SavingsPlanCoverage, 0.0, "Instance should have SP coverage")
+
+	// CRITICAL: Total coverage must not exceed shelf price
+	totalCoverage := cost.RICoverage + cost.SavingsPlanCoverage
+	assert.LessOrEqual(t, totalCoverage, cost.ShelfPrice,
+		"Total coverage (RI + SP) must not exceed shelf price")
+
+	// The effective cost should be positive (one of the SPs is covering it)
+	assert.Greater(t, cost.EffectiveCost, 0.0, "Effective cost should be positive")
+	assert.Less(t, cost.EffectiveCost, cost.ShelfPrice, "Effective cost should be less than shelf price")
+
+	// Verify the cost reduction makes sense:
+	// ShelfPrice = EffectiveCost + SavingsPlanCoverage
+	expectedDiscount := cost.ShelfPrice - cost.EffectiveCost
+	assert.InDelta(t, expectedDiscount, cost.SavingsPlanCoverage, 0.001,
+		"SavingsPlanCoverage should equal the actual discount (ShelfPrice - EffectiveCost)")
+
+	// Verify SP utilization is tracked correctly
+	// At least one SP should have utilization (the first one that matched)
+	hasUtilization := false
+	for _, sp := range savingsPlans {
+		util, exists := result.SavingsPlanUtilization[sp.SavingsPlanARN]
+		assert.True(t, exists, "SP utilization should be tracked")
+		if util.CurrentUtilizationRate > 0 {
+			hasUtilization = true
+		}
+	}
+	assert.True(t, hasUtilization, "At least one SP should have utilization")
+
+	// Verify aggregates are sane
+	assert.Equal(t, 0.10, result.TotalShelfPrice, "Total shelf price should match instance shelf price")
+	assert.Greater(t, result.TotalSavings, 0.0, "Should have savings from SP coverage")
+	assert.Less(t, result.TotalEstimatedCost, result.TotalShelfPrice, "Estimated cost should be less than shelf price")
 }
