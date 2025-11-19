@@ -160,7 +160,7 @@ func applyEC2InstanceSavingsPlan(
 		//   - m5.xlarge on-demand rate: $0.192/hour
 		//   - m5.xlarge with SP: $0.192 * 0.72 = $0.138/hour (28% discount)
 		odRate := cost.ShelfPrice
-		spRate := getSavingsPlanRate(calc, sp, inst.InstanceType, inst.Region, odRate)
+		spRate, isAccurate := getSavingsPlanRate(calc, sp, inst.InstanceType, inst.Region, odRate)
 
 		if odRate <= 0 || spRate <= 0 {
 			continue // Can't calculate savings - skip this instance
@@ -183,6 +183,7 @@ func applyEC2InstanceSavingsPlan(
 			SavingsPercent: savingsPct,
 			SPRate:         spRate,
 			ODRate:         odRate,
+			IsAccurate:     isAccurate,
 		})
 	}
 
@@ -345,6 +346,12 @@ func applyEC2InstanceSavingsPlan(
 
 		if cost.SavingsPlanCoverage > 0 {
 			cost.CoverageType = CoverageEC2InstanceSavingsPlan
+			// Set pricing accuracy based on whether we used actual API rates or fallback estimates
+			if item.IsAccurate {
+				cost.PricingAccuracy = PricingAccurate // Actual SP rate from DescribeSavingsPlanRates API
+			} else {
+				cost.PricingAccuracy = PricingEstimated // Estimated using configured discount multiplier
+			}
 		}
 
 		// Consume SP commitment
@@ -452,7 +459,7 @@ func applyComputeSavingsPlan(
 		// Calculate savings percentage and SP rate for this instance
 		// (Same logic as EC2 Instance SPs - see detailed comments there)
 		odRate := cost.ShelfPrice
-		spRate := getSavingsPlanRate(calc, sp, inst.InstanceType, inst.Region, odRate)
+		spRate, isAccurate := getSavingsPlanRate(calc, sp, inst.InstanceType, inst.Region, odRate)
 
 		if odRate <= 0 || spRate <= 0 {
 			continue
@@ -465,6 +472,7 @@ func applyComputeSavingsPlan(
 			SavingsPercent: savingsPct,
 			SPRate:         spRate,
 			ODRate:         odRate,
+			IsAccurate:     isAccurate,
 		})
 	}
 
@@ -567,6 +575,12 @@ func applyComputeSavingsPlan(
 		// the CoverageType as EC2InstanceSavingsPlan (the more specific/higher priority type)
 		if cost.SavingsPlanCoverage > 0 && cost.CoverageType == CoverageOnDemand {
 			cost.CoverageType = CoverageComputeSavingsPlan
+			// Set pricing accuracy based on whether we used actual API rates or fallback estimates
+			if item.IsAccurate {
+				cost.PricingAccuracy = PricingAccurate // Actual SP rate from DescribeSavingsPlanRates API
+			} else {
+				cost.PricingAccuracy = PricingEstimated // Estimated using configured discount multiplier
+			}
 		}
 
 		// Consume SP commitment
@@ -604,16 +618,19 @@ func matchesEC2InstanceSP(instance *aws.Instance, sp *aws.SavingsPlan) bool {
 	return true
 }
 
-// getSavingsPlanRate returns the Savings Plan rate ($/hour) for a given instance type.
+// getSavingsPlanRate returns the Savings Plan rate ($/hour) for a given instance type,
+// along with a boolean indicating whether the rate is accurate (from API) or estimated (from config).
 // This uses a two-tier lookup strategy:
 //
 //  1. Tier 1: Try to get actual rate from DescribeSavingsPlanRates API (via PricingCache)
 //     - These are the exact rates that were locked in when the SP was purchased
 //     - Provided by the SP Rates Reconciler which queries AWS periodically
+//     - Returns (rate, true) to indicate accurate pricing
 //
 //  2. Tier 2: Fall back to configured discount multipliers (from Config)
 //     - Conservative defaults: ~28% discount (0.72 multiplier) for 1-year commitments
 //     - Can be configured for 3-year: ~50% discount (0.50 multiplier)
+//     - Returns (rate, false) to indicate estimated pricing
 //
 // Formula: effectiveCost = onDemandRate * multiplier
 // Example: $1.00 on-demand * 0.72 = $0.72 with 28% discount
@@ -623,11 +640,11 @@ func getSavingsPlanRate(
 	instanceType string,
 	region string,
 	onDemandRate float64,
-) float64 {
+) (float64, bool) {
 	// Tier 1: Try to get actual rate from DescribeSavingsPlanRates API
 	if calc.PricingCache != nil {
 		if rate, found := calc.PricingCache.GetSPRate(sp.SavingsPlanARN, instanceType, region); found {
-			return rate
+			return rate, true // Accurate: actual SP rate from API
 		}
 	}
 
@@ -650,7 +667,7 @@ func getSavingsPlanRate(
 
 	// Calculate the SP rate: onDemandRate * rateMultiplier
 	// Example: $1.00 * 0.72 = $0.72 (you pay 72%, save 28%)
-	return onDemandRate * rateMultiplier
+	return onDemandRate * rateMultiplier, false // Estimated: using fallback multiplier
 }
 
 // extractInstanceFamily extracts the instance family from an instance type.
@@ -678,4 +695,5 @@ type instanceWithSavings struct {
 	SavingsPercent float64 // (ODRate - SPRate) / ODRate
 	SPRate         float64 // Savings Plan rate ($/hour)
 	ODRate         float64 // On-Demand rate ($/hour)
+	IsAccurate     bool    // Whether SPRate came from actual API data or estimated
 }

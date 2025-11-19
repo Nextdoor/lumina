@@ -65,6 +65,25 @@ const (
 	CoverageOnDemand CoverageType = "on_demand"
 )
 
+// PricingAccuracy indicates whether the cost calculation uses actual AWS API data
+// or estimated/fallback values.
+type PricingAccuracy string
+
+const (
+	// PricingAccurate indicates the cost is based on actual data from AWS APIs:
+	//   - Reserved Instance: actual RI rates
+	//   - Savings Plan: actual SP rates from DescribeSavingsPlanRates
+	//   - Spot: actual spot market price from AWS Spot Pricing API
+	//   - On-demand: actual on-demand price from AWS Pricing API
+	PricingAccurate PricingAccuracy = "accurate"
+
+	// PricingEstimated indicates the cost uses fallback/estimated values:
+	//   - Missing SP rates: using on-demand price as estimate
+	//   - Missing spot price: using on-demand price as estimate
+	//   - Missing on-demand price: no cost calculated
+	PricingEstimated PricingAccuracy = "estimated"
+)
+
 // InstanceCost represents the calculated cost for a single EC2 instance,
 // including the breakdown of how that cost was determined (RI, SP, or OnDemand).
 type InstanceCost struct {
@@ -96,6 +115,10 @@ type InstanceCost struct {
 	// CoverageType indicates how this instance's cost is primarily determined.
 	// Use the Coverage* constants defined in this package.
 	CoverageType CoverageType
+
+	// PricingAccuracy indicates whether the cost calculation uses actual AWS API data
+	// or estimated/fallback values. Use the PricingAccurate or PricingEstimated constants.
+	PricingAccuracy PricingAccuracy
 
 	// RICoverage is the amount of cost covered by a Reserved Instance ($/hour).
 	// For RI-covered instances, this is typically equal to ShelfPrice, and

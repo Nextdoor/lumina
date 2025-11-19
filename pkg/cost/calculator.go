@@ -169,6 +169,7 @@ func (c *Calculator) initializeInstanceCosts(input CalculationInput, costs map[s
 			ShelfPrice:          shelfPrice,
 			EffectiveCost:       shelfPrice,       // Will be reduced by RIs/SPs
 			CoverageType:        CoverageOnDemand, // May change to RI/SP
+			PricingAccuracy:     PricingAccurate,  // On-demand pricing from AWS Pricing API is accurate
 			RICoverage:          0,
 			SavingsPlanCoverage: 0,
 			SavingsPlanARN:      "",
@@ -247,6 +248,13 @@ func (c *Calculator) applySpotPricing(input CalculationInput, costs map[string]*
 		cost.OnDemandCost = 0        // Not paying on-demand rate
 		cost.RICoverage = 0          // Reset any incorrectly applied RI coverage
 		cost.SavingsPlanCoverage = 0 // Reset any incorrectly applied SP coverage
+
+		// Set pricing accuracy based on whether we have actual spot pricing data
+		if spotPrice > 0 {
+			cost.PricingAccuracy = PricingAccurate // Actual spot price from AWS Spot Pricing API
+		} else {
+			cost.PricingAccuracy = PricingEstimated // Using fallback (currently $0, will be on-demand estimate in future)
+		}
 		cost.IsSpot = true           // Mark as spot instance
 		// Note: cost is already a pointer, no need to reassign
 	}
