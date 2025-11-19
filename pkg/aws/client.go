@@ -68,18 +68,44 @@ type SavingsPlansClient interface {
 	// DescribeSavingsPlanRates returns the actual rates for a specific purchased Savings Plan.
 	// This queries the AWS Savings Plans API for the rates that were locked in at purchase time.
 	//
+	// Filters dramatically reduce data transfer and memory usage:
+	//   - Without filters: ~20,000-128,000 rates per SP (all instance types × all regions × all OS × tenancy)
+	//   - With filters: ~50-200 rates per SP (only what you actually use)
+	//   - Reduction: ~99.5%
+	//
 	// Parameters:
 	//   - savingsPlanId: The Savings Plan ID (e.g., "a0ea018f-ddb7-44b1-ae44-ae2dd4292dda")
+	//   - instanceTypes: Optional list of instance types to filter by (e.g., ["m5.xlarge", "c5.2xlarge"])
+	//     If empty, returns rates for all instance types (not recommended)
+	//   - regions: Optional list of regions to filter by (e.g., ["us-west-2", "us-east-1"])
+	//     If empty, returns rates for all regions (not recommended - 30+ regions)
+	//   - operatingSystems: Optional list of OS types to filter by (e.g., ["Linux"])
+	//     AWS uses "Linux/UNIX" or "Windows" as values
+	//     If empty, returns rates for all OS types
+	//   - tenancies: Optional list of tenancy types to filter by (e.g., ["shared", "dedicated", "host"])
+	//     AWS returns rates for all tenancies if not filtered
+	//     If empty, returns rates for all tenancy types (client-side filtering)
 	//
 	// Returns:
 	//   - Slice of SavingsPlanRate with the actual rates for this specific SP
 	//   - These are the PURCHASE-TIME rates that apply to this SP, not current market rates
 	//
+	// Note: AWS does not provide a tenancy filter in the API, so tenancy filtering is performed
+	// client-side after fetching the rates.
+	//
 	// Example:
-	//   rates, err := client.DescribeSavingsPlanRates(ctx, "a0ea018f-ddb7-44b1-ae44-ae2dd4292dda")
+	//   rates, err := client.DescribeSavingsPlanRates(ctx, "abc-123",
+	//     []string{"m5.xlarge", "c5.2xlarge"},  // instance types
+	//     []string{"us-west-2", "us-east-1"},   // regions
+	//     []string{"Linux"},                     // operating systems
+	//     []string{"shared"})                    // tenancies
 	DescribeSavingsPlanRates(
 		ctx context.Context,
 		savingsPlanId string,
+		instanceTypes []string,
+		regions []string,
+		operatingSystems []string,
+		tenancies []string,
 	) ([]SavingsPlanRate, error)
 }
 

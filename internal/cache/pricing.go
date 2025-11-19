@@ -23,6 +23,16 @@ import (
 	"time"
 )
 
+const (
+	// OSLinux represents the normalized Linux operating system value.
+	// This matches EC2 instances with empty Platform field and SP rates for Linux/UNIX, RHEL, SUSE.
+	OSLinux = "linux"
+
+	// OSWindows represents the normalized Windows operating system value.
+	// This matches EC2 instances with Platform="windows" and SP rates for Windows.
+	OSWindows = "windows"
+)
+
 // PricingCache provides thread-safe access to AWS pricing data.
 // It stores on-demand pricing for EC2 instances and Savings Plan offering rates.
 //
@@ -224,27 +234,71 @@ func (c *PricingCache) IsStale(maxAge time.Duration) bool {
 	return time.Since(c.lastUpdated) > maxAge
 }
 
-// GetSPRate returns the Savings Plan rate for a specific SP ARN, instance type, and region.
+// GetSPRate returns the Savings Plan rate for a specific SP ARN, instance type, region, tenancy, and OS.
 // Returns the rate and true if found, or 0 and false if not found.
 //
 // This is an O(1) lookup operation.
 //
 // All keys are normalized to lowercase for consistent lookups regardless of input casing.
-func (c *PricingCache) GetSPRate(spArn, instanceType, region string) (float64, bool) {
+// The tenancy parameter should be "default" (shared), "dedicated", or "host".
+// The operatingSystem parameter should be normalized ("linux" or "windows").
+func (c *PricingCache) GetSPRate(spArn, instanceType, region, tenancy, operatingSystem string) (float64, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	// Normalize operating system to match cached values
+	// Empty string (from EC2 instances with no Platform field) should normalize to "linux"
+	normalizedOS := normalizeOS(operatingSystem)
+
 	// Normalize to lowercase for case-insensitive lookups
-	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", spArn, instanceType, region))
+	// Key format: spArn,instanceType,region,tenancy,os (comma-separated to avoid ARN colon conflicts)
+	key := strings.ToLower(fmt.Sprintf("%s,%s,%s,%s,%s", spArn, instanceType, region, tenancy, normalizedOS))
 	rate, exists := c.spRates[key]
 	return rate, exists
+}
+
+// normalizeOS normalizes operating system values to a consistent format.
+// This ensures EC2 Platform values and Savings Plans ProductDescription values
+// map to the same normalized value for cache lookups.
+//
+// EC2 Platform values:
+//   - ""        → "linux" (most common: ~99% of instances)
+//   - "linux"   → "linux"
+//   - "windows" → "windows"
+//
+// Savings Plans ProductDescription values:
+//   - "Linux/UNIX", "Red Hat Enterprise Linux", "SUSE Linux" → "linux"
+//   - "Windows" → "windows"
+func normalizeOS(input string) string {
+	normalized := strings.ToLower(strings.TrimSpace(input))
+
+	// Empty string from EC2 instances = Linux
+	if normalized == "" || normalized == OSLinux {
+		return OSLinux
+	}
+
+	// Direct match
+	if normalized == OSWindows {
+		return OSWindows
+	}
+
+	// Contains checks for Savings Plans ProductDescription values
+	if strings.Contains(normalized, "linux") || strings.Contains(normalized, "unix") {
+		return OSLinux
+	}
+	if strings.Contains(normalized, "windows") {
+		return OSWindows
+	}
+
+	// Default to linux (most common case)
+	return OSLinux
 }
 
 // AddSPRates adds new Savings Plan rates to the cache without removing existing rates.
 // This is used by the SP rates reconciler to add rates for each Savings Plan.
 //
-// The input map should use keys in the format "spArn:instanceType:region".
-// Example: "arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2" -> 0.0537
+// The input map should use keys in the format "spArn,instanceType,region,tenancy,os" (comma-separated).
+// Example: "arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux" -> 0.0537
 // All keys are normalized to lowercase for case-insensitive lookups.
 //
 // Returns the number of NEW rates added (doesn't count updates to existing rates).
@@ -304,13 +358,15 @@ type SPRateStats struct {
 	AgeHours    float64
 }
 
-// HasSPRate checks if a rate exists for the given SP ARN, instance type, and region.
+// HasSPRate checks if a rate exists for the given SP ARN, instance type, region, tenancy, and OS.
 // This is useful for the reconciler to determine which rates are missing.
-func (c *PricingCache) HasSPRate(spArn, instanceType, region string) bool {
+func (c *PricingCache) HasSPRate(spArn, instanceType, region, tenancy, operatingSystem string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", spArn, instanceType, region))
+	// Normalize OS before lookup (same as GetSPRate)
+	normalizedOS := normalizeOS(operatingSystem)
+	key := strings.ToLower(fmt.Sprintf("%s,%s,%s,%s,%s", spArn, instanceType, region, tenancy, normalizedOS))
 	_, exists := c.spRates[key]
 	return exists
 }
@@ -326,10 +382,10 @@ func (c *PricingCache) HasAnySPRate(spArn string) bool {
 
 	// Normalize SP ARN to lowercase for case-insensitive comparison
 	normalizedArn := strings.ToLower(spArn)
-	arnPrefix := normalizedArn + ":"
+	arnPrefix := normalizedArn + ","
 
 	// Check if any key starts with this SP ARN
-	// Keys are formatted as "spArn:instanceType:region"
+	// Keys are formatted as "spArn,instanceType,region,tenancy" (comma-separated)
 	for key := range c.spRates {
 		if strings.HasPrefix(key, arnPrefix) {
 			return true
@@ -337,4 +393,115 @@ func (c *PricingCache) HasAnySPRate(spArn string) bool {
 	}
 
 	return false
+}
+
+// GetMissingSPRatesForInstances returns the instance types that are missing from the cache
+// for a given Savings Plan. This enables incremental rate fetching for newly discovered
+// instance types without refetching rates that already exist.
+//
+// Parameters:
+//   - spArn: The Savings Plan ARN to check
+//   - instanceTypes: List of instance types to check (e.g., ["m5.xlarge", "r8g.large"])
+//   - regions: List of regions to check (e.g., ["us-west-2", "us-east-1"])
+//   - tenancies: List of tenancies to check (e.g., ["default", "dedicated"])
+//   - operatingSystems: List of OS types to check (e.g., ["linux", "windows"])
+//
+// Returns three slices containing the unique values that need fetching:
+//   - missingInstanceTypes: Instance types not found in cache
+//   - missingRegions: Regions not found in cache
+//   - missingTenancies: Tenancies not found in cache
+//   - missingOS: OS types not found in cache
+func (c *PricingCache) GetMissingSPRatesForInstances(
+	spArn string,
+	instanceTypes []string,
+	regions []string,
+	tenancies []string,
+	operatingSystems []string,
+) ([]string, []string, []string, []string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Normalize SP ARN to lowercase for case-insensitive comparison
+	normalizedArn := strings.ToLower(spArn)
+
+	// Track which combinations exist in cache
+	// We need to check all combinations to find what's missing
+	type cacheKey struct {
+		instanceType string
+		region       string
+		tenancy      string
+		os           string
+	}
+	existingKeys := make(map[cacheKey]bool)
+
+	// Build prefix for this SP ARN
+	arnPrefix := normalizedArn + ","
+
+	// Scan cache for existing rates for this SP
+	for key := range c.spRates {
+		if strings.HasPrefix(key, arnPrefix) {
+			// Parse the key: "spArn,instanceType,region,tenancy,os"
+			parts := strings.Split(key, ",")
+			if len(parts) == 5 {
+				existingKeys[cacheKey{
+					instanceType: parts[1],
+					region:       parts[2],
+					tenancy:      parts[3],
+					os:           parts[4],
+				}] = true
+			}
+		}
+	}
+
+	// Find missing instance types, regions, tenancies, and OS
+	missingInstanceTypes := make(map[string]bool)
+	missingRegions := make(map[string]bool)
+	missingTenancies := make(map[string]bool)
+	missingOS := make(map[string]bool)
+
+	// Check each combination to see if it exists in cache
+	for _, instanceType := range instanceTypes {
+		for _, region := range regions {
+			for _, tenancy := range tenancies {
+				for _, os := range operatingSystems {
+					key := cacheKey{
+						instanceType: instanceType,
+						region:       region,
+						tenancy:      tenancy,
+						os:           os,
+					}
+					if !existingKeys[key] {
+						// This combination is missing
+						missingInstanceTypes[instanceType] = true
+						missingRegions[region] = true
+						missingTenancies[tenancy] = true
+						missingOS[os] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Convert maps to slices
+	missingInstanceTypesSlice := make([]string, 0, len(missingInstanceTypes))
+	for it := range missingInstanceTypes {
+		missingInstanceTypesSlice = append(missingInstanceTypesSlice, it)
+	}
+
+	missingRegionsSlice := make([]string, 0, len(missingRegions))
+	for r := range missingRegions {
+		missingRegionsSlice = append(missingRegionsSlice, r)
+	}
+
+	missingTenanciesSlice := make([]string, 0, len(missingTenancies))
+	for t := range missingTenancies {
+		missingTenanciesSlice = append(missingTenanciesSlice, t)
+	}
+
+	missingOSSlice := make([]string, 0, len(missingOS))
+	for o := range missingOS {
+		missingOSSlice = append(missingOSSlice, o)
+	}
+
+	return missingInstanceTypesSlice, missingRegionsSlice, missingTenanciesSlice, missingOSSlice
 }

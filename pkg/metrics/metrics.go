@@ -88,7 +88,7 @@ type Metrics struct {
 	// EC2Instance indicates the presence of an EC2 instance.
 	// Value is always 1 when the instance exists and is running. When the instance
 	// is stopped or terminated, the metric is deleted entirely (not set to 0).
-	// Labels: account_id, region, instance_type, availability_zone, instance_id
+	// Labels: account_id, region, instance_type, availability_zone, instance_id, tenancy, platform
 	EC2Instance *prometheus.GaugeVec
 
 	// EC2InstanceCount tracks the count of running instances by instance family.
@@ -191,7 +191,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		EC2Instance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance",
 			Help: "Indicates presence of a running EC2 instance (1 = exists, metric absent = stopped or terminated)",
-		}, []string{"account_id", "region", "instance_type", "availability_zone", "instance_id"}),
+		}, []string{"account_id", "region", "instance_type", "availability_zone", "instance_id", "tenancy", "platform"}),
 
 		EC2InstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_count",

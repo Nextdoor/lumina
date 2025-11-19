@@ -89,6 +89,10 @@ type Instance struct {
 	// Platform is the OS platform (e.g., "linux", "windows")
 	Platform string
 
+	// Tenancy indicates whether the instance runs on shared or dedicated hardware
+	// Values: "default" (shared), "dedicated", "host"
+	Tenancy string
+
 	// SpotInstanceRequestID is the spot instance request ID if this is a spot instance
 	SpotInstanceRequestID string
 }
@@ -264,6 +268,9 @@ type SavingsPlanRate struct {
 
 	// Operation is the operation (e.g., "RunInstances:0202")
 	Operation string
+
+	// ProductDescription is the OS type (e.g., "Linux/UNIX", "Windows")
+	ProductDescription string
 
 	// Tenancy is "shared", "dedicated", or "host"
 	Tenancy string

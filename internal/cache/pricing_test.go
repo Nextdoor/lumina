@@ -305,31 +305,51 @@ func TestConcurrency(t *testing.T) {
 func TestAddSPRates(t *testing.T) {
 	cache := NewPricingCache()
 
-	// Add initial SP rates
+	// Add initial SP rates (key format: spArn,instanceType,region,tenancy,os)
 	rates := map[string]float64{
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2":  0.0537,
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.2xlarge:us-west-2": 0.1074,
-		"arn:aws:savingsplans::456:savingsplan/def:c5.xlarge:us-east-1":  0.0450,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":   0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.2xlarge,us-west-2,default,linux":  0.1074,
+		"arn:aws:savingsplans::456:savingsplan/def,c5.xlarge,us-east-1,default,linux":   0.0450,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,dedicated,linux": 0.1708, // Same instance, different tenancy
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows": 0.1074, // Same instance, different OS
 	}
 
 	newCount := cache.AddSPRates(rates)
-	if newCount != 3 {
-		t.Errorf("expected 3 new rates, got %d", newCount)
+	if newCount != 5 {
+		t.Errorf("expected 5 new rates, got %d", newCount)
 	}
 
-	// Verify rates can be retrieved
-	rate, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2")
+	// Verify rates can be retrieved with tenancy and OS
+	rate, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux")
 	if !exists {
-		t.Error("expected SP rate to exist")
+		t.Error("expected SP rate to exist for default tenancy, linux")
 	}
 	if rate != 0.0537 {
 		t.Errorf("expected rate 0.0537, got %.4f", rate)
 	}
 
+	// Verify dedicated tenancy rate is different
+	rate, exists = cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "linux")
+	if !exists {
+		t.Error("expected SP rate to exist for dedicated tenancy, linux")
+	}
+	if rate != 0.1708 {
+		t.Errorf("expected rate 0.1708, got %.4f", rate)
+	}
+
+	// Verify windows rate is different
+	rate, exists = cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "windows")
+	if !exists {
+		t.Error("expected SP rate to exist for default tenancy, windows")
+	}
+	if rate != 0.1074 {
+		t.Errorf("expected rate 0.1074, got %.4f", rate)
+	}
+
 	// Add overlapping rates (should not count as new)
 	rates2 := map[string]float64{
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2": 0.0537, // Duplicate
-		"arn:aws:savingsplans::123:savingsplan/abc:r5.xlarge:us-west-2": 0.0600, // New
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux": 0.0537, // Duplicate
+		"arn:aws:savingsplans::123:savingsplan/abc,r5.xlarge,us-west-2,default,linux": 0.0600, // New
 	}
 
 	newCount = cache.AddSPRates(rates2)
@@ -338,8 +358,8 @@ func TestAddSPRates(t *testing.T) {
 	}
 
 	stats := cache.GetSPRateStats()
-	if stats.TotalRates != 4 {
-		t.Errorf("expected 4 total rates, got %d", stats.TotalRates)
+	if stats.TotalRates != 6 {
+		t.Errorf("expected 6 total rates, got %d", stats.TotalRates)
 	}
 }
 
@@ -348,29 +368,51 @@ func TestHasSPRate(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Empty cache
-	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2") {
+	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux") {
 		t.Error("expected rate not to exist in empty cache")
 	}
 
-	// Add rates
+	// Add rates with different tenancies and OS
 	rates := map[string]float64{
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2":  0.0537,
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.2xlarge:us-west-2": 0.1074,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":   0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.2xlarge,us-west-2,default,linux":  0.1074,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,dedicated,linux": 0.1708,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows": 0.1074,
 	}
 	cache.AddSPRates(rates)
 
-	// Check existing rate
-	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2") {
-		t.Error("expected rate to exist")
+	// Check existing rate with default tenancy, linux
+	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux") {
+		t.Error("expected rate to exist for default tenancy, linux")
+	}
+
+	// Check existing rate with dedicated tenancy, linux
+	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "linux") {
+		t.Error("expected rate to exist for dedicated tenancy, linux")
+	}
+
+	// Check existing rate with default tenancy, windows
+	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "windows") {
+		t.Error("expected rate to exist for default tenancy, windows")
+	}
+
+	// Check non-existent rate (wrong tenancy)
+	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "host", "linux") {
+		t.Error("expected rate not to exist for host tenancy")
+	}
+
+	// Check non-existent rate (wrong OS)
+	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "windows") {
+		t.Error("expected rate not to exist for dedicated tenancy, windows")
 	}
 
 	// Check non-existent rate (different instance type)
-	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "c5.xlarge", "us-west-2") {
+	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "c5.xlarge", "us-west-2", "default", "linux") {
 		t.Error("expected rate not to exist")
 	}
 
 	// Check non-existent rate (different SP)
-	if cache.HasSPRate("arn:aws:savingsplans::456:savingsplan/def", "m5.xlarge", "us-west-2") {
+	if cache.HasSPRate("arn:aws:savingsplans::456:savingsplan/def", "m5.xlarge", "us-west-2", "default", "linux") {
 		t.Error("expected rate not to exist")
 	}
 }
@@ -388,12 +430,14 @@ func TestHasAnySPRate(t *testing.T) {
 		t.Error("expected no rates for SP in empty cache")
 	}
 
-	// Add rates for SP1 and SP2
+	// Add rates for SP1 and SP2 (with tenancy and OS)
 	rates := map[string]float64{
-		spArn1 + ":m5.xlarge:us-west-2":  0.0537,
-		spArn1 + ":m5.2xlarge:us-west-2": 0.1074,
-		spArn1 + ":c5.xlarge:us-east-1":  0.0450,
-		spArn2 + ":r5.xlarge:us-west-2":  0.0600,
+		spArn1 + ",m5.xlarge,us-west-2,default,linux":   0.0537,
+		spArn1 + ",m5.2xlarge,us-west-2,default,linux":  0.1074,
+		spArn1 + ",c5.xlarge,us-east-1,default,linux":   0.0450,
+		spArn1 + ",m5.xlarge,us-west-2,dedicated,linux": 0.1708, // Same instance, different tenancy
+		spArn1 + ",m5.xlarge,us-west-2,default,windows": 0.1074, // Same instance, different OS
+		spArn2 + ",r5.xlarge,us-west-2,default,linux":   0.0600,
 	}
 	cache.AddSPRates(rates)
 
@@ -424,19 +468,21 @@ func TestGetAllSPRates(t *testing.T) {
 	cache := NewPricingCache()
 
 	rates := map[string]float64{
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2": 0.0537,
-		"arn:aws:savingsplans::456:savingsplan/def:c5.xlarge:us-east-1": 0.0450,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":   0.0537,
+		"arn:aws:savingsplans::456:savingsplan/def,c5.xlarge,us-east-1,default,linux":   0.0450,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,dedicated,linux": 0.1708,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows": 0.1074,
 	}
 	cache.AddSPRates(rates)
 
 	allRates := cache.GetAllSPRates()
-	if len(allRates) != 2 {
-		t.Errorf("expected 2 rates, got %d", len(allRates))
+	if len(allRates) != 4 {
+		t.Errorf("expected 4 rates, got %d", len(allRates))
 	}
 
 	// Verify it's a copy (modifications don't affect cache)
-	allRates["test:key:region"] = 999.99
-	if cache.HasSPRate("test", "key", "region") {
+	allRates["test,key,region,tenancy,os"] = 999.99
+	if cache.HasSPRate("test", "key", "region", "tenancy", "os") {
 		t.Error("external modifications should not affect cache")
 	}
 }
@@ -451,22 +497,205 @@ func TestSPRateStats(t *testing.T) {
 		t.Errorf("expected 0 rates, got %d", stats.TotalRates)
 	}
 
-	// Add rates
+	// Add rates (with tenancy and OS)
 	rates := map[string]float64{
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.xlarge:us-west-2":  0.0537,
-		"arn:aws:savingsplans::123:savingsplan/abc:m5.2xlarge:us-west-2": 0.1074,
-		"arn:aws:savingsplans::456:savingsplan/def:c5.xlarge:us-east-1":  0.0450,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":   0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.2xlarge,us-west-2,default,linux":  0.1074,
+		"arn:aws:savingsplans::456:savingsplan/def,c5.xlarge,us-east-1,default,linux":   0.0450,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,dedicated,linux": 0.1708,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows": 0.1074,
 	}
 	cache.AddSPRates(rates)
 
 	stats = cache.GetSPRateStats()
-	if stats.TotalRates != 3 {
-		t.Errorf("expected 3 rates, got %d", stats.TotalRates)
+	if stats.TotalRates != 5 {
+		t.Errorf("expected 5 rates, got %d", stats.TotalRates)
 	}
 	if stats.AgeHours < 0 {
 		t.Errorf("age should be non-negative, got %.2f", stats.AgeHours)
 	}
 	if stats.AgeHours > 1 {
 		t.Errorf("fresh cache should be < 1 hour old, got %.2f", stats.AgeHours)
+	}
+}
+
+// TestGetMissingSPRatesForInstances_NoCachedRates tests finding missing rates
+// when no rates exist in cache.
+func TestGetMissingSPRatesForInstances_NoCachedRates(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Check for missing rates when cache is empty
+	missingInstanceTypes, missingRegions, missingTenancies, missingOS := cache.GetMissingSPRatesForInstances(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		[]string{"m5.xlarge", "r5.2xlarge"},
+		[]string{"us-west-2", "us-east-1"},
+		[]string{"default", "dedicated"},
+		[]string{"linux", "windows"},
+	)
+
+	// All should be missing since cache is empty
+	if len(missingInstanceTypes) != 2 {
+		t.Errorf("expected 2 missing instance types, got %d", len(missingInstanceTypes))
+	}
+	if len(missingRegions) != 2 {
+		t.Errorf("expected 2 missing regions, got %d", len(missingRegions))
+	}
+	if len(missingTenancies) != 2 {
+		t.Errorf("expected 2 missing tenancies, got %d", len(missingTenancies))
+	}
+	if len(missingOS) != 2 {
+		t.Errorf("expected 2 missing OS, got %d", len(missingOS))
+	}
+}
+
+// TestGetMissingSPRatesForInstances_AllCached tests finding missing rates
+// when all rates exist in cache.
+func TestGetMissingSPRatesForInstances_AllCached(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Add all combinations for m5.xlarge in us-west-2
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":     0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows":   0.1074,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,dedicated,linux":   0.1708,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,dedicated,windows": 0.2148,
+	}
+	cache.AddSPRates(rates)
+
+	// Check for missing rates - should find none
+	missingInstanceTypes, missingRegions, missingTenancies, missingOS := cache.GetMissingSPRatesForInstances(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		[]string{"m5.xlarge"},
+		[]string{"us-west-2"},
+		[]string{"default", "dedicated"},
+		[]string{"linux", "windows"},
+	)
+
+	// Nothing should be missing
+	if len(missingInstanceTypes) != 0 {
+		t.Errorf("expected 0 missing instance types, got %d: %v", len(missingInstanceTypes), missingInstanceTypes)
+	}
+	if len(missingRegions) != 0 {
+		t.Errorf("expected 0 missing regions, got %d: %v", len(missingRegions), missingRegions)
+	}
+	if len(missingTenancies) != 0 {
+		t.Errorf("expected 0 missing tenancies, got %d: %v", len(missingTenancies), missingTenancies)
+	}
+	if len(missingOS) != 0 {
+		t.Errorf("expected 0 missing OS, got %d: %v", len(missingOS), missingOS)
+	}
+}
+
+// TestGetMissingSPRatesForInstances_PartiallyCached tests finding missing rates
+// when some rates exist in cache but others are missing.
+func TestGetMissingSPRatesForInstances_PartiallyCached(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Add rates for m5.xlarge and r5.xlarge in us-west-2, default tenancy only
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":   0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows": 0.1074,
+		"arn:aws:savingsplans::123:savingsplan/abc,r5.xlarge,us-west-2,default,linux":   0.0600,
+	}
+	cache.AddSPRates(rates)
+
+	// Check for missing rates - requesting r8g.large (new instance type)
+	// and dedicated tenancy (new tenancy)
+	missingInstanceTypes, missingRegions, missingTenancies, missingOS := cache.GetMissingSPRatesForInstances(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		[]string{"m5.xlarge", "r5.xlarge", "r8g.large"}, // r8g.large is new
+		[]string{"us-west-2"},
+		[]string{"default", "dedicated"}, // dedicated is new
+		[]string{"linux", "windows"},
+	)
+
+	// All instance types should be missing because dedicated tenancy is missing for all of them
+	// r8g.large is completely missing, m5.xlarge and r5.xlarge are missing dedicated+windows combinations
+	if len(missingInstanceTypes) != 3 {
+		t.Errorf("expected 3 missing instance types, got %d: %v", len(missingInstanceTypes), missingInstanceTypes)
+	}
+
+	// us-west-2 should be in missing regions because dedicated tenancy is missing
+	if len(missingRegions) != 1 || missingRegions[0] != "us-west-2" {
+		t.Errorf("expected missing regions [us-west-2], got %v", missingRegions)
+	}
+
+	// Both tenancies should be missing:
+	// - default is missing for r8g.large + windows
+	// - dedicated is missing for all combinations
+	if len(missingTenancies) != 2 {
+		t.Errorf("expected 2 missing tenancies, got %d: %v", len(missingTenancies), missingTenancies)
+	}
+
+	// Both OS should be missing (because dedicated tenancy is missing and r8g.large is completely missing)
+	if len(missingOS) != 2 {
+		t.Errorf("expected 2 missing OS, got %d: %v", len(missingOS), missingOS)
+	}
+}
+
+// TestGetMissingSPRatesForInstances_MultipleRegions tests finding missing rates
+// across multiple regions.
+func TestGetMissingSPRatesForInstances_MultipleRegions(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Add rates for m5.xlarge in us-west-2 only
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux": 0.0537,
+	}
+	cache.AddSPRates(rates)
+
+	// Check for missing rates in two regions
+	missingInstanceTypes, missingRegions, missingTenancies, missingOS := cache.GetMissingSPRatesForInstances(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		[]string{"m5.xlarge"},
+		[]string{"us-west-2", "us-east-1"}, // us-east-1 is new
+		[]string{"default"},
+		[]string{"linux"},
+	)
+
+	// m5.xlarge should still be in missing because us-east-1 is missing
+	if len(missingInstanceTypes) != 1 || missingInstanceTypes[0] != "m5.xlarge" {
+		t.Errorf("expected missing instance types [m5.xlarge], got %v", missingInstanceTypes)
+	}
+
+	// us-east-1 should be missing
+	if len(missingRegions) != 1 || missingRegions[0] != "us-east-1" {
+		t.Errorf("expected missing regions [us-east-1], got %v", missingRegions)
+	}
+
+	// default should be in missing (for us-east-1)
+	if len(missingTenancies) != 1 || missingTenancies[0] != "default" {
+		t.Errorf("expected missing tenancies [default], got %v", missingTenancies)
+	}
+
+	// linux should be in missing (for us-east-1)
+	if len(missingOS) != 1 || missingOS[0] != "linux" {
+		t.Errorf("expected missing OS [linux], got %v", missingOS)
+	}
+}
+
+// TestGetMissingSPRatesForInstances_DifferentSP tests that missing rates
+// are correctly identified per Savings Plan ARN.
+func TestGetMissingSPRatesForInstances_DifferentSP(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Add rates for SP abc
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux": 0.0537,
+	}
+	cache.AddSPRates(rates)
+
+	// Check for missing rates for a different SP (def)
+	missingInstanceTypes, _, _, _ := cache.GetMissingSPRatesForInstances(
+		"arn:aws:savingsplans::123:savingsplan/def", // Different SP
+		[]string{"m5.xlarge"},
+		[]string{"us-west-2"},
+		[]string{"default"},
+		[]string{"linux"},
+	)
+
+	// Should be missing because it's a different SP
+	if len(missingInstanceTypes) != 1 {
+		t.Errorf("expected 1 missing instance type for different SP, got %d", len(missingInstanceTypes))
 	}
 }

@@ -43,6 +43,8 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-002",
@@ -52,6 +54,8 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-003",
@@ -61,6 +65,8 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 
@@ -75,6 +81,8 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			"instance_type":     inst.InstanceType,
 			"availability_zone": inst.AvailabilityZone,
 			"instance_id":       inst.InstanceID,
+			"tenancy":           "default",
+			"platform":          "linux",
 		}))
 		assert.Equal(t, 1.0, value, "Expected ec2_instance metric to be 1 for instance %s", inst.InstanceID)
 	}
@@ -119,6 +127,8 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-stopped",
@@ -128,6 +138,8 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "stopped",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-terminated",
@@ -137,6 +149,8 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "terminated",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 
@@ -149,6 +163,8 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
 		"instance_id":       "i-running",
+		"tenancy":           "default",
+		"platform":          "linux",
 	}))
 	assert.Equal(t, 1.0, runningValue, "Expected running instance to have metric value 1")
 
@@ -183,6 +199,8 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-002",
@@ -192,6 +210,8 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 
@@ -214,6 +234,8 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 
@@ -233,6 +255,8 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
 		"instance_id":       "i-001",
+		"tenancy":           "default",
+		"platform":          "linux",
 	}))
 	assert.Equal(t, 0.0, i001Value, "Expected i-001 metric to be removed after reset")
 }
@@ -252,6 +276,8 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 			AccountID:        "111111111111",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-002",
@@ -261,6 +287,8 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 			AccountID:        "111111111111",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 		{
 			InstanceID:       "i-003",
@@ -270,6 +298,8 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 			AccountID:        "222222222222",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 
@@ -327,6 +357,8 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 	m.UpdateEC2InstanceMetrics(instances)
@@ -338,6 +370,8 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
 		"instance_id":       "i-001",
+		"tenancy":           "default",
+		"platform":          "linux",
 	}))
 	assert.Equal(t, 1.0, initialValue, "Expected initial instance metric to be 1")
 
@@ -351,6 +385,8 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
 		"instance_id":       "i-001",
+		"tenancy":           "default",
+		"platform":          "linux",
 	}))
 	assert.Equal(t, 0.0, emptyValue, "Expected instance metric to be reset to 0")
 
@@ -390,6 +426,8 @@ func TestUpdateEC2InstanceMetrics_InstanceFamilyExtraction(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		})
 	}
 
@@ -421,6 +459,8 @@ func TestUpdateEC2InstanceMetrics_MalformedInstanceType(t *testing.T) {
 			AccountID:        "123456789012",
 			State:            "running",
 			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
 		},
 	}
 

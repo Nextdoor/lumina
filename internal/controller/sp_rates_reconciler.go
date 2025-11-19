@@ -33,13 +33,13 @@ import (
 // SPRatesReconciler implements lazy-loading reconciliation for Savings Plan rates.
 //
 // This reconciler queries the actual purchase-time rates for each active Savings Plan
-// using the DescribeSavingsPlanRates API. These rates are cached per-SP ARN + instance type + region.
+// using the DescribeSavingsPlanRates API. These rates are cached per-SP ARN + instance type + region + tenancy.
 //
 // Algorithm (runs every 1-2 minutes):
 //  1. Get all active Savings Plans from RISP cache
 //  2. For each SP: Check if we've already cached rates for this SP
 //  3. If not cached: Query DescribeSavingsPlanRates(spId) for this SP's actual rates
-//  4. Convert rates to cache format: "spArn:instanceType:region" -> rate
+//  4. Convert rates to cache format: "spArn:instanceType:region:tenancy" -> rate
 //  5. Add new rates to PricingCache
 //
 // This provides natural lazy-loading - rates are only fetched once per SP, then cached.
@@ -49,7 +49,7 @@ import (
 //   - New Savings Plan purchased: 1 API call per new SP
 //   - First run: N API calls (one per active SP)
 //
-// Note: Each DescribeSavingsPlanRates call returns 100-1000+ rates (one per instance type/region
+// Note: Each DescribeSavingsPlanRates call returns 100-1000+ rates (one per instance type/region/tenancy
 // combination that the SP covers), so the total number of API calls is much lower than the
 // number of rates being cached.
 type SPRatesReconciler struct {
@@ -58,6 +58,9 @@ type SPRatesReconciler struct {
 
 	// Configuration with AWS account details
 	Config *config.Config
+
+	// Cache for EC2 instances - used to determine which instance types to fetch rates for
+	EC2Cache *cache.EC2Cache
 
 	// Cache for Reserved Instances and Savings Plans
 	RISPCache *cache.RISPCache
@@ -97,23 +100,39 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		"sp_count", len(savingsPlans))
 
 	// Step 2: Find Savings Plans that don't have rates cached yet
-	missingSPs := r.findMissingSPRates(savingsPlans)
-	if len(missingSPs) == 0 {
+	spsNeedingRates := r.findMissingSPRates(savingsPlans)
+	if len(spsNeedingRates) == 0 {
 		log.V(1).Info("all Savings Plans have cached rates, skipping API calls")
 		return ctrl.Result{}, nil
 	}
 
 	log.Info("discovered Savings Plans needing rate fetches",
-		"missing_sp_count", len(missingSPs))
+		"sp_count", len(spsNeedingRates))
 
-	// Step 3: Fetch rates for each missing SP from AWS
+	// Step 3: Fetch rates for each SP from AWS using the specific filters
 	totalNewRates := 0
-	for _, sp := range missingSPs {
-		rates, err := r.fetchRatesForSP(ctx, sp)
+	for _, spWithRates := range spsNeedingRates {
+		sp := spWithRates.SavingsPlan
+
+		// Log whether this is a full fetch or incremental fetch
+		fetchType := "incremental"
+		if spWithRates.IsFullFetch {
+			fetchType = "full"
+		}
+
+		rates, err := r.fetchRatesForSPWithFilters(
+			ctx,
+			sp,
+			spWithRates.InstanceTypes,
+			spWithRates.Regions,
+			spWithRates.Tenancies,
+			spWithRates.OperatingSystems,
+		)
 		if err != nil {
 			log.Error(err, "failed to fetch SP rates",
 				"sp_arn", sp.SavingsPlanARN,
-				"sp_type", sp.SavingsPlanType)
+				"sp_type", sp.SavingsPlanType,
+				"fetch_type", fetchType)
 			// Continue with other SPs even if one fails
 			continue
 		}
@@ -125,13 +144,14 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		log.V(1).Info("fetched rates for Savings Plan",
 			"sp_arn", sp.SavingsPlanARN,
 			"sp_type", sp.SavingsPlanType,
+			"fetch_type", fetchType,
 			"rates_added", addedCount)
 	}
 
 	duration := time.Since(startTime)
 	log.Info("SP rates reconciliation completed",
 		"duration", duration.String(),
-		"sps_processed", len(missingSPs),
+		"sps_processed", len(spsNeedingRates),
 		"new_rates_added", totalNewRates,
 		"total_rates_cached", len(r.PricingCache.GetAllSPRates()))
 
@@ -142,30 +162,136 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
 }
 
-// findMissingSPRates returns Savings Plans that don't have rates cached yet.
-// We check if ANY rate exists for the SP ARN - if yes, we assume all rates are cached.
-// If no rates exist, we need to fetch them.
-func (r *SPRatesReconciler) findMissingSPRates(savingsPlans []aws.SavingsPlan) []aws.SavingsPlan {
-	var missingSPs []aws.SavingsPlan
+// SPWithMissingRates represents a Savings Plan that needs rates fetched, along with
+// the specific filters to use for fetching only the missing rates.
+type SPWithMissingRates struct {
+	SavingsPlan      aws.SavingsPlan
+	InstanceTypes    []string
+	Regions          []string
+	Tenancies        []string
+	OperatingSystems []string
+	IsFullFetch      bool // true if this is the first fetch for this SP, false if incremental
+}
+
+// findMissingSPRates returns Savings Plans that need rate fetching, along with the specific
+// filters to use for each SP. This supports both initial fetching (when no rates exist) and
+// incremental fetching (when new instance types are discovered).
+//
+// The function checks:
+// 1. If no rates exist for an SP, it needs a full fetch
+// 2. If rates exist, it checks for missing combinations of instance type + region + tenancy + OS
+// 3. Returns only SPs that have missing data
+func (r *SPRatesReconciler) findMissingSPRates(savingsPlans []aws.SavingsPlan) []SPWithMissingRates {
+	var spsNeedingRates []SPWithMissingRates
+
+	// Get currently running instance types, regions, and tenancies from EC2 cache
+	instanceTypes, regions, tenancies := r.getUniqueInstanceTypesRegionsAndTenancies()
+
+	// Use operating systems from config (typically ["Linux", "Windows"])
+	// Normalize to cache format: "linux", "windows"
+	operatingSystems := []string{"linux", "windows"}
 
 	for _, sp := range savingsPlans {
-		// Check if we have ANY rate cached for this SP ARN using efficient O(n) lookup
-		// This avoids copying the entire cache (128k+ entries) on every reconciliation cycle
-		// If we have at least one rate, we assume all rates for this SP are cached
-		// (because DescribeSavingsPlanRates returns all rates in one call)
+		// Check if we have ANY rate cached for this SP ARN
 		if !r.PricingCache.HasAnySPRate(sp.SavingsPlanARN) {
-			missingSPs = append(missingSPs, sp)
+			// No rates exist at all - need full fetch
+			spsNeedingRates = append(spsNeedingRates, SPWithMissingRates{
+				SavingsPlan:      sp,
+				InstanceTypes:    instanceTypes,
+				Regions:          regions,
+				Tenancies:        tenancies,
+				OperatingSystems: operatingSystems,
+				IsFullFetch:      true,
+			})
+			r.Log.Info("SP needs full rate fetch (no existing rates)",
+				"sp_arn", sp.SavingsPlanARN,
+				"instance_types", len(instanceTypes),
+				"regions", len(regions),
+				"tenancies", len(tenancies),
+			)
+			continue
+		}
+
+		// Some rates exist - check for missing combinations
+		missingInstanceTypes, missingRegions, missingTenancies, missingOS := r.PricingCache.GetMissingSPRatesForInstances(
+			sp.SavingsPlanARN,
+			instanceTypes,
+			regions,
+			tenancies,
+			operatingSystems,
+		)
+
+		// If any combinations are missing, add this SP to the list for incremental fetch
+		if len(missingInstanceTypes) > 0 {
+			spsNeedingRates = append(spsNeedingRates, SPWithMissingRates{
+				SavingsPlan:      sp,
+				InstanceTypes:    missingInstanceTypes,
+				Regions:          missingRegions,
+				Tenancies:        missingTenancies,
+				OperatingSystems: missingOS,
+				IsFullFetch:      false,
+			})
+			r.Log.Info("SP needs incremental rate fetch (new instance types discovered)",
+				"sp_arn", sp.SavingsPlanARN,
+				"missing_instance_types", missingInstanceTypes,
+				"missing_regions", missingRegions,
+				"missing_tenancies", missingTenancies,
+				"missing_os", missingOS,
+			)
 		}
 	}
 
-	return missingSPs
+	return spsNeedingRates
 }
 
-// fetchRatesForSP fetches rates for a specific Savings Plan from AWS.
-// Returns a map keyed by "spArn:instanceType:region" -> rate.
-func (r *SPRatesReconciler) fetchRatesForSP(
+// getUniqueInstanceTypesRegionsAndTenancies returns unique instance types, regions, and tenancies from the EC2 cache.
+// This is used to filter SP rates queries to only fetch rates for what we're actually running.
+// Returns: instanceTypes, regions, tenancies
+func (r *SPRatesReconciler) getUniqueInstanceTypesRegionsAndTenancies() ([]string, []string, []string) {
+	instances := r.EC2Cache.GetAllInstances()
+
+	// Use maps to deduplicate
+	instanceTypeSet := make(map[string]bool)
+	regionSet := make(map[string]bool)
+	tenancySet := make(map[string]bool)
+
+	for _, inst := range instances {
+		instanceTypeSet[inst.InstanceType] = true
+		regionSet[inst.Region] = true
+		tenancySet[inst.Tenancy] = true
+	}
+
+	// Convert to slices
+	instanceTypes := make([]string, 0, len(instanceTypeSet))
+	for instanceType := range instanceTypeSet {
+		instanceTypes = append(instanceTypes, instanceType)
+	}
+
+	regions := make([]string, 0, len(regionSet))
+	for region := range regionSet {
+		regions = append(regions, region)
+	}
+
+	tenancies := make([]string, 0, len(tenancySet))
+	for tenancy := range tenancySet {
+		tenancies = append(tenancies, tenancy)
+	}
+
+	return instanceTypes, regions, tenancies
+}
+
+// fetchRatesForSPWithFilters fetches rates for a specific Savings Plan from AWS
+// using the provided filters. This supports both full fetches (when no rates exist)
+// and incremental fetches (when new instance types are discovered).
+//
+// Returns a map keyed by "spArn,instanceType,region,tenancy,os" -> rate.
+func (r *SPRatesReconciler) fetchRatesForSPWithFilters(
 	ctx context.Context,
 	sp aws.SavingsPlan,
+	instanceTypes []string,
+	regions []string,
+	tenancies []string,
+	operatingSystems []string,
 ) (map[string]float64, error) {
 	// Use the SP's account to fetch rates
 	accountConfig := aws.AccountConfig{
@@ -179,17 +305,43 @@ func (r *SPRatesReconciler) fetchRatesForSP(
 		return nil, fmt.Errorf("failed to create Savings Plans client: %w", err)
 	}
 
-	// Query AWS for this SP's actual purchase-time rates
-	rates, err := spClient.DescribeSavingsPlanRates(ctx, sp.SavingsPlanID)
+	// Convert OS from cache format ("linux", "windows") to AWS API format ("Linux/UNIX", "Windows")
+	awsOperatingSystems := make([]string, len(operatingSystems))
+	for i, os := range operatingSystems {
+		switch os {
+		case "linux":
+			awsOperatingSystems[i] = "Linux/UNIX"
+		case "windows":
+			awsOperatingSystems[i] = "Windows"
+		default:
+			awsOperatingSystems[i] = os
+		}
+	}
+
+	// Log what filters we're using for debugging
+	r.Log.Info("fetching SP rates with filters",
+		"sp_id", sp.SavingsPlanID,
+		"sp_arn", sp.SavingsPlanARN,
+		"instance_types_count", len(instanceTypes),
+		"instance_types", instanceTypes,
+		"regions_count", len(regions),
+		"regions", regions,
+		"operating_systems", awsOperatingSystems,
+		"tenancies_count", len(tenancies),
+		"tenancies", tenancies)
+
+	// Query AWS for this SP's actual purchase-time rates, filtered by instance types, regions, OS, and tenancy
+	rates, err := spClient.DescribeSavingsPlanRates(ctx, sp.SavingsPlanID, instanceTypes, regions, awsOperatingSystems, tenancies)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Savings Plan rates for %s: %w", sp.SavingsPlanID, err)
 	}
 
 	// Convert to map format for cache
-	// Key format: "spArn:instanceType:region"
+	// Key format: "spArn,instanceType,region,tenancy,os" (comma-separated to avoid ARN colon conflicts)
+	// The ProductDescription field contains the normalized OS (either "linux" or "windows")
 	ratesMap := make(map[string]float64)
 	for _, rate := range rates {
-		key := fmt.Sprintf("%s:%s:%s", sp.SavingsPlanARN, rate.InstanceType, rate.Region)
+		key := fmt.Sprintf("%s,%s,%s,%s,%s", sp.SavingsPlanARN, rate.InstanceType, rate.Region, rate.Tenancy, rate.ProductDescription)
 		ratesMap[key] = rate.Rate
 	}
 

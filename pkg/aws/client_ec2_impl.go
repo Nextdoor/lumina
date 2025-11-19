@@ -212,6 +212,11 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 		}
 	}
 
+	// Extract tenancy from placement
+	// AWS uses "default" for shared hardware, "dedicated" for dedicated instances, and "host" for dedicated hosts
+	// This field is always present in the AWS API response
+	tenancy := string(inst.Placement.Tenancy)
+
 	return Instance{
 		InstanceID:            aws.ToString(inst.InstanceId),
 		InstanceType:          string(inst.InstanceType),
@@ -225,6 +230,7 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 		PrivateDNSName:        aws.ToString(inst.PrivateDnsName),
 		PrivateIPAddress:      aws.ToString(inst.PrivateIpAddress),
 		Platform:              platform,
+		Tenancy:               tenancy,
 		SpotInstanceRequestID: aws.ToString(inst.SpotInstanceRequestId),
 	}
 }

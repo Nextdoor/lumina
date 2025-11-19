@@ -64,12 +64,21 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		}
 
 		// Set per-instance metric (always 1 when instance exists)
+		// Platform (operating system) is normalized to "linux" or "windows" for consistency
+		// Empty Platform field from AWS API is treated as "linux" (the default)
+		platform := inst.Platform
+		if platform == "" {
+			platform = "linux"
+		}
+
 		m.EC2Instance.With(prometheus.Labels{
 			"account_id":        inst.AccountID,
 			"region":            inst.Region,
 			"instance_type":     inst.InstanceType,
 			"availability_zone": inst.AvailabilityZone,
 			"instance_id":       inst.InstanceID,
+			"tenancy":           inst.Tenancy,
+			"platform":          platform,
 		}).Set(1)
 
 		// Extract instance family from instance type
