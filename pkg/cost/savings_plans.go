@@ -160,7 +160,9 @@ func applyEC2InstanceSavingsPlan(
 		//   - m5.xlarge on-demand rate: $0.192/hour
 		//   - m5.xlarge with SP: $0.192 * 0.72 = $0.138/hour (28% discount)
 		odRate := cost.ShelfPrice
-		spRate, isAccurate := getSavingsPlanRate(calc, sp, inst.InstanceType, inst.Region, inst.Tenancy, inst.Platform, odRate)
+		spRate, isAccurate := getSavingsPlanRate(
+			calc, sp, inst.InstanceType, inst.Region, inst.Tenancy, inst.Platform, odRate,
+		)
 
 		if odRate <= 0 || spRate <= 0 {
 			continue // Can't calculate savings - skip this instance
@@ -459,7 +461,9 @@ func applyComputeSavingsPlan(
 		// Calculate savings percentage and SP rate for this instance
 		// (Same logic as EC2 Instance SPs - see detailed comments there)
 		odRate := cost.ShelfPrice
-		spRate, isAccurate := getSavingsPlanRate(calc, sp, inst.InstanceType, inst.Region, inst.Tenancy, inst.Platform, odRate)
+		spRate, isAccurate := getSavingsPlanRate(
+			calc, sp, inst.InstanceType, inst.Region, inst.Tenancy, inst.Platform, odRate,
+		)
 
 		if odRate <= 0 || spRate <= 0 {
 			continue
@@ -645,7 +649,10 @@ func getSavingsPlanRate(
 ) (float64, bool) {
 	// Tier 1: Try to get actual rate from DescribeSavingsPlanRates API
 	if calc.PricingCache != nil {
-		if rate, found := calc.PricingCache.GetSPRate(sp.SavingsPlanARN, instanceType, region, tenancy, operatingSystem); found {
+		rate, found := calc.PricingCache.GetSPRate(
+			sp.SavingsPlanARN, instanceType, region, tenancy, operatingSystem,
+		)
+		if found {
 			return rate, true // Accurate: actual SP rate from API
 		}
 	}

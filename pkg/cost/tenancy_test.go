@@ -32,7 +32,9 @@ type mockTenancyPricingCache struct {
 }
 
 // GetSPRate returns the SP rate for the given SP, instance type, region, tenancy, and OS.
-func (m *mockTenancyPricingCache) GetSPRate(spArn, instanceType, region, tenancy, operatingSystem string) (float64, bool) {
+func (m *mockTenancyPricingCache) GetSPRate(
+	spArn, instanceType, region, tenancy, operatingSystem string,
+) (float64, bool) {
 	// Normalize OS to match behavior of real PricingCache
 	// Empty string → "linux", "windows" → "windows"
 	normalizedOS := operatingSystem
