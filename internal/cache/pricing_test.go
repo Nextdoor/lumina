@@ -178,10 +178,10 @@ func TestIsStale(t *testing.T) {
 		t.Error("fresh cache should not be stale")
 	}
 
-	// Simulate old cache by manipulating lastUpdated
-	cache.mu.Lock()
-	cache.lastUpdated = time.Now().Add(-25 * time.Hour)
-	cache.mu.Unlock()
+	// Simulate old cache by manipulating lastUpdate (from BaseCache)
+	cache.Lock()
+	cache.lastUpdate = time.Now().Add(-25 * time.Hour)
+	cache.Unlock()
 
 	// Old cache is stale
 	if !cache.IsStale(24 * time.Hour) {

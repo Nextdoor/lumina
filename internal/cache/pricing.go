@@ -19,7 +19,6 @@ package cache
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -91,8 +90,11 @@ func parseSPRateKey(key string) (instanceType, region, tenancy, os string, ok bo
 // consistent behavior regardless of the input casing from AWS APIs or configuration.
 //
 // Thread-safety: All methods are safe for concurrent access.
+//
+// PricingCache embeds BaseCache to provide common infrastructure (thread-safety,
+// notifications, timestamps). This eliminates ~50 lines of boilerplate code.
 type PricingCache struct {
-	mu sync.RWMutex
+	BaseCache // Provides: Lock/RLock, RegisterUpdateNotifier, NotifyUpdate, MarkUpdated, GetLastUpdate, etc.
 
 	// onDemandPrices stores on-demand pricing keyed by "region:instanceType:os"
 	// All keys are lowercase for case-insensitive lookups.
@@ -105,20 +107,17 @@ type PricingCache struct {
 	// These are PURCHASE-TIME rates that were locked in when the SP was bought.
 	spRates map[string]float64
 
-	// Metadata
-	lastUpdated        time.Time
+	// Domain-specific metadata
+	// spRatesLastUpdated tracks when SP rates were last updated (separate from on-demand prices)
 	spRatesLastUpdated time.Time
-	isPopulated        bool
-
-	// notifiers are callbacks invoked after cache updates
-	// Separate mutex to prevent deadlock during notification
-	notifyMu  sync.RWMutex
-	notifiers []UpdateNotifier
+	// isPopulated tracks if on-demand prices have been loaded (separate from BaseCache's lastUpdate)
+	isPopulated bool
 }
 
 // NewPricingCache creates a new empty pricing cache.
 func NewPricingCache() *PricingCache {
 	return &PricingCache{
+		BaseCache:      NewBaseCache(),
 		onDemandPrices: make(map[string]float64),
 		spRates:        make(map[string]float64),
 		isPopulated:    false,
@@ -132,8 +131,8 @@ func NewPricingCache() *PricingCache {
 //
 // All keys are normalized to lowercase for consistent lookups regardless of input casing.
 func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem string) (float64, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	// Normalize to lowercase for case-insensitive lookups
 	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", region, instanceType, operatingSystem))
@@ -147,8 +146,8 @@ func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem st
 // The input map should use keys in the format "region:instanceType:os".
 // All keys are normalized to lowercase for case-insensitive lookups.
 func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock() // From BaseCache
+	defer c.Unlock()
 
 	// Normalize all keys to lowercase for consistent lookups
 	normalizedPrices := make(map[string]float64, len(prices))
@@ -156,42 +155,24 @@ func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
 		normalizedPrices[strings.ToLower(key)] = price
 	}
 	c.onDemandPrices = normalizedPrices
-	c.lastUpdated = time.Now()
 	c.isPopulated = len(prices) > 0
+	c.MarkUpdated() // From BaseCache
 
 	// Notify subscribers after releasing the write lock
-	c.notifyUpdate()
+	c.NotifyUpdate() // From BaseCache
 }
 
-// RegisterUpdateNotifier adds a callback to be invoked when cache data changes.
+// RegisterUpdateNotifier is inherited from BaseCache.
 // Multiple notifiers can be registered. Callbacks are invoked in separate goroutines
 // to prevent blocking cache operations.
 //
 // This is typically used to trigger cost recalculation when pricing data changes.
-func (c *PricingCache) RegisterUpdateNotifier(fn UpdateNotifier) {
-	c.notifyMu.Lock()
-	defer c.notifyMu.Unlock()
-	c.notifiers = append(c.notifiers, fn)
-}
-
-// notifyUpdate invokes all registered notifiers in separate goroutines.
-// This method should be called after cache modifications, outside of the main mutex lock.
-func (c *PricingCache) notifyUpdate() {
-	c.notifyMu.RLock()
-	defer c.notifyMu.RUnlock()
-
-	for _, fn := range c.notifiers {
-		// Run in goroutine to prevent blocking cache operations
-		// This means notifiers must be thread-safe
-		go fn()
-	}
-}
 
 // GetAllOnDemandPrices returns a copy of all on-demand prices.
 // This is useful for populating CalculationInput.OnDemandPrices.
 func (c *PricingCache) GetAllOnDemandPrices() map[string]float64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	// Return a copy to prevent external modifications
 	copy := make(map[string]float64, len(c.onDemandPrices))
@@ -211,8 +192,8 @@ func (c *PricingCache) GetOnDemandPricesForInstances(
 	instances []InstanceKey,
 	operatingSystem string,
 ) map[string]float64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
@@ -235,28 +216,28 @@ type InstanceKey struct {
 
 // IsPopulated returns true if the cache has been populated with pricing data.
 func (c *PricingCache) IsPopulated() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 	return c.isPopulated
 }
 
 // LastUpdated returns the timestamp of the last cache update.
+// This is an alias for BaseCache.GetLastUpdate() for backward compatibility.
 func (c *PricingCache) LastUpdated() time.Time {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.lastUpdated
+	return c.GetLastUpdate() // From BaseCache
 }
 
 // GetStats returns statistics about the cached pricing data.
 func (c *PricingCache) GetStats() PricingStats {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
+	lastUpdate := c.GetLastUpdate() // From BaseCache
 	return PricingStats{
 		OnDemandPriceCount: len(c.onDemandPrices),
-		LastUpdated:        c.lastUpdated,
+		LastUpdated:        lastUpdate,
 		IsPopulated:        c.isPopulated,
-		AgeHours:           time.Since(c.lastUpdated).Hours(),
+		AgeHours:           time.Since(lastUpdate).Hours(),
 	}
 }
 
@@ -270,15 +251,16 @@ type PricingStats struct {
 
 // IsStale returns true if the cache hasn't been updated in more than the specified duration.
 // AWS pricing typically changes monthly, so 24-48 hours is a reasonable staleness threshold.
+// This overrides BaseCache.IsStale() to also check the isPopulated flag.
 func (c *PricingCache) IsStale(maxAge time.Duration) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	if !c.isPopulated {
 		return true
 	}
 
-	return time.Since(c.lastUpdated) > maxAge
+	return c.BaseCache.IsStale(maxAge) // From BaseCache
 }
 
 // GetSPRate returns the Savings Plan rate for a specific SP ARN, instance type, region, tenancy, and OS.
@@ -293,8 +275,8 @@ func (c *PricingCache) IsStale(maxAge time.Duration) bool {
 // Note: The cache may contain sentinel values (SPRateNotAvailable) for rate combinations that
 // were queried but don't exist. These are treated as "not found" to prevent cost calculation errors.
 func (c *PricingCache) GetSPRate(spArn, instanceType, region, tenancy, operatingSystem string) (float64, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	// Normalize operating system to match cached values
 	// Empty string (from EC2 instances with no Platform field) should normalize to "linux"
@@ -359,8 +341,8 @@ func normalizeOS(input string) string {
 //
 // Returns the number of NEW rates added (doesn't count updates to existing rates).
 func (c *PricingCache) AddSPRates(rates map[string]float64) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock() // From BaseCache
+	defer c.Unlock()
 
 	newRatesCount := 0
 	for key, rate := range rates {
@@ -376,7 +358,7 @@ func (c *PricingCache) AddSPRates(rates map[string]float64) int {
 
 	// Notify subscribers after adding rates
 	// This triggers cost recalculation when new rates are available
-	c.notifyUpdate()
+	c.NotifyUpdate() // From BaseCache
 
 	return newRatesCount
 }
@@ -384,8 +366,8 @@ func (c *PricingCache) AddSPRates(rates map[string]float64) int {
 // GetAllSPRates returns a copy of all Savings Plan rates.
 // Useful for debugging or exporting cache contents.
 func (c *PricingCache) GetAllSPRates() map[string]float64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	// Return a copy to prevent external modifications
 	copy := make(map[string]float64, len(c.spRates))
@@ -397,8 +379,8 @@ func (c *PricingCache) GetAllSPRates() map[string]float64 {
 
 // GetSPRateStats returns statistics about the SP rates cache.
 func (c *PricingCache) GetSPRateStats() SPRateStats {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	return SPRateStats{
 		TotalRates:  len(c.spRates),
@@ -420,8 +402,8 @@ type SPRateStats struct {
 //
 // This is used by the SP Rates Reconciler to determine which SPs need rate fetching.
 func (c *PricingCache) HasAnySPRate(spArn string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	// Normalize SP ARN to lowercase for case-insensitive comparison
 	normalizedArn := strings.ToLower(spArn)
@@ -461,8 +443,8 @@ func (c *PricingCache) GetMissingSPRatesForInstances(
 	tenancies []string,
 	operatingSystems []string,
 ) ([]string, []string, []string, []string) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	// Normalize SP ARN to lowercase for case-insensitive comparison
 	normalizedArn := strings.ToLower(spArn)
