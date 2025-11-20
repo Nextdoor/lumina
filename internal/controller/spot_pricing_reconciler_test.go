@@ -668,3 +668,129 @@ func TestSpotPricingReconciler_Reconcile_ContextCancelled(t *testing.T) {
 	assert.Equal(t, context.Canceled, err)
 	assert.Equal(t, ctrl.Result{}, result)
 }
+
+// TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion tests that when multiple
+// accounts have instances in the same region, we only make ONE API call per region (not per account).
+// This is correct because spot prices are region-specific, not account-specific.
+func TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion(t *testing.T) {
+	// Setup: Create EC2Cache with instances from TWO accounts in the SAME region
+	ec2Cache := cache.NewEC2Cache()
+	ec2Cache.SetInstances("111111111111", "us-west-2", []aws.Instance{
+		{
+			InstanceID:       "i-account1-001",
+			InstanceType:     "m5.large",
+			AvailabilityZone: "us-west-2a",
+			Region:           "us-west-2",
+			AccountID:        "111111111111",
+			State:            "running",
+		},
+	})
+	ec2Cache.SetInstances("222222222222", "us-west-2", []aws.Instance{
+		{
+			InstanceID:       "i-account2-001",
+			InstanceType:     "c5.xlarge",
+			AvailabilityZone: "us-west-2a",
+			Region:           "us-west-2",
+			AccountID:        "222222222222",
+			State:            "running",
+		},
+	})
+
+	// Setup: Create mock client with spot prices configured
+	mockClient := aws.NewMockClient()
+	ctx := context.Background()
+
+	// Configure BOTH accounts' EC2 clients with the same spot prices
+	// (in reality, both would return the same data since spot prices are region-specific)
+	for _, accountID := range []string{"111111111111", "222222222222"} {
+		ec2Client, err := mockClient.EC2(ctx, aws.AccountConfig{
+			AccountID: accountID,
+			Region:    "us-west-2",
+		})
+		require.NoError(t, err)
+		mockEC2 := ec2Client.(*aws.MockEC2Client)
+		mockEC2.SpotPrices = []aws.SpotPrice{
+		{
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.034,
+			Timestamp:          time.Now(),
+			ProductDescription: "Linux/UNIX",
+		},
+			{
+				InstanceType:       "c5.xlarge",
+				AvailabilityZone:   "us-west-2a",
+				SpotPrice:          0.068,
+				Timestamp:          time.Now(),
+				ProductDescription: "Linux/UNIX",
+			},
+		}
+	}
+
+	pricingCache := cache.NewPricingCache()
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+	ec2ReadyChan := make(chan struct{})
+	close(ec2ReadyChan)
+
+	// Setup: Create reconciler with TWO accounts
+	reconciler := &SpotPricingReconciler{
+		AWSClient: mockClient,
+		Config: &config.Config{
+			AWSAccounts: []config.AWSAccount{
+				{
+					AccountID: "111111111111",
+					Name:      "account-1",
+				},
+				{
+					AccountID: "222222222222",
+					Name:      "account-2",
+				},
+			},
+			DefaultRegion: "us-west-2",
+		},
+		EC2Cache:            ec2Cache,
+		Cache:               pricingCache,
+		Metrics:             m,
+		Log:                 logr.Discard(),
+		ProductDescriptions: []string{"Linux/UNIX"},
+		EC2ReadyChan:        ec2ReadyChan,
+	}
+
+	// Test: Run reconciliation
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+	require.NoError(t, err)
+	assert.Equal(t, 15*time.Second, result.RequeueAfter)
+
+	// Verify: Only ONE DescribeSpotPriceHistory call was made (one per region, not per account)
+	// Get the mock EC2 client for account 1 to check call count
+	ec2Client1, err := mockClient.EC2(ctx, aws.AccountConfig{
+		AccountID: "111111111111",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	mockEC2_1 := ec2Client1.(*aws.MockEC2Client)
+
+	// Get the mock EC2 client for account 2
+	ec2Client2, err := mockClient.EC2(ctx, aws.AccountConfig{
+		AccountID: "222222222222",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	mockEC2_2 := ec2Client2.(*aws.MockEC2Client)
+
+	// Total calls should be 1 (only one account's client was used)
+	totalCalls := mockEC2_1.DescribeSpotPriceHistoryCallCount + mockEC2_2.DescribeSpotPriceHistoryCallCount
+	assert.Equal(t, 1, totalCalls, "should only make 1 API call for both accounts in same region")
+
+	// Verify: Cache was populated with both spot prices
+	stats := pricingCache.GetSpotStats()
+	assert.Equal(t, 2, stats.SpotPriceCount, "should have both spot prices")
+
+	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	require.True(t, exists1)
+	assert.Equal(t, 0.034, price1)
+
+	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2a")
+	require.True(t, exists2)
+	assert.Equal(t, 0.068, price2)
+}

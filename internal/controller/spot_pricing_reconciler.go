@@ -286,7 +286,7 @@ func (r *SpotPricingReconciler) getAccountAndRegionForAZ(az string) (string, str
 }
 
 // fetchMissingSpotPrices queries AWS for missing spot prices.
-// Groups queries by account+region for efficiency.
+// Groups queries by region only (spot prices are the same across all accounts).
 //
 // Returns:
 //   - prices: map of newly fetched prices keyed by "instanceType:availabilityZone"
@@ -295,25 +295,36 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 	ctx context.Context,
 	missing []SpotPriceCombination,
 ) (map[string]float64, []error) {
-	// Group missing combinations by account+region for efficient batch querying
-	type queryKey struct {
-		accountID string
-		region    string
+	// Group missing combinations by region only (spot prices are region-specific, not account-specific).
+	// We pick the first account we see for each region to make the API call.
+	type regionQuery struct {
+		accountID     string
+		region        string
+		combinations  []SpotPriceCombination
 	}
-	queries := make(map[queryKey][]SpotPriceCombination)
+	queries := make(map[string]*regionQuery) // key: region
 
 	for _, combo := range missing {
-		key := queryKey{accountID: combo.AccountID, region: combo.Region}
-		queries[key] = append(queries[key], combo)
+		if _, exists := queries[combo.Region]; !exists {
+			// First time seeing this region - use this account
+			queries[combo.Region] = &regionQuery{
+				accountID:    combo.AccountID,
+				region:       combo.Region,
+				combinations: []SpotPriceCombination{combo},
+			}
+		} else {
+			// Already have an account for this region, just add the combination
+			queries[combo.Region].combinations = append(queries[combo.Region].combinations, combo)
+		}
 	}
 
-	// Fetch spot prices for each account+region combination
+	// Fetch spot prices for each region (one query per region, not per account)
 	prices := make(map[string]float64)
 	var errors []error
 	var mu sync.Mutex
 
 	var wg sync.WaitGroup
-	for key, combos := range queries {
+	for _, query := range queries {
 		wg.Add(1)
 		go func(accountID, region string, combos []SpotPriceCombination) {
 			defer wg.Done()
@@ -381,7 +392,7 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 			}
 			mu.Unlock()
 
-		}(key.accountID, key.region, combos)
+		}(query.accountID, query.region, query.combinations)
 	}
 
 	wg.Wait()
