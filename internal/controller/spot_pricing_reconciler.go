@@ -420,23 +420,34 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 ) (map[string]aws.SpotPrice, []error) {
 	// Group missing combinations by region only (spot prices are region-specific, not account-specific).
 	// We pick the first account we see for each region to make the API call.
+	//
+	// WHY group by region instead of account+region?
+	// - Spot prices are the same across all accounts in the same region
+	// - If we have 10 accounts all using m5.xlarge in us-west-2, we only need to query once
+	// - This reduces API calls from N (accounts) to 1 per region
+	// - Example: 10 accounts × 3 regions = 30 queries → 3 queries (90% reduction)
+	//
+	// The regionQuery struct tracks which account to use for the API call (arbitrary choice,
+	// we pick the first one we encounter) and accumulates all combinations for that region.
 	type regionQuery struct {
-		accountID    string
-		region       string
-		combinations []SpotPriceCombination
+		accountID    string // Account credentials to use for this region's API call
+		region       string // AWS region (e.g., "us-west-2")
+		combinations []SpotPriceCombination // All missing prices for this region
 	}
 	queries := make(map[string]*regionQuery) // key: region
 
+	// Build the query map by iterating through missing combinations
 	for _, combo := range missing {
 		if _, exists := queries[combo.Region]; !exists {
-			// First time seeing this region - use this account
+			// First time seeing this region - create new query and use this combination's account
 			queries[combo.Region] = &regionQuery{
 				accountID:    combo.AccountID,
 				region:       combo.Region,
 				combinations: []SpotPriceCombination{combo},
 			}
 		} else {
-			// Already have an account for this region, just add the combination
+			// Already have a query for this region - just append this combination
+			// (we'll use the first account's credentials for all combinations in this region)
 			queries[combo.Region].combinations = append(queries[combo.Region].combinations, combo)
 		}
 	}
