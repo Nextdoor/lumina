@@ -634,13 +634,19 @@ func main() {
 	}
 	setupLog.Info("created AWS client", "defaultAccount", defaultAccount.Name)
 
+	// Initialize Node cache for Phase 8 - K8s node correlation
+	nodeCache := cache.NewNodeCache()
+	setupLog.Info("initialized node cache")
+
 	if err := (&controller.NodeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		NodeCache: nodeCache,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		os.Exit(1)
 	}
+	setupLog.Info("registered node reconciler (event-driven)")
 
 	// Initialize RI/SP cache for Phase 2 data collection
 	rispCache := cache.NewRISPCache()
