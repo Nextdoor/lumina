@@ -32,6 +32,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Operating system constants for configuration validation.
+// These are title-case values used in YAML configuration files.
+// They map to the lowercase aws.Platform* constants used internally.
+const (
+	OSLinux   = "Linux"
+	OSWindows = "Windows"
+	OSRHEL    = "RHEL"
+	OSSUSE    = "SUSE"
+)
+
 // Config represents the complete controller configuration.
 type Config struct {
 	// AWSAccounts is the list of AWS accounts to monitor for cost data.
@@ -388,14 +398,15 @@ func (c *Config) Validate() error {
 	// Validate pricing configuration
 	if len(c.Pricing.OperatingSystems) > 0 {
 		validOSes := map[string]bool{
-			"Linux":   true,
-			"Windows": true,
-			"RHEL":    true,
-			"SUSE":    true,
+			OSLinux:   true,
+			OSWindows: true,
+			OSRHEL:    true,
+			OSSUSE:    true,
 		}
 		for _, os := range c.Pricing.OperatingSystems {
 			if !validOSes[os] {
-				return fmt.Errorf("invalid operating system %q in pricing config, must be one of: Linux, Windows, RHEL, SUSE", os)
+				return fmt.Errorf("invalid operating system %q in pricing config, must be one of: %s, %s, %s, %s",
+					os, OSLinux, OSWindows, OSRHEL, OSSUSE)
 			}
 		}
 	}
@@ -516,4 +527,13 @@ func (c *Config) GetComputeDiscount() float64 {
 		return c.Pricing.DefaultDiscounts.Compute
 	}
 	return 0.72 // Default 1-year rate: ~28% OFF → pay 72%
+}
+
+// GetOperatingSystems returns the configured operating systems for pricing data.
+// Returns ["Linux", "Windows"] if not specified in config.
+func (c *Config) GetOperatingSystems() []string {
+	if len(c.Pricing.OperatingSystems) > 0 {
+		return c.Pricing.OperatingSystems
+	}
+	return []string{OSLinux, OSWindows}
 }

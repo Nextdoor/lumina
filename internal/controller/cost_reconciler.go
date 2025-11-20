@@ -16,6 +16,7 @@ package controller
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -73,6 +74,19 @@ type CostReconciler struct {
 
 	// Logger
 	Log logr.Logger
+
+	// Ready channels for waiting on dependencies during initialization.
+	// The cost reconciler waits for all of these to be ready before its first calculation.
+	PricingReadyChan chan struct{} // Wait for on-demand pricing to load
+	RISPReadyChan    chan struct{} // Wait for Savings Plans and RIs to load
+	EC2ReadyChan     chan struct{} // Wait for EC2 instances to load
+	SPRatesReadyChan chan struct{} // Wait for SP rates to load
+
+	// initialized tracks whether the initial dependency wait has completed.
+	// This prevents the debouncer from triggering calculations before all
+	// dependencies (Pricing, RISP, EC2, SPRates) are confirmed ready.
+	// Uses atomic operations for thread-safe access from multiple goroutines.
+	initialized atomic.Bool
 }
 
 // Reconcile performs a single cost calculation cycle.
@@ -83,6 +97,13 @@ type CostReconciler struct {
 // The reconciler gathers data from all caches, runs the cost calculation algorithm,
 // and updates Prometheus metrics with the results.
 func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
+	// Prevent reconciliation until all dependencies are confirmed ready
+	// This blocks debouncer-triggered calculations during startup
+	if !r.initialized.Load() {
+		r.Log.V(1).Info("skipping cost calculation - dependencies not ready yet")
+		return ctrl.Result{}, nil
+	}
+
 	log := r.Log.WithValues("reconciler", "cost")
 	log.Info("starting cost calculation cycle")
 
@@ -150,13 +171,20 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 
 // Run runs the reconciler as a goroutine with event-driven reconciliation.
 //
-// Runs an initial calculation on startup, then waits for the debouncer to trigger
-// subsequent calculations when cache data updates (EC2, RISP, or Pricing).
+// Runs an initial calculation on startup (after waiting for dependencies), then waits
+// for the debouncer to trigger subsequent calculations when cache data updates
+// (EC2, RISP, or Pricing).
 func (r *CostReconciler) Run(ctx context.Context) error {
 	log := r.Log
 	log.Info("starting cost reconciler")
 
-	// Run immediately on startup
+	// Wait for all dependencies to be ready before first calculation
+	r.waitForDependencies()
+
+	// Mark as initialized so debouncer-triggered calculations can proceed
+	r.initialized.Store(true)
+
+	// Run initial calculation now that dependencies are ready
 	log.Info("running initial cost calculation")
 	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
 		log.Error(err, "initial cost calculation failed")
@@ -182,9 +210,18 @@ func (r *CostReconciler) Run(ctx context.Context) error {
 // coverage:ignore - controller-runtime boilerplate, tested via E2E
 func (r *CostReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// This is an event-driven controller that triggers via cache update notifications.
-	// We watch Nodes to trigger initial reconciliation, but only trigger on the FIRST Node.
-	// After the initial calculation, subsequent calculations are triggered automatically
-	// when cache data updates (via the debouncer).
+	// We watch Nodes to trigger initial reconciliation, but first we need to wait for
+	// all dependencies (Pricing, RISP, EC2, SPRates) to be ready.
+	//
+	// Initialization flow:
+	//   1. Wait for all ready channels to signal (happens in background goroutine)
+	//   2. Trigger first cost calculation once all dependencies are ready
+	//   3. After initial calculation, subsequent calculations are triggered automatically
+	//      when cache data updates (via the debouncer)
+
+	// Start a background goroutine to wait for all dependencies, then trigger first calculation
+	go r.waitForDependenciesAndCalculate(mgr.GetClient())
+
 	triggered := false
 	err := ctrl.NewControllerManagedBy(mgr).
 		Named("cost").
@@ -202,4 +239,63 @@ func (r *CostReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 	return nil
+}
+
+// waitForDependencies waits for all reconciler dependencies to be ready.
+// This ensures calculations don't run with partial data during startup.
+// Can be called from either Run() (standalone mode) or waitForDependenciesAndCalculate()
+// (Kubernetes mode).
+func (r *CostReconciler) waitForDependencies() {
+	log := r.Log.WithName("init")
+
+	// Wait for Pricing cache to be ready
+	if r.PricingReadyChan != nil {
+		log.Info("waiting for pricing cache to be ready")
+		<-r.PricingReadyChan
+		log.Info("pricing cache ready")
+	}
+
+	// Wait for RISP cache to be ready
+	if r.RISPReadyChan != nil {
+		log.Info("waiting for RISP cache to be ready")
+		<-r.RISPReadyChan
+		log.Info("RISP cache ready")
+	}
+
+	// Wait for EC2 cache to be ready
+	if r.EC2ReadyChan != nil {
+		log.Info("waiting for EC2 cache to be ready")
+		<-r.EC2ReadyChan
+		log.Info("EC2 cache ready")
+	}
+
+	// Wait for SP rates cache to be ready
+	if r.SPRatesReadyChan != nil {
+		log.Info("waiting for SP rates cache to be ready")
+		<-r.SPRatesReadyChan
+		log.Info("SP rates cache ready")
+	}
+
+	log.Info("all dependencies ready")
+}
+
+// waitForDependenciesAndCalculate waits for all reconciler dependencies to be ready,
+// then performs the first cost calculation. This is used in Kubernetes mode where
+// the controller-runtime manages reconciliation triggers.
+func (r *CostReconciler) waitForDependenciesAndCalculate(_ client.Client) {
+	log := r.Log.WithName("init")
+
+	// Wait for all dependencies
+	r.waitForDependencies()
+
+	// Mark as initialized so debouncer-triggered calculations can proceed
+	r.initialized.Store(true)
+
+	// Perform first cost calculation
+	log.Info("performing initial cost calculation")
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{}); err != nil {
+		log.Error(err, "initial cost calculation failed")
+	} else {
+		log.Info("initial cost calculation completed successfully")
+	}
 }

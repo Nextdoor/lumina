@@ -54,7 +54,7 @@ type Calculator struct {
 // PricingCacheReader interface for reading Savings Plan rates from cache.
 // This allows for easier testing with mocks.
 type PricingCacheReader interface {
-	GetSPRate(spArn, instanceType, region string) (float64, bool)
+	GetSPRate(spArn, instanceType, region, tenancy, operatingSystem string) (float64, bool)
 }
 
 // ConfigReader interface for reading configuration values.

@@ -62,6 +62,15 @@ type EC2Reconciler struct {
 	// Regions to query (discovered or configured)
 	// If empty, defaults to common regions
 	Regions []string
+
+	// ReadyChan is an optional channel that will be closed after the initial
+	// reconciliation completes successfully. This allows downstream reconcilers
+	// (like SPRatesReconciler) to wait for EC2 data to be populated before
+	// they start their work.
+	ReadyChan chan struct{}
+
+	// readyOnce ensures ReadyChan is closed only once (after first reconciliation)
+	readyOnce sync.Once
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -155,6 +164,16 @@ func (r *EC2Reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Res
 	r.Metrics.UpdateEC2InstanceMetrics(runningInstances)
 	log.V(1).Info("updated EC2 instance metrics",
 		"instance_count", len(runningInstances))
+
+	// Signal that initial reconciliation is complete (only once, after first successful run)
+	// This allows downstream reconcilers (e.g., SPRatesReconciler) to wait for
+	// EC2 data to be populated before starting their work
+	if r.ReadyChan != nil {
+		r.readyOnce.Do(func() {
+			close(r.ReadyChan)
+			log.V(1).Info("signaled that EC2 cache is ready for dependent reconcilers")
+		})
+	}
 
 	// Parse reconciliation interval from config, with default fallback to 5 minutes
 	// The interval determines how often we refresh EC2 instance inventory data
@@ -275,6 +294,14 @@ func (r *EC2Reconciler) Run(ctx context.Context) error {
 	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
 		log.Error(err, "initial reconciliation failed")
 		// Don't exit - continue with periodic reconciliation
+	}
+
+	// Signal that initial reconciliation is complete (if channel was provided)
+	// This allows downstream reconcilers (e.g., SPRatesReconciler) to wait for
+	// EC2 data to be populated before starting their work
+	if r.ReadyChan != nil {
+		close(r.ReadyChan)
+		log.V(1).Info("signaled that EC2 cache is ready for dependent reconcilers")
 	}
 
 	// Parse reconciliation interval from config, with default fallback to 5 minutes

@@ -141,16 +141,64 @@ func (c *RealSPClient) GetSavingsPlanByARN(ctx context.Context, arn string) (*Sa
 // DescribeSavingsPlanRates returns the actual rates for a specific purchased Savings Plan.
 // This API returns the PURCHASE-TIME rates that were locked in when the SP was bought,
 // not current market offering rates.
+//
 // coverage:ignore - requires real AWS credentials, tested via E2E with LocalStack
 func (c *RealSPClient) DescribeSavingsPlanRates(
 	ctx context.Context,
 	savingsPlanId string,
+	instanceTypes []string,
+	regions []string,
+	operatingSystems []string,
+	tenancies []string,
 ) ([]SavingsPlanRate, error) {
 	var allRates []SavingsPlanRate
 
 	// Build input - query for a specific Savings Plan ID
 	input := &savingsplans.DescribeSavingsPlanRatesInput{
 		SavingsPlanId: aws.String(savingsPlanId),
+	}
+
+	// Add filters to dramatically reduce data transfer and memory usage
+	// Without filters: AWS returns 20k-128k+ rates per SP (all instance types × all regions × all OS × tenancy)
+	// With filters: Only get rates for what we actually use (~50-200 rates per SP)
+	// This is a ~99.5% reduction in data transfer and memory usage
+	var filters []types.SavingsPlanRateFilter
+
+	if len(instanceTypes) > 0 {
+		filters = append(filters, types.SavingsPlanRateFilter{
+			Name:   types.SavingsPlanRateFilterNameInstanceType,
+			Values: instanceTypes,
+		})
+	}
+
+	if len(regions) > 0 {
+		filters = append(filters, types.SavingsPlanRateFilter{
+			Name:   types.SavingsPlanRateFilterNameRegion,
+			Values: regions,
+		})
+	}
+
+	if len(operatingSystems) > 0 {
+		filters = append(filters, types.SavingsPlanRateFilter{
+			Name:   types.SavingsPlanRateFilterNameProductDescription,
+			Values: operatingSystems,
+		})
+	}
+
+	if len(tenancies) > 0 {
+		// Convert EC2 tenancy values ("default", "dedicated", "host") to SP API format ("Shared", "Dedicated", "Host")
+		spTenancies := make([]string, len(tenancies))
+		for i, t := range tenancies {
+			spTenancies[i] = normalizeTenancyForSPFilter(t)
+		}
+		filters = append(filters, types.SavingsPlanRateFilter{
+			Name:   "tenancy",
+			Values: spTenancies,
+		})
+	}
+
+	if len(filters) > 0 {
+		input.Filters = filters
 	}
 
 	// Handle pagination
@@ -163,9 +211,11 @@ func (c *RealSPClient) DescribeSavingsPlanRates(
 		// Convert AWS SDK types to our types
 		for _, rate := range output.SearchResults {
 			convertedRate := convertSavingsPlanRate(rate, savingsPlanId)
-			if convertedRate != nil {
-				allRates = append(allRates, *convertedRate)
+			if convertedRate == nil {
+				continue
 			}
+
+			allRates = append(allRates, *convertedRate)
 		}
 
 		// Check for more pages
@@ -176,6 +226,105 @@ func (c *RealSPClient) DescribeSavingsPlanRates(
 	}
 
 	return allRates, nil
+}
+
+// normalizeTenancyForSPFilter converts EC2 instance tenancy values to the format expected
+// by the Savings Plans DescribeSavingsPlanRates API filter.
+//
+// EC2 instances use (types.Tenancy enum):
+//   - "default"   - Shared hardware
+//   - "dedicated" - Dedicated instance
+//   - "host"      - Dedicated host
+//
+// Savings Plans API filters expect lowercase:
+//   - "shared"    - For default/shared tenancy
+//   - "dedicated" - For dedicated instances
+//   - "host"      - For dedicated hosts
+func normalizeTenancyForSPFilter(ec2Tenancy string) string {
+	switch ec2Tenancy {
+	case TenancyDefault:
+		return TenancyShared
+	case TenancyDedicated, TenancyHost:
+		// Already lowercase, return as-is
+		return ec2Tenancy
+	default:
+		// Unknown tenancy - return lowercase
+		return strings.ToLower(ec2Tenancy)
+	}
+}
+
+// normalizeProductDescription normalizes OS/platform values to a consistent format.
+// This function converts between EC2 and Savings Plans API formats to ensure cache keys match.
+//
+// EC2 DescribeInstances returns (Platform field):
+//   - ""        - Linux instances (field is empty/omitted)
+//   - "windows" - Windows instances (lowercase)
+//
+// Savings Plans DescribeSavingsPlanRates returns (productDescription property):
+//   - "Linux/UNIX"           - Linux instances
+//   - "Windows"              - Windows instances
+//   - "Red Hat Enterprise Linux" - RHEL instances
+//   - "SUSE Linux"           - SUSE instances
+//
+// This function normalizes all values to a simplified format for cache keys:
+//   - "linux"   - All Linux variants (Linux/UNIX, RHEL, SUSE, or empty Platform)
+//   - "windows" - Windows instances
+func normalizeProductDescription(input string) string {
+	normalized := strings.ToLower(strings.TrimSpace(input))
+
+	// EC2 Platform values (already normalized)
+	if normalized == "" || normalized == PlatformLinux {
+		return PlatformLinux
+	}
+	if normalized == PlatformWindows {
+		return PlatformWindows
+	}
+
+	// Savings Plans ProductDescription values
+	if strings.Contains(normalized, "linux") || strings.Contains(normalized, "unix") {
+		return PlatformLinux
+	}
+	if strings.Contains(normalized, "windows") {
+		return PlatformWindows
+	}
+
+	// Default to linux for unknown values (most instances are Linux)
+	return PlatformLinux
+}
+
+// normalizeTenancyForSPRate normalizes tenancy values from Savings Plan rate properties
+// to match EC2 instance tenancy values.
+//
+// EC2 DescribeInstances returns (types.Tenancy enum):
+//   - "default"   - Shared hardware (most common, ~99% of instances)
+//   - "dedicated" - Dedicated instance
+//   - "host"      - Dedicated host
+//
+// Savings Plans DescribeSavingsPlanRates returns in properties (lowercase):
+//   - "shared"    - Shared/default tenancy
+//   - "dedicated" - Dedicated instance
+//   - "host"      - Dedicated host
+//
+// This function normalizes SP rate tenancy values to match EC2 instance values:
+//   - "shared"    → "default"
+//   - "dedicated" → "dedicated"
+//   - "host"      → "host"
+func normalizeTenancyForSPRate(spTenancy string) string {
+	switch strings.ToLower(spTenancy) {
+	case "", TenancyShared:
+		// AWS uses "shared", EC2 uses "default"
+		return TenancyDefault
+	case TenancyDedicated:
+		return TenancyDedicated
+	case TenancyHost:
+		return TenancyHost
+	case TenancyDefault:
+		// Already normalized (passthrough for safety)
+		return TenancyDefault
+	default:
+		// Unknown tenancy value - default to "default"
+		return TenancyDefault
+	}
 }
 
 // convertSavingsPlanRate converts an AWS SDK SavingsPlanRate to our type.
@@ -189,9 +338,11 @@ func convertSavingsPlanRate(rate types.SavingsPlanRate, savingsPlanId string) *S
 		}
 	}
 
-	// Extract instance type and tenancy from properties
+	// Extract instance type, region, tenancy, and OS from properties
 	instanceType := ""
-	tenancy := "shared" // Default to shared
+	region := ""
+	rawTenancy := ""         // Will be normalized below
+	productDescription := "" // OS type (e.g., "Linux/UNIX", "Windows")
 
 	for _, prop := range rate.Properties {
 		name := string(prop.Name) // Name is SavingsPlanRatePropertyKey type (string)
@@ -200,8 +351,12 @@ func convertSavingsPlanRate(rate types.SavingsPlanRate, savingsPlanId string) *S
 		switch name {
 		case "instanceType":
 			instanceType = value
+		case "region":
+			region = value
 		case "tenancy":
-			tenancy = value
+			rawTenancy = value
+		case "productDescription":
+			productDescription = value
 		}
 	}
 
@@ -210,79 +365,35 @@ func convertSavingsPlanRate(rate types.SavingsPlanRate, savingsPlanId string) *S
 		return nil
 	}
 
-	// Extract region from usageType
-	// Format: "APN1-DedicatedUsage:c6i.large" or "USW2-BoxUsage:m5.xlarge"
-	region := extractRegionFromUsageType(aws.ToString(rate.UsageType))
+	// Skip rates without region - region is required for per-region instance pricing
+	if region == "" {
+		return nil
+	}
+
+	// Normalize tenancy value to match EC2 instance tenancy format
+	// AWS omits the tenancy property for default/shared instances, only includes it for "Dedicated" or "Host"
+	// This function converts AWS Savings Plans API tenancy values to match EC2 types.Tenancy enum values
+	tenancy := normalizeTenancyForSPRate(rawTenancy)
+
+	// Normalize product description (OS) to match EC2 platform format
+	// Converts "Linux/UNIX" → "linux", "Windows" → "windows", etc.
+	normalizedOS := normalizeProductDescription(productDescription)
 
 	return &SavingsPlanRate{
-		SavingsPlanId:  savingsPlanId,
-		SavingsPlanARN: "", // Will be populated by caller if needed
-		InstanceType:   instanceType,
-		Region:         region,
-		Rate:           rateValue,
-		Currency:       string(rate.Currency),
-		Unit:           string(rate.Unit),
-		ProductType:    string(rate.ProductType),
-		ServiceCode:    string(rate.ServiceCode),
-		UsageType:      aws.ToString(rate.UsageType),
-		Operation:      aws.ToString(rate.Operation),
-		Tenancy:        tenancy,
+		SavingsPlanId:      savingsPlanId,
+		SavingsPlanARN:     "", // Will be populated by caller if needed
+		InstanceType:       instanceType,
+		Region:             region,
+		Rate:               rateValue,
+		Currency:           string(rate.Currency),
+		Unit:               string(rate.Unit),
+		ProductType:        string(rate.ProductType),
+		ServiceCode:        string(rate.ServiceCode),
+		UsageType:          aws.ToString(rate.UsageType),
+		Operation:          aws.ToString(rate.Operation),
+		ProductDescription: normalizedOS, // Normalized to "linux" or "windows"
+		Tenancy:            tenancy,
 	}
-}
-
-// extractRegionFromUsageType extracts the AWS region from a usage type string.
-// Usage type format: "{REGION_CODE}-{USAGE_CATEGORY}:{INSTANCE_TYPE}"
-// Examples:
-//   - "APN1-DedicatedUsage:c6i.large" -> "ap-northeast-1"
-//   - "USW2-BoxUsage:m5.xlarge" -> "us-west-2"
-//   - "USE1-BoxUsage:t3.micro" -> "us-east-1"
-func extractRegionFromUsageType(usageType string) string {
-	// Split on hyphen to get region code
-	parts := strings.Split(usageType, "-")
-	if len(parts) == 0 {
-		return ""
-	}
-
-	regionCode := parts[0]
-
-	// Map of AWS usage type region codes to actual region names
-	// Based on: https://docs.aws.amazon.com/cur/latest/userguide/usagetype.html
-	regionMap := map[string]string{
-		"USE1": "us-east-1",
-		"USE2": "us-east-2",
-		"USW1": "us-west-1",
-		"USW2": "us-west-2",
-		"AFS1": "af-south-1",
-		"APE1": "ap-east-1",
-		"APS1": "ap-south-1",
-		"APS2": "ap-south-2",
-		"APN1": "ap-northeast-1",
-		"APN2": "ap-northeast-2",
-		"APN3": "ap-northeast-3",
-		"APS3": "ap-southeast-1",
-		"APS4": "ap-southeast-2",
-		"APS5": "ap-southeast-3",
-		"APS6": "ap-southeast-4",
-		"CAN1": "ca-central-1",
-		"EUC1": "eu-central-1",
-		"EUC2": "eu-central-2",
-		"EUW1": "eu-west-1",
-		"EUW2": "eu-west-2",
-		"EUW3": "eu-west-3",
-		"EUS1": "eu-south-1",
-		"EUS2": "eu-south-2",
-		"EUN1": "eu-north-1",
-		"MES1": "me-south-1",
-		"MEC1": "me-central-1",
-		"SAE1": "sa-east-1",
-	}
-
-	if region, ok := regionMap[regionCode]; ok {
-		return region
-	}
-
-	// If not found, return the code as-is
-	return strings.ToLower(regionCode)
 }
 
 // convertSavingsPlan converts an AWS SDK SavingsPlan to our type.

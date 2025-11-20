@@ -24,6 +24,29 @@ import (
 	"time"
 )
 
+// Platform constants for operating system types.
+// These are normalized, lowercase values used throughout the codebase.
+const (
+	PlatformLinux   = "linux"
+	PlatformWindows = "windows"
+)
+
+// Lifecycle constants for EC2 instance types.
+const (
+	LifecycleOnDemand = "on-demand"
+	LifecycleSpot     = "spot"
+)
+
+// Tenancy constants for EC2 instance and Savings Plans tenancy types.
+// EC2 API uses "default", "dedicated", "host".
+// Savings Plans API uses "shared", "dedicated", "host".
+const (
+	TenancyDefault   = "default"   // EC2: Shared hardware (most common, ~99% of instances)
+	TenancyDedicated = "dedicated" // Both: Dedicated instance
+	TenancyHost      = "host"      // Both: Dedicated host
+	TenancyShared    = "shared"    // Savings Plans: Shared/default tenancy
+)
+
 // AccountConfig represents configuration for accessing an AWS account.
 // Supports both direct credentials and AssumeRole-based access.
 type AccountConfig struct {
@@ -88,6 +111,10 @@ type Instance struct {
 
 	// Platform is the OS platform (e.g., "linux", "windows")
 	Platform string
+
+	// Tenancy indicates whether the instance runs on shared or dedicated hardware
+	// Values: "default" (shared), "dedicated", "host"
+	Tenancy string
 
 	// SpotInstanceRequestID is the spot instance request ID if this is a spot instance
 	SpotInstanceRequestID string
@@ -264,6 +291,9 @@ type SavingsPlanRate struct {
 
 	// Operation is the operation (e.g., "RunInstances:0202")
 	Operation string
+
+	// ProductDescription is the OS type (e.g., "Linux/UNIX", "Windows")
+	ProductDescription string
 
 	// Tenancy is "shared", "dedicated", or "host"
 	Tenancy string

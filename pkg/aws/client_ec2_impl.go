@@ -176,13 +176,6 @@ func (c *RealEC2Client) GetInstanceByID(_ context.Context, _ string, _ string) (
 	return nil, nil
 }
 
-const (
-	lifecycleOnDemand = "on-demand"
-	lifecycleSpot     = "spot"
-	platformLinux     = "linux"
-	platformWindows   = "windows"
-)
-
 // convertInstance converts an AWS SDK Instance to our type.
 func convertInstance(inst types.Instance, region, accountID string) Instance {
 	// Extract launch time
@@ -192,16 +185,16 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 	}
 
 	// Determine lifecycle (spot or on-demand)
-	lifecycle := lifecycleOnDemand
+	lifecycle := LifecycleOnDemand
 	if inst.InstanceLifecycle == types.InstanceLifecycleTypeSpot {
-		lifecycle = lifecycleSpot
+		lifecycle = LifecycleSpot
 	}
 
 	// Normalize platform name
 	// AWS returns "windows" for Windows, but nothing for Linux
-	platform := platformLinux
+	platform := PlatformLinux
 	if inst.Platform == types.PlatformValuesWindows {
-		platform = platformWindows
+		platform = PlatformWindows
 	}
 
 	// Convert tags to map
@@ -211,6 +204,11 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 			tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 		}
 	}
+
+	// Extract tenancy from placement
+	// AWS uses "default" for shared hardware, "dedicated" for dedicated instances, and "host" for dedicated hosts
+	// This field is always present in the AWS API response
+	tenancy := string(inst.Placement.Tenancy)
 
 	return Instance{
 		InstanceID:            aws.ToString(inst.InstanceId),
@@ -225,6 +223,7 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 		PrivateDNSName:        aws.ToString(inst.PrivateDnsName),
 		PrivateIPAddress:      aws.ToString(inst.PrivateIpAddress),
 		Platform:              platform,
+		Tenancy:               tenancy,
 		SpotInstanceRequestID: aws.ToString(inst.SpotInstanceRequestId),
 	}
 }

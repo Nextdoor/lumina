@@ -83,11 +83,35 @@ func initializeReconcilers(
 	luminaMetrics *metrics.Metrics,
 	costCalculator *cost.Calculator,
 ) *reconcilers {
-	// Create channel for RISP -> SPRates coordination
-	// RISP closes this after initial run, SPRates waits on it before starting
+	// Create channels for reconciler coordination to ensure proper startup ordering.
+	// Each reconciler signals when its initial data load completes, allowing dependent
+	// reconcilers to wait for complete data before starting.
+	//
+	// Dependency graph:
+	//   Pricing ─┐
+	//            ├─→ SPRates ─┐
+	//   RISP ────┤             ├─→ Cost (waits for all 4)
+	//            │             │
+	//   EC2 ─────┴─────────────┘
+	//
+	// This ensures the Cost reconciler's first calculation has complete, accurate data
+	// rather than running 4-5 times with increasingly complete data during startup.
+	pricingReadyCh := make(chan struct{})
 	rispReadyCh := make(chan struct{})
+	ec2ReadyCh := make(chan struct{})
+	spRatesReadyCh := make(chan struct{})
 
 	return &reconcilers{
+		Pricing: &controller.PricingReconciler{
+			AWSClient:        awsClient,
+			Config:           cfg,
+			Cache:            pricingCache,
+			Metrics:          luminaMetrics,
+			Log:              ctrl.Log.WithName("pricing-reconciler"),
+			Regions:          cfg.Regions,
+			OperatingSystems: cfg.GetOperatingSystems(),
+			ReadyChan:        pricingReadyCh,
+		},
 		RISP: &controller.RISPReconciler{
 			AWSClient: awsClient,
 			Config:    cfg,
@@ -104,33 +128,33 @@ func initializeReconcilers(
 			Metrics:   luminaMetrics,
 			Log:       ctrl.Log.WithName("ec2-reconciler"),
 			Regions:   cfg.Regions,
-		},
-		Pricing: &controller.PricingReconciler{
-			AWSClient:        awsClient,
-			Config:           cfg,
-			Cache:            pricingCache,
-			Metrics:          luminaMetrics,
-			Log:              ctrl.Log.WithName("pricing-reconciler"),
-			Regions:          cfg.Regions,
-			OperatingSystems: []string{"Linux", "Windows"},
+			ReadyChan: ec2ReadyCh,
 		},
 		SPRates: &controller.SPRatesReconciler{
-			AWSClient:     awsClient,
-			Config:        cfg,
-			RISPCache:     rispCache,
-			PricingCache:  pricingCache,
-			Metrics:       luminaMetrics,
-			Log:           ctrl.Log.WithName("sp-rates-reconciler"),
-			RISPReadyChan: rispReadyCh,
+			AWSClient:        awsClient,
+			Config:           cfg,
+			EC2Cache:         ec2Cache,
+			RISPCache:        rispCache,
+			PricingCache:     pricingCache,
+			Metrics:          luminaMetrics,
+			Log:              ctrl.Log.WithName("sp-rates-reconciler"),
+			OperatingSystems: cfg.GetOperatingSystems(),
+			RISPReadyChan:    rispReadyCh,
+			EC2ReadyChan:     ec2ReadyCh,
+			ReadyChan:        spRatesReadyCh,
 		},
 		Cost: &controller.CostReconciler{
-			Calculator:   costCalculator,
-			Config:       cfg,
-			EC2Cache:     ec2Cache,
-			RISPCache:    rispCache,
-			PricingCache: pricingCache,
-			Metrics:      luminaMetrics,
-			Log:          ctrl.Log.WithName("cost-reconciler"),
+			Calculator:       costCalculator,
+			Config:           cfg,
+			EC2Cache:         ec2Cache,
+			RISPCache:        rispCache,
+			PricingCache:     pricingCache,
+			Metrics:          luminaMetrics,
+			Log:              ctrl.Log.WithName("cost-reconciler"),
+			PricingReadyChan: pricingReadyCh,
+			RISPReadyChan:    rispReadyCh,
+			EC2ReadyChan:     ec2ReadyCh,
+			SPRatesReadyChan: spRatesReadyCh,
 		},
 		ReadyCh: rispReadyCh,
 	}
@@ -230,21 +254,21 @@ func runStandalone(
 	}()
 	setupLog.Info("started RISP reconciler")
 
-	// Start SP rates reconciler - waits for RISP to be ready via channel
-	go func() {
-		if err := recs.SPRates.Run(ctx); err != nil {
-			setupLog.Error(err, "SP rates reconciler stopped with error")
-		}
-	}()
-	setupLog.Info("started SP rates reconciler")
-
-	// Start EC2 reconciler
+	// Start EC2 reconciler - it will signal via channel when ready
 	go func() {
 		if err := recs.EC2.Run(ctx); err != nil {
 			setupLog.Error(err, "EC2 reconciler stopped with error")
 		}
 	}()
 	setupLog.Info("started EC2 reconciler")
+
+	// Start SP rates reconciler - waits for both RISP and EC2 to be ready via channels
+	go func() {
+		if err := recs.SPRates.Run(ctx); err != nil {
+			setupLog.Error(err, "SP rates reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started SP rates reconciler")
 
 	// Create debouncer that triggers cost calculation 1 second after last cache update
 	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
@@ -282,6 +306,10 @@ func runStandalone(
 	// In standalone mode, we serve Prometheus metrics directly without authentication
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.HandlerFor(metricsRegistry, promhttp.HandlerOpts{}))
+
+	// Register debug endpoints for cache inspection
+	// These endpoints are useful for debugging pricing issues and cache state
+	controller.RegisterDebugEndpoints(metricsMux, ec2Cache, rispCache, pricingCache)
 
 	var metricsServer *http.Server
 	if secureMetrics {
@@ -507,6 +535,16 @@ func main() {
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
 
+	// Register debug endpoints as extra handlers on the metrics server
+	// These endpoints allow inspection of internal caches for debugging pricing issues
+	// Note: We need to create a temporary debug handler here before we have the caches
+	// We'll set up a placeholder and update it after caches are initialized
+	debugHandler := controller.NewDebugHandler(nil, nil, nil)
+	metricsServerOptions.ExtraHandlers = map[string]http.Handler{
+		"/debug/cache/": debugHandler,
+	}
+	setupLog.Info("registered debug endpoints on metrics server (caches will be set after initialization)")
+
 	// If the certificate is not specified, controller-runtime will automatically
 	// generate self-signed certificates for the metrics server. While convenient for development and testing,
 	// this setup is not recommended for production.
@@ -594,6 +632,12 @@ func main() {
 	// Initialize pricing cache
 	pricingCache := cache.NewPricingCache()
 	setupLog.Info("initialized pricing cache")
+
+	// Update debug handler with actual caches now that they're initialized
+	debugHandler.EC2Cache = ec2Cache
+	debugHandler.RISPCache = rispCache
+	debugHandler.PricingCache = pricingCache
+	setupLog.Info("debug endpoints ready with cache references")
 
 	// Create cost calculator (needed before initializing reconcilers)
 	costCalculator := cost.NewCalculator(pricingCache, cfg)

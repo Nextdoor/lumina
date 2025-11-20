@@ -341,9 +341,14 @@ func (m *MockSavingsPlansClient) GetSavingsPlanByARN(ctx context.Context, arn st
 }
 
 // DescribeSavingsPlanRates returns the mock rates for a specific Savings Plan.
+// Filters rates by instanceTypes, regions, operatingSystems, and tenancies if provided.
 func (m *MockSavingsPlansClient) DescribeSavingsPlanRates(
 	ctx context.Context,
 	savingsPlanId string,
+	instanceTypes []string,
+	regions []string,
+	operatingSystems []string,
+	tenancies []string,
 ) ([]SavingsPlanRate, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -356,7 +361,47 @@ func (m *MockSavingsPlansClient) DescribeSavingsPlanRates(
 
 	// Return rates for this SP ID
 	if rates, exists := m.SavingsPlanRates[savingsPlanId]; exists {
-		return rates, nil
+		// If no filters provided, return all rates
+		if len(instanceTypes) == 0 && len(regions) == 0 && len(operatingSystems) == 0 && len(tenancies) == 0 {
+			return rates, nil
+		}
+
+		// Build filter sets for efficient lookup
+		instanceTypeSet := make(map[string]bool)
+		for _, it := range instanceTypes {
+			instanceTypeSet[it] = true
+		}
+
+		regionSet := make(map[string]bool)
+		for _, r := range regions {
+			regionSet[r] = true
+		}
+
+		osSet := make(map[string]bool)
+		for _, os := range operatingSystems {
+			osSet[os] = true
+		}
+
+		tenancySet := make(map[string]bool)
+		for _, t := range tenancies {
+			tenancySet[t] = true
+		}
+
+		// Filter rates to only requested values
+		var filteredRates []SavingsPlanRate
+		for _, rate := range rates {
+			// If filter is provided, rate must match. If filter is empty, always matches.
+			matchesInstanceType := len(instanceTypes) == 0 || instanceTypeSet[rate.InstanceType]
+			matchesRegion := len(regions) == 0 || regionSet[rate.Region]
+			matchesOS := len(operatingSystems) == 0 || osSet[rate.ProductType]
+			matchesTenancy := len(tenancies) == 0 || tenancySet[rate.Tenancy]
+
+			if matchesInstanceType && matchesRegion && matchesOS && matchesTenancy {
+				filteredRates = append(filteredRates, rate)
+			}
+		}
+
+		return filteredRates, nil
 	}
 
 	// Return empty list if no rates for this SP
