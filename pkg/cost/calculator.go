@@ -17,6 +17,7 @@ limitations under the License.
 package cost
 
 import (
+	"strings"
 	"time"
 
 	"github.com/nextdoor/lumina/pkg/aws"
@@ -211,6 +212,25 @@ func (c *Calculator) initializeSPUtilization(input CalculationInput, utilization
 	}
 }
 
+// platformToProductDescription converts an EC2 Platform value to an AWS ProductDescription.
+// This matches the behavior in spot_pricing_reconciler.go for consistency.
+func platformToProductDescription(platform string) string {
+	normalized := strings.ToLower(strings.TrimSpace(platform))
+
+	// Empty string or "linux" → "Linux/UNIX"
+	if normalized == "" || normalized == aws.PlatformLinux {
+		return aws.ProductDescriptionLinuxUnix
+	}
+
+	// "windows" → "Windows"
+	if normalized == aws.PlatformWindows {
+		return aws.ProductDescriptionWindows
+	}
+
+	// Default to Linux/UNIX for any unrecognized values
+	return aws.ProductDescriptionLinuxUnix
+}
+
 // applySpotPricing adjusts costs for spot instances to use current spot market prices
 // instead of on-demand rates. Spot instances have different pricing that fluctuates
 // based on market demand.
@@ -230,8 +250,10 @@ func (c *Calculator) applySpotPricing(input CalculationInput, costs map[string]*
 		}
 
 		// Look up current spot price for this instance type + AZ
-		spotKey := inst.InstanceType + ":" + inst.AvailabilityZone
-		spotPrice := input.SpotPrices[spotKey]
+		// Use the cache accessor method to avoid key format dependencies
+		// Map the instance's Platform field to AWS ProductDescription format
+		productDescription := platformToProductDescription(inst.Platform)
+		spotPrice, _ := input.PricingCache.GetSpotPrice(inst.InstanceType, inst.AvailabilityZone, productDescription)
 
 		// For spot instances, ALWAYS use the spot price as the effective cost.
 		// Spot instances cannot use Reserved Instances or Savings Plans per AWS billing rules.
