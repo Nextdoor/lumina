@@ -46,6 +46,60 @@ testData:
         start: "2024-03-01T00:00:00Z"
         end: "2027-03-01T00:00:00Z"
 
+  # Savings Plan Rates test data
+  # LocalStack's free tier doesn't support DescribeSavingsPlanRates API (returns 501)
+  # This provides mock rates for the Savings Plans defined above
+  # Key format: "savingsPlanId" -> list of rates
+  savingsPlanRates:
+    # Rates for Compute SP (12345678-1234-1234-1234-123456789012)
+    "12345678-1234-1234-1234-123456789012":
+      - rate: 0.0537
+        currency: "USD"
+        unit: "Hrs"
+        productType: "Linux/UNIX"
+        serviceCode: "AmazonEC2"
+        usageType: "BoxUsage:m5.xlarge"
+        operation: "RunInstances"
+        instanceType: "m5.xlarge"
+        region: "us-east-1"
+        tenancy: "shared"
+      - rate: 0.0420
+        currency: "USD"
+        unit: "Hrs"
+        productType: "Linux/UNIX"
+        serviceCode: "AmazonEC2"
+        usageType: "BoxUsage:c5.large"
+        operation: "RunInstances"
+        instanceType: "c5.large"
+        region: "us-east-1"
+        tenancy: "shared"
+
+    # Rates for EC2 Instance SP - m5 family (87654321-4321-4321-4321-210987654321)
+    "87654321-4321-4321-4321-210987654321":
+      - rate: 0.0480
+        currency: "USD"
+        unit: "Hrs"
+        productType: "Linux/UNIX"
+        serviceCode: "AmazonEC2"
+        usageType: "BoxUsage:m5.xlarge"
+        operation: "RunInstances"
+        instanceType: "m5.xlarge"
+        region: "us-east-1"
+        tenancy: "shared"
+
+    # Rates for Compute SP in staging (11111111-2222-3333-4444-555555555555)
+    "11111111-2222-3333-4444-555555555555":
+      - rate: 0.0400
+        currency: "USD"
+        unit: "Hrs"
+        productType: "Linux/UNIX"
+        serviceCode: "AmazonEC2"
+        usageType: "BoxUsage:c5.large"
+        operation: "RunInstances"
+        instanceType: "c5.large"
+        region: "us-east-1"
+        tenancy: "shared"
+
   # Pricing test data
   # LocalStack's free tier doesn't support the Pricing API, so we provide mock pricing
   # Flat map with keys in format "region:instanceType:operatingSystem" -> price

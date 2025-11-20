@@ -349,7 +349,20 @@ func (r *SPRatesReconciler) fetchRatesForSPWithFilters(
 	tenancies []string,
 	operatingSystems []string,
 ) (map[string]float64, error) {
-	// Use the SP's account to fetch rates
+	// Check if we have test data for this SP
+	// This is used in E2E tests when LocalStack doesn't support the DescribeSavingsPlanRates API
+	if r.Config.TestData != nil && r.Config.TestData.SavingsPlanRates != nil {
+		testRates, hasTestData := r.Config.TestData.SavingsPlanRates[sp.SavingsPlanID]
+		if hasTestData {
+			r.Log.Info("using test data for SP rates",
+				"sp_id", sp.SavingsPlanID,
+				"sp_arn", sp.SavingsPlanARN,
+				"test_rates_count", len(testRates))
+			return convertTestSPRates(testRates, sp.SavingsPlanARN, instanceTypes, regions, tenancies, operatingSystems), nil
+		}
+	}
+
+	// No test data, query AWS API
 	accountConfig := aws.AccountConfig{
 		AccountID:     sp.AccountID,
 		Region:        r.Config.DefaultRegion,
@@ -527,4 +540,80 @@ func (r *SPRatesReconciler) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// convertTestSPRates converts test Savings Plan rates from config to a map format
+// suitable for caching. Applies filters (instance types, regions, tenancies, OS)
+// just like the real AWS API would.
+func convertTestSPRates(
+	testRates []config.TestSavingsPlanRate,
+	spArn string,
+	filterInstanceTypes []string,
+	filterRegions []string,
+	filterTenancies []string,
+	filterOperatingSystems []string,
+) map[string]float64 {
+	ratesMap := make(map[string]float64)
+
+	// Build filter sets for efficient lookup
+	instanceTypeSet := make(map[string]bool)
+	for _, it := range filterInstanceTypes {
+		instanceTypeSet[it] = true
+	}
+
+	regionSet := make(map[string]bool)
+	for _, r := range filterRegions {
+		regionSet[r] = true
+	}
+
+	tenancySet := make(map[string]bool)
+	for _, t := range filterTenancies {
+		tenancySet[t] = true
+	}
+
+	osSet := make(map[string]bool)
+	for _, os := range filterOperatingSystems {
+		// Normalize OS to lowercase for matching
+		normalizedOS := strings.ToLower(os)
+		switch normalizedOS {
+		case "linux/unix":
+			normalizedOS = aws.PlatformLinux
+		case "windows":
+			normalizedOS = aws.PlatformWindows
+		}
+		osSet[normalizedOS] = true
+	}
+
+	// Filter and convert test rates
+	for _, testRate := range testRates {
+		// Apply filters (if filter is empty, everything matches)
+		if len(filterInstanceTypes) > 0 && !instanceTypeSet[testRate.InstanceType] {
+			continue
+		}
+		if len(filterRegions) > 0 && !regionSet[testRate.Region] {
+			continue
+		}
+		if len(filterTenancies) > 0 && !tenancySet[testRate.Tenancy] {
+			continue
+		}
+
+		// Normalize ProductType to match cache format (linux/windows lowercase)
+		normalizedOS := strings.ToLower(testRate.ProductType)
+		switch normalizedOS {
+		case "linux/unix":
+			normalizedOS = aws.PlatformLinux
+		case "windows":
+			normalizedOS = aws.PlatformWindows
+		}
+
+		if len(filterOperatingSystems) > 0 && !osSet[normalizedOS] {
+			continue
+		}
+
+		// Build cache key using same format as real rates
+		key := cache.BuildSPRateKey(spArn, testRate.InstanceType, testRate.Region, testRate.Tenancy, normalizedOS)
+		ratesMap[key] = testRate.Rate
+	}
+
+	return ratesMap
 }
