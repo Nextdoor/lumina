@@ -430,8 +430,8 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 	// The regionQuery struct tracks which account to use for the API call (arbitrary choice,
 	// we pick the first one we encounter) and accumulates all combinations for that region.
 	type regionQuery struct {
-		accountID    string // Account credentials to use for this region's API call
-		region       string // AWS region (e.g., "us-west-2")
+		accountID    string                 // Account credentials to use for this region's API call
+		region       string                 // AWS region (e.g., "us-west-2")
 		combinations []SpotPriceCombination // All missing prices for this region
 	}
 	queries := make(map[string]*regionQuery) // key: region
@@ -543,26 +543,37 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 	return prices, errors
 }
 
-// scheduleNextReconciliation determines when to run the next reconciliation cycle.
-func (r *SpotPricingReconciler) scheduleNextReconciliation(log logr.Logger) ctrl.Result {
-	// Parse reconciliation interval from config, with default fallback to 15 seconds.
-	//
-	// Why 15 seconds (not 15 minutes)?
-	// - Lazy-loading means steady-state = 0 API calls per cycle
-	// - Most reconciliation cycles just check cache and return immediately
-	// - Short intervals provide fast response to new instance types
-	// - Only makes API calls when new instance types are discovered
-	requeueAfter := 15 * time.Second // Default
-	if r.Config.Reconciliation.SpotPricing != "" {
-		if duration, err := time.ParseDuration(r.Config.Reconciliation.SpotPricing); err == nil {
-			requeueAfter = duration
-		} else {
-			log.Error(err, "invalid spot pricing reconciliation interval, using default",
-				"configured_interval", r.Config.Reconciliation.SpotPricing,
-				"default", "15s")
-		}
+// getReconciliationInterval parses the reconciliation interval from config with fallback.
+// This method is used by both Reconcile() and Run() to ensure consistent interval parsing.
+//
+// Default: 15 seconds (fast because lazy-loading = 0 API calls in steady state)
+//
+// Why 15 seconds (not 15 minutes)?
+// - Lazy-loading means steady-state = 0 API calls per cycle
+// - Most reconciliation cycles just check cache and return immediately
+// - Short intervals provide fast response to new instance types
+// - Only makes API calls when new instance types are discovered
+func (r *SpotPricingReconciler) getReconciliationInterval(log logr.Logger) time.Duration {
+	defaultInterval := 15 * time.Second
+
+	if r.Config.Reconciliation.SpotPricing == "" {
+		return defaultInterval
 	}
 
+	duration, err := time.ParseDuration(r.Config.Reconciliation.SpotPricing)
+	if err != nil {
+		log.Error(err, "invalid spot pricing reconciliation interval, using default",
+			"configured_interval", r.Config.Reconciliation.SpotPricing,
+			"default", defaultInterval.String())
+		return defaultInterval
+	}
+
+	return duration
+}
+
+// scheduleNextReconciliation determines when to run the next reconciliation cycle.
+func (r *SpotPricingReconciler) scheduleNextReconciliation(log logr.Logger) ctrl.Result {
+	requeueAfter := r.getReconciliationInterval(log)
 	log.V(1).Info("reconciliation interval configured", "next_run_in", requeueAfter.String())
 	return ctrl.Result{RequeueAfter: requeueAfter}
 }
@@ -589,53 +600,20 @@ func (r *SpotPricingReconciler) Run(ctx context.Context) error {
 	// - System will eventually become healthy without manual intervention
 	log.Info("⏳ running initial spot pricing reconciliation (BLOCKING with retry)")
 
-	maxRetries := 10
-	retryDelay := 5 * time.Second
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), log, "initial spot pricing reconciliation", func() error {
+		_, err := r.Reconcile(ctx, ctrl.Request{})
+		return err
+	})
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-			log.Error(err, "initial spot pricing reconciliation failed",
-				"attempt", attempt,
-				"max_retries", maxRetries,
-				"retry_delay", retryDelay)
-
-			// If this was the last attempt, return error
-			if attempt == maxRetries {
-				return fmt.Errorf("failed to load initial spot pricing data after %d attempts: %w", maxRetries, err)
-			}
-
-			// Wait before retrying (with context cancellation support)
-			select {
-			case <-time.After(retryDelay):
-				// Exponential backoff: 5s, 10s, 20s, 40s, ...
-				retryDelay *= 2
-				if retryDelay > 60*time.Second {
-					retryDelay = 60 * time.Second // Cap at 60 seconds
-				}
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		} else {
-			// Success!
-			log.Info("✅ initial spot pricing reconciliation completed successfully",
-				"attempts", attempt)
-			break
-		}
+	if err != nil {
+		log.Error(err, "❌ initial spot pricing reconciliation failed permanently")
+		return err
 	}
 
-	// Parse reconciliation interval from config
-	interval := 15 * time.Second // Default (fast because lazy-loading = 0 API calls in steady state)
-	if r.Config.Reconciliation.SpotPricing != "" {
-		if duration, err := time.ParseDuration(r.Config.Reconciliation.SpotPricing); err == nil {
-			interval = duration
-		} else {
-			log.Error(err, "invalid spot pricing reconciliation interval, using default",
-				"configured_interval", r.Config.Reconciliation.SpotPricing,
-				"default", "15s")
-		}
-	}
+	log.Info("✅ initial spot pricing reconciliation completed successfully")
 
-	// Setup ticker for periodic spot pricing updates
+	// Get reconciliation interval from config (uses same logic as Reconcile method)
+	interval := r.getReconciliationInterval(log)
 	log.Info("configured reconciliation interval", "interval", interval.String())
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
