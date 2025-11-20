@@ -117,11 +117,11 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_FirstRun(t *testing.T) {
 	assert.True(t, stats.IsPopulated, "cache should be populated")
 
 	// Verify: Specific prices exist
-	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists1, "should have m5.large price")
 	assert.Equal(t, 0.034, price1)
 
-	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2b")
+	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2b", "Linux/UNIX")
 	require.True(t, exists2, "should have c5.xlarge price")
 	assert.Equal(t, 0.068, price2)
 }
@@ -188,7 +188,7 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_SteadyState(t *testing.T) {
 	assert.Equal(t, 15*time.Second, result.RequeueAfter)
 
 	// Verify: Cache still has the same price (no changes)
-	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists)
 	assert.Equal(t, 0.034, price)
 }
@@ -281,12 +281,12 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_NewInstanceType(t *testing.
 	assert.Equal(t, 2, stats.SpotPriceCount, "should have 2 spot prices (m5.large + c5.xlarge)")
 
 	// Verify: Original price still exists
-	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists1, "should have m5.large price")
 	assert.Equal(t, 0.034, price1)
 
 	// Verify: New price was added
-	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2a")
+	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists2, "should have c5.xlarge price")
 	assert.Equal(t, 0.068, price2)
 }
@@ -717,7 +717,7 @@ func TestSpotPricingReconciler_Reconcile_CustomCacheExpiration(t *testing.T) {
 	assert.Equal(t, 15*time.Second, result.RequeueAfter)
 
 	// Verify: Price was refreshed (updated to new value)
-	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists)
 	assert.Equal(t, 0.040, price, "price should be updated to new value")
 }
@@ -802,7 +802,7 @@ func TestSpotPricingReconciler_Reconcile_InvalidCacheExpiration(t *testing.T) {
 	assert.Equal(t, 15*time.Second, result.RequeueAfter)
 
 	// Verify: Price was refreshed (because 90m > default 1h threshold)
-	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists)
 	assert.Equal(t, 0.040, price, "price should be updated despite invalid config")
 }
@@ -961,11 +961,11 @@ func TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion(t *testing.T
 	stats := pricingCache.GetSpotStats()
 	assert.Equal(t, 2, stats.SpotPriceCount, "should have both spot prices")
 
-	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists1)
 	assert.Equal(t, 0.034, price1)
 
-	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2a")
+	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2a", "Linux/UNIX")
 	require.True(t, exists2)
 	assert.Equal(t, 0.068, price2)
 }

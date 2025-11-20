@@ -1003,13 +1003,19 @@ func spotPriceMapFromFloats(prices map[string]float64) map[string]aws.SpotPrice 
 	now := time.Now()
 
 	for key, price := range prices {
-		// Parse key format "instanceType:availabilityZone"
+		// Parse key format "instanceType:availabilityZone:productDescription"
+		// For backward compatibility, also support "instanceType:availabilityZone" (defaults to Linux/UNIX)
 		parts := strings.Split(key, ":")
 		instanceType := ""
 		az := ""
-		if len(parts) == 2 {
+		productDescription := "Linux/UNIX" // Default
+
+		if len(parts) >= 2 {
 			instanceType = parts[0]
 			az = parts[1]
+		}
+		if len(parts) >= 3 {
+			productDescription = parts[2]
 		}
 
 		spotPrices[key] = aws.SpotPrice{
@@ -1018,7 +1024,7 @@ func spotPriceMapFromFloats(prices map[string]float64) map[string]aws.SpotPrice 
 			SpotPrice:          price,
 			Timestamp:          now, // When AWS recorded the price
 			FetchedAt:          now, // When we fetched it
-			ProductDescription: "Linux/UNIX",
+			ProductDescription: productDescription,
 		}
 	}
 
@@ -1030,7 +1036,7 @@ func TestGetSetSpotPrice(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Get from empty cache
-	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if exists {
 		t.Error("expected price not to exist in empty cache")
 	}
@@ -1052,7 +1058,7 @@ func TestGetSetSpotPrice(t *testing.T) {
 	}
 
 	// Get existing price
-	price, exists = cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	price, exists = cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if !exists {
 		t.Error("expected price to exist")
 	}
@@ -1061,7 +1067,7 @@ func TestGetSetSpotPrice(t *testing.T) {
 	}
 
 	// Get non-existent price
-	_, exists = cache.GetSpotPrice("r5.large", "eu-west-1a")
+	_, exists = cache.GetSpotPrice("r5.large", "eu-west-1a", "Linux/UNIX")
 	if exists {
 		t.Error("expected price not to exist")
 	}
@@ -1095,8 +1101,8 @@ func TestGetAllSpotPrices(t *testing.T) {
 	}
 
 	// Verify it's a copy (modifications don't affect cache)
-	allPrices["test:key"] = 999.99
-	if _, exists := cache.GetSpotPrice("test", "key"); exists {
+	allPrices["test:key:linux/unix"] = 999.99
+	if _, exists := cache.GetSpotPrice("test", "key", "Linux/UNIX"); exists {
 		t.Error("external modifications should not affect cache")
 	}
 }
@@ -1166,7 +1172,7 @@ func TestSpotPriceCaseInsensitive(t *testing.T) {
 	}))
 
 	// Should find price with different casing
-	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if !exists {
 		t.Error("expected price to exist (case-insensitive)")
 	}
@@ -1175,7 +1181,7 @@ func TestSpotPriceCaseInsensitive(t *testing.T) {
 	}
 
 	// Also test uppercase query
-	price, exists = cache.GetSpotPrice("M5.XLARGE", "US-WEST-2A")
+	price, exists = cache.GetSpotPrice("M5.XLARGE", "US-WEST-2A", "LINUX/UNIX")
 	if !exists {
 		t.Error("expected price to exist (uppercase query)")
 	}
@@ -1273,7 +1279,7 @@ func TestInsertSpotPrices_Merge(t *testing.T) {
 	}
 
 	// Verify the updated price
-	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if !exists {
 		t.Error("expected updated price to exist")
 	}
@@ -1282,7 +1288,7 @@ func TestInsertSpotPrices_Merge(t *testing.T) {
 	}
 
 	// Verify the original price that wasn't updated
-	price, exists = cache.GetSpotPrice("c5.2xlarge", "us-west-2b")
+	price, exists = cache.GetSpotPrice("c5.2xlarge", "us-west-2b", "Linux/UNIX")
 	if !exists {
 		t.Error("expected original price to still exist")
 	}
@@ -1304,13 +1310,13 @@ func TestDeleteSpotPrice(t *testing.T) {
 	cache.InsertSpotPrices(spotPriceMapFromFloats(prices))
 
 	// Delete existing price
-	deleted := cache.DeleteSpotPrice("m5.xlarge", "us-west-2a")
+	deleted := cache.DeleteSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if !deleted {
 		t.Error("expected delete to return true for existing price")
 	}
 
 	// Verify it's gone
-	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if exists {
 		t.Error("expected price to be deleted")
 	}
@@ -1322,14 +1328,14 @@ func TestDeleteSpotPrice(t *testing.T) {
 	}
 
 	// Try to delete non-existent price
-	deleted = cache.DeleteSpotPrice("t3.micro", "us-west-1a")
+	deleted = cache.DeleteSpotPrice("t3.micro", "us-west-1a", "Linux/UNIX")
 	if deleted {
 		t.Error("expected delete to return false for non-existent price")
 	}
 
 	// Delete all remaining prices
-	cache.DeleteSpotPrice("c5.2xlarge", "us-west-2b")
-	cache.DeleteSpotPrice("r5.large", "us-east-1a")
+	cache.DeleteSpotPrice("c5.2xlarge", "us-west-2b", "Linux/UNIX")
+	cache.DeleteSpotPrice("r5.large", "us-east-1a", "Linux/UNIX")
 
 	// Cache should no longer be populated
 	if cache.SpotIsPopulated() {
@@ -1347,13 +1353,13 @@ func TestDeleteSpotPrice_CaseInsensitive(t *testing.T) {
 	}))
 
 	// Delete with different casing
-	deleted := cache.DeleteSpotPrice("M5.XLARGE", "US-WEST-2A")
+	deleted := cache.DeleteSpotPrice("M5.XLARGE", "US-WEST-2A", "LINUX/UNIX")
 	if !deleted {
 		t.Error("expected case-insensitive delete to work")
 	}
 
 	// Verify it's gone
-	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
 	if exists {
 		t.Error("expected price to be deleted")
 	}

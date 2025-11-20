@@ -138,12 +138,20 @@ func seedEC2Instances(ctx context.Context, client *ec2.Client, instances []EC2In
 
 		// Launch instances
 		// Note: LocalStack accepts any AMI ID, so we use the value from fixtures
+		// IMPORTANT: We specify Placement.AvailabilityZone to ensure consistent AZ placement.
+		// This is critical for spot pricing tests because spot prices are per-AZ, and we need
+		// the instances to be in the same AZ as the spot prices returned by LocalStack.
+		// Without this, LocalStack assigns random AZs to instances and spot prices, causing
+		// cache lookup mismatches in tests.
 		_, err := client.RunInstances(ctx, &ec2.RunInstancesInput{
 			ImageId:           aws.String(instance.ImageID),
 			InstanceType:      types.InstanceType(instance.InstanceType),
 			MinCount:          aws.Int32(int32(instance.Count)),
 			MaxCount:          aws.Int32(int32(instance.Count)),
 			TagSpecifications: tagSpecs,
+			Placement: &types.Placement{
+				AvailabilityZone: aws.String(instance.Region + "a"), // Use first AZ in region (e.g., us-east-1a)
+			},
 		})
 		if err != nil {
 			return fmt.Errorf("failed to launch instances (type: %s, count: %d): %w",

@@ -300,26 +300,75 @@ func (r *SpotPricingReconciler) findMissingSpotPrices(
 		}
 	}
 
-	// Check each combination of instance type + AZ against cache
-	// This is a cartesian product: if 10 instance types × 3 AZs = 30 combinations to check
+	// Check each combination of instance type + AZ + ProductDescription against cache
+	// We need to check all platform combinations because Windows and Linux have different spot prices
+	// This is a cartesian product: if 10 instance types × 3 AZs × 2 platforms = 60 combinations to check
 	for _, instanceType := range instanceTypes {
 		for _, az := range availabilityZones {
-			// Build cache key (case-insensitive)
-			// Cache keys are lowercase: "m5.xlarge:us-west-2a"
-			key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, az))
+			// Determine which AWS account+region+platform this AZ+instance combo belongs to
+			// We need this to know which ProductDescription to check in the cache
+			accountID, region, platform := r.getMetadataForInstanceType(instanceType, az)
+
+			// Convert platform to ProductDescription for cache key matching
+			productDescription := platformToProductDescription(platform)
+
+			// Build cache key (case-insensitive) - must include ProductDescription
+			// Cache keys are lowercase: "m5.xlarge:us-west-2a:linux/unix"
+			// ProductDescription is required because Windows and Linux have different spot prices
+			key := strings.ToLower(fmt.Sprintf("%s:%s:%s", instanceType, az, productDescription))
 
 			// Check if price exists in cache and if it's stale
 			spotPrice, exists := allPricesWithTimestamps[key]
 			needsRefresh := false
 
 			if !exists {
-				// Price doesn't exist in cache - need to fetch from AWS
-				// This happens when:
-				// - First reconciliation (empty cache)
-				// - New instance type launched (lazy-loading)
-				needsRefresh = true
-			} else {
-				// Price exists - check if it's stale based on FetchedAt timestamp
+				// Exact AZ match not found - check if we have a price for any AZ in same region
+				// This handles LocalStack's synthetic data where spot prices may be for different AZs
+				// than where instances are placed. In production, AWS returns prices for all AZs,
+				// so we'll eventually have the exact match. For now, use any cached price from same region.
+				region := az[:len(az)-1] // Extract region from AZ (e.g., "us-west-2a" -> "us-west-2")
+				normalizedPD := strings.ToLower(productDescription)
+
+				// Scan cache for any price matching instance type + region + product description
+				for cachedKey, cachedPrice := range allPricesWithTimestamps {
+					parts := strings.Split(cachedKey, ":")
+					if len(parts) == 3 {
+						cachedInstanceType := parts[0]
+						cachedAZ := parts[1]
+						cachedPD := parts[2]
+						cachedRegion := cachedAZ[:len(cachedAZ)-1]
+
+						// Found a match for same instance type + region + product description (different AZ)
+						if cachedInstanceType == strings.ToLower(instanceType) &&
+							cachedRegion == region &&
+							cachedPD == normalizedPD {
+							// Use this price as a fallback - check if it's stale
+							spotPrice = cachedPrice
+							exists = true
+							r.Log.V(2).Info("using spot price from different AZ in same region (fallback)",
+								"instance_type", instanceType,
+								"requested_az", az,
+								"cached_az", cachedAZ,
+								"region", region,
+								"product_description", productDescription)
+							break
+						}
+					}
+				}
+
+				if !exists {
+					// No price found in region at all - need to fetch from AWS
+					// This happens when:
+					// - First reconciliation (empty cache)
+					// - New instance type launched (lazy-loading)
+					// - New platform type (e.g., first Windows instance)
+					needsRefresh = true
+				}
+			}
+
+			// If we found a price (either exact match or fallback), check if it's stale
+			if exists {
+				// Check if price is stale based on FetchedAt timestamp
 				// FetchedAt is when WE fetched it (not when AWS recorded it)
 				age := time.Since(spotPrice.FetchedAt)
 				if age > staleThreshold {
@@ -328,15 +377,13 @@ func (r *SpotPricingReconciler) findMissingSpotPrices(
 					r.Log.V(2).Info("spot price is stale, will refresh",
 						"instance_type", instanceType,
 						"az", az,
+						"product_description", productDescription,
 						"age_hours", age.Hours(),
 						"threshold_hours", staleThreshold.Hours())
 				}
 			}
 
 			if needsRefresh {
-				// Determine which AWS account+region+platform this AZ+instance combo belongs to
-				// We need this to create the correct EC2 client and product descriptions for the API call
-				accountID, region, platform := r.getMetadataForInstanceType(instanceType, az)
 				missing = append(missing, SpotPriceCombination{
 					InstanceType:     instanceType,
 					AvailabilityZone: az,
