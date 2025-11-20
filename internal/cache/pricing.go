@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/nextdoor/lumina/pkg/aws"
 )
 
 const (
@@ -109,9 +111,10 @@ type PricingCache struct {
 
 	// spotPrices stores current spot pricing keyed by "instanceType:availabilityZone"
 	// All keys are lowercase for case-insensitive lookups.
-	// Example key: "m5.xlarge:us-west-2a" → 0.0537
+	// Example key: "m5.xlarge:us-west-2a" → aws.SpotPrice{...}
 	// Note: Spot prices are per-AZ, not per-region, and change frequently.
-	spotPrices map[string]float64
+	// We store the full SpotPrice struct to preserve individual timestamps per price.
+	spotPrices map[string]aws.SpotPrice
 
 	// Domain-specific metadata
 	// spRatesLastUpdated tracks when SP rates were last updated (separate from on-demand prices)
@@ -130,7 +133,7 @@ func NewPricingCache() *PricingCache {
 		BaseCache:       NewBaseCache(),
 		onDemandPrices:  make(map[string]float64),
 		spRates:         make(map[string]float64),
-		spotPrices:      make(map[string]float64),
+		spotPrices:      make(map[string]aws.SpotPrice),
 		isPopulated:     false,
 		spotIsPopulated: false,
 	}
@@ -563,20 +566,25 @@ func (c *PricingCache) GetSpotPrice(instanceType, availabilityZone string) (floa
 
 	// Normalize to lowercase for case-insensitive lookups
 	key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, availabilityZone))
-	price, exists := c.spotPrices[key]
-	return price, exists
+	spotPrice, exists := c.spotPrices[key]
+	if !exists {
+		return 0, false
+	}
+	return spotPrice.SpotPrice, true
 }
 
 // SetSpotPrices replaces all spot pricing data in the cache.
 // This is typically called by the spot pricing reconciler after querying AWS spot price history.
 //
 // The input map should use keys in the format "instanceType:availabilityZone".
-// Example: "m5.xlarge:us-west-2a" → 0.0537
+// Example: "m5.xlarge:us-west-2a" → aws.SpotPrice{SpotPrice: 0.0537, Timestamp: ...}
 // All keys are normalized to lowercase for case-insensitive lookups.
-func (c *PricingCache) SetSpotPrices(prices map[string]float64) {
+//
+// Each SpotPrice struct includes its own timestamp indicating when that specific price was observed.
+func (c *PricingCache) SetSpotPrices(prices map[string]aws.SpotPrice) {
 	c.Lock() // From BaseCache
 	// Normalize all keys to lowercase for consistent lookups
-	normalizedPrices := make(map[string]float64, len(prices))
+	normalizedPrices := make(map[string]aws.SpotPrice, len(prices))
 	for key, price := range prices {
 		normalizedPrices[strings.ToLower(key)] = price
 	}
@@ -589,14 +597,29 @@ func (c *PricingCache) SetSpotPrices(prices map[string]float64) {
 	c.NotifyUpdate() // From BaseCache
 }
 
-// GetAllSpotPrices returns a copy of all spot prices.
-// This is useful for debugging or exporting cache contents.
+// GetAllSpotPrices returns a copy of all spot prices (price values only, without timestamps).
+// This is useful for cost calculations that only need the price values.
+// For debugging with timestamps, use GetAllSpotPricesWithTimestamps().
 func (c *PricingCache) GetAllSpotPrices() map[string]float64 {
 	c.RLock() // From BaseCache
 	defer c.RUnlock()
 
-	// Return a copy to prevent external modifications
+	// Return a copy with just price values to prevent external modifications
 	copy := make(map[string]float64, len(c.spotPrices))
+	for k, v := range c.spotPrices {
+		copy[k] = v.SpotPrice
+	}
+	return copy
+}
+
+// GetAllSpotPricesWithTimestamps returns a copy of all spot prices with full metadata including timestamps.
+// This is useful for debugging and showing data freshness in debug endpoints.
+func (c *PricingCache) GetAllSpotPricesWithTimestamps() map[string]aws.SpotPrice {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	// Return a copy to prevent external modifications
+	copy := make(map[string]aws.SpotPrice, len(c.spotPrices))
 	for k, v := range c.spotPrices {
 		copy[k] = v
 	}
@@ -617,10 +640,10 @@ func (c *PricingCache) GetSpotPricesForInstances(instances []InstanceKey) map[st
 		// Normalize to lowercase for case-insensitive lookups
 		// Note: InstanceKey needs an AvailabilityZone field for spot pricing
 		key := strings.ToLower(fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region))
-		if price, exists := c.spotPrices[key]; exists {
+		if spotPrice, exists := c.spotPrices[key]; exists {
 			// Return with key format expected by calculator
 			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
-			result[resultKey] = price
+			result[resultKey] = spotPrice.SpotPrice
 		}
 	}
 	return result

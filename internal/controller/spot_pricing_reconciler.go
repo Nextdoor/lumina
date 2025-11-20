@@ -290,12 +290,12 @@ func (r *SpotPricingReconciler) getAccountAndRegionForAZ(az string) (string, str
 // Groups queries by region only (spot prices are the same across all accounts).
 //
 // Returns:
-//   - prices: map of newly fetched prices keyed by "instanceType:availabilityZone"
+//   - prices: map of newly fetched SpotPrice structs keyed by "instanceType:availabilityZone"
 //   - errors: slice of errors encountered during fetching (doesn't stop on first error)
 func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 	ctx context.Context,
 	missing []SpotPriceCombination,
-) (map[string]float64, []error) {
+) (map[string]aws.SpotPrice, []error) {
 	// Group missing combinations by region only (spot prices are region-specific, not account-specific).
 	// We pick the first account we see for each region to make the API call.
 	type regionQuery struct {
@@ -320,7 +320,7 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 	}
 
 	// Fetch spot prices for each region (one query per region, not per account)
-	prices := make(map[string]float64)
+	prices := make(map[string]aws.SpotPrice)
 	var errors []error
 	var mu sync.Mutex
 
@@ -385,11 +385,11 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 				return
 			}
 
-			// Add to prices map
+			// Add to prices map (store full SpotPrice struct with timestamp)
 			mu.Lock()
 			for _, sp := range spotPrices {
 				key := fmt.Sprintf("%s:%s", sp.InstanceType, sp.AvailabilityZone)
-				prices[key] = sp.SpotPrice
+				prices[key] = sp
 			}
 			mu.Unlock()
 

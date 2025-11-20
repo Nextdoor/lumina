@@ -145,8 +145,14 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_SteadyState(t *testing.T) {
 
 	// Setup: Create pricing cache PRE-POPULATED with spot prices
 	pricingCache := cache.NewPricingCache()
-	pricingCache.SetSpotPrices(map[string]float64{
-		"m5.large:us-west-2a": 0.034,
+	pricingCache.SetSpotPrices(map[string]aws.SpotPrice{
+		"m5.large:us-west-2a": {
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.034,
+			Timestamp:          time.Now(),
+			ProductDescription: "Linux/UNIX",
+		},
 	})
 
 	// Setup: Create mock client that will fail if called (proves 0 API calls)
@@ -215,8 +221,14 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_NewInstanceType(t *testing.
 
 	// Setup: Create pricing cache with ONLY m5.large price (c5.xlarge is missing)
 	pricingCache := cache.NewPricingCache()
-	pricingCache.SetSpotPrices(map[string]float64{
-		"m5.large:us-west-2a": 0.034,
+	pricingCache.SetSpotPrices(map[string]aws.SpotPrice{
+		"m5.large:us-west-2a": {
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.034,
+			Timestamp:          time.Now(),
+			ProductDescription: "Linux/UNIX",
+		},
 	})
 
 	// Setup: Create mock client with spot prices (will be queried for c5.xlarge only)
@@ -710,13 +722,13 @@ func TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion(t *testing.T
 		require.NoError(t, err)
 		mockEC2 := ec2Client.(*aws.MockEC2Client)
 		mockEC2.SpotPrices = []aws.SpotPrice{
-		{
-			InstanceType:       "m5.large",
-			AvailabilityZone:   "us-west-2a",
-			SpotPrice:          0.034,
-			Timestamp:          time.Now(),
-			ProductDescription: "Linux/UNIX",
-		},
+			{
+				InstanceType:       "m5.large",
+				AvailabilityZone:   "us-west-2a",
+				SpotPrice:          0.034,
+				Timestamp:          time.Now(),
+				ProductDescription: "Linux/UNIX",
+			},
 			{
 				InstanceType:       "c5.xlarge",
 				AvailabilityZone:   "us-west-2a",

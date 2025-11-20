@@ -18,8 +18,11 @@ package cache
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/nextdoor/lumina/pkg/aws"
 )
 
 // TestNewPricingCache tests cache initialization.
@@ -993,6 +996,34 @@ func TestNormalizeOS_EdgeCases(t *testing.T) {
 	}
 }
 
+// spotPriceMapFromFloats is a test helper that converts a map of instance:az -> price
+// into a map of instance:az -> aws.SpotPrice struct with current timestamp.
+func spotPriceMapFromFloats(prices map[string]float64) map[string]aws.SpotPrice {
+	spotPrices := make(map[string]aws.SpotPrice, len(prices))
+	now := time.Now()
+
+	for key, price := range prices {
+		// Parse key format "instanceType:availabilityZone"
+		parts := strings.Split(key, ":")
+		instanceType := ""
+		az := ""
+		if len(parts) == 2 {
+			instanceType = parts[0]
+			az = parts[1]
+		}
+
+		spotPrices[key] = aws.SpotPrice{
+			InstanceType:       instanceType,
+			AvailabilityZone:   az,
+			SpotPrice:          price,
+			Timestamp:          now,
+			ProductDescription: "Linux/UNIX",
+		}
+	}
+
+	return spotPrices
+}
+
 // TestGetSetSpotPrice tests basic spot price get/set operations.
 func TestGetSetSpotPrice(t *testing.T) {
 	cache := NewPricingCache()
@@ -1007,12 +1038,12 @@ func TestGetSetSpotPrice(t *testing.T) {
 	}
 
 	// Set spot prices
-	prices := map[string]float64{
+	priceMap := map[string]float64{
 		"m5.xlarge:us-west-2a":  0.0537,
 		"c5.2xlarge:us-west-2b": 0.068,
 		"m5.xlarge:us-east-1a":  0.0521,
 	}
-	cache.SetSpotPrices(prices)
+	cache.SetSpotPrices(spotPriceMapFromFloats(priceMap))
 
 	// Verify cache is populated
 	if !cache.SpotIsPopulated() {
@@ -1051,11 +1082,11 @@ func TestGetSetSpotPrice(t *testing.T) {
 func TestGetAllSpotPrices(t *testing.T) {
 	cache := NewPricingCache()
 
-	prices := map[string]float64{
+	priceMap := map[string]float64{
 		"m5.xlarge:us-west-2a":  0.0537,
 		"c5.2xlarge:us-west-2b": 0.068,
 	}
-	cache.SetSpotPrices(prices)
+	cache.SetSpotPrices(spotPriceMapFromFloats(priceMap))
 
 	allPrices := cache.GetAllSpotPrices()
 	if len(allPrices) != 2 {
@@ -1079,9 +1110,9 @@ func TestSpotIsPopulated(t *testing.T) {
 	}
 
 	// Populate cache
-	cache.SetSpotPrices(map[string]float64{
+	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"m5.xlarge:us-west-2a": 0.0537,
-	})
+	}))
 
 	// Cache is now populated
 	if !cache.SpotIsPopulated() {
@@ -1103,11 +1134,11 @@ func TestSpotStats(t *testing.T) {
 	}
 
 	// Populate cache
-	cache.SetSpotPrices(map[string]float64{
+	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"m5.xlarge:us-west-2a":  0.0537,
 		"c5.2xlarge:us-west-2b": 0.068,
 		"m5.xlarge:us-east-1a":  0.0521,
-	})
+	}))
 
 	stats = cache.GetSpotStats()
 	if stats.SpotPriceCount != 3 {
@@ -1129,9 +1160,9 @@ func TestSpotPriceCaseInsensitive(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Set prices with mixed case
-	cache.SetSpotPrices(map[string]float64{
+	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"M5.Xlarge:US-WEST-2A": 0.0537,
-	})
+	}))
 
 	// Should find price with different casing
 	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
@@ -1157,16 +1188,16 @@ func TestSetSpotPrices_EmptyMap(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Populate first
-	cache.SetSpotPrices(map[string]float64{
+	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"m5.xlarge:us-west-2a": 0.0537,
-	})
+	}))
 
 	if !cache.SpotIsPopulated() {
 		t.Error("cache should be populated")
 	}
 
 	// Set empty map
-	cache.SetSpotPrices(map[string]float64{})
+	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{}))
 
 	// Cache should no longer be populated
 	if cache.SpotIsPopulated() {
@@ -1192,10 +1223,10 @@ func TestSpotPriceNotification(t *testing.T) {
 	})
 
 	// Trigger notification by setting spot prices
-	prices := map[string]float64{
+	priceMap := map[string]float64{
 		"m5.xlarge:us-west-2a": 0.0537,
 	}
-	cache.SetSpotPrices(prices)
+	cache.SetSpotPrices(spotPriceMapFromFloats(priceMap))
 
 	// Wait for notification (with timeout)
 	select {

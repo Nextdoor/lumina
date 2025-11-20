@@ -167,21 +167,38 @@ func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, _ *http.Requ
 	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
-// handlePricingSpot returns all spot prices in cache.
+// handlePricingSpot returns all spot prices in cache with individual timestamps.
 func (h *DebugHandler) handlePricingSpot(w http.ResponseWriter, _ *http.Request) {
 	if h.PricingCache == nil {
 		http.Error(w, "Pricing cache not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	prices := h.PricingCache.GetAllSpotPrices()
+	// Get spot prices with timestamps for debugging
+	pricesWithTimestamps := h.PricingCache.GetAllSpotPricesWithTimestamps()
 	stats := h.PricingCache.GetSpotStats()
+
+	// Convert to a more readable format for the debug endpoint
+	// Each price includes its individual timestamp
+	prices := make(map[string]interface{}, len(pricesWithTimestamps))
+	for key, sp := range pricesWithTimestamps {
+		prices[key] = map[string]interface{}{
+			"price":               sp.SpotPrice,
+			"timestamp":           sp.Timestamp,
+			"age_seconds":         time.Since(sp.Timestamp).Seconds(),
+			"availability_zone":   sp.AvailabilityZone,
+			"instance_type":       sp.InstanceType,
+			"product_description": sp.ProductDescription,
+		}
+	}
 
 	response := map[string]interface{}{
 		"total_count": len(prices),
 		"stats": map[string]interface{}{
-			"is_populated":     stats.IsPopulated,
-			"spot_price_count": stats.SpotPriceCount,
+			"is_populated":       stats.IsPopulated,
+			"spot_price_count":   stats.SpotPriceCount,
+			"cache_last_updated": stats.LastUpdated,
+			"cache_age_seconds":  time.Since(stats.LastUpdated).Seconds(),
 		},
 		"prices": prices,
 	}
