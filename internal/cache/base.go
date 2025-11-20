@@ -31,6 +31,10 @@ import (
 	"time"
 )
 
+// UpdateNotifier is a callback function invoked when cache data changes.
+// Used to trigger dependent calculations (e.g., cost recalculation) when data updates.
+type UpdateNotifier func()
+
 // BaseCache provides common cache infrastructure: thread-safety, notifications, and metadata.
 // It does NOT store the actual data - that's handled by the embedding struct.
 //

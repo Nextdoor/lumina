@@ -31,15 +31,10 @@
 package cache
 
 import (
-	"sync"
 	"time"
 
 	"github.com/nextdoor/lumina/pkg/aws"
 )
-
-// UpdateNotifier is a callback function invoked when cache data changes.
-// Used to trigger dependent calculations (e.g., cost recalculation) when data updates.
-type UpdateNotifier func()
 
 // EC2Cache stores EC2 instance data with thread-safe access.
 // Instance IDs are globally unique across AWS, so we use them as the primary key.
@@ -48,28 +43,23 @@ type UpdateNotifier func()
 // The cache supports partial updates via SetInstances(accountID, region, instances),
 // which replaces only the instances for that specific account+region combination.
 // This allows the reconciler to update data incrementally without clearing the entire cache.
+//
+// EC2Cache embeds BaseCache to provide common infrastructure (thread-safety,
+// notifications, timestamps). This eliminates ~50 lines of boilerplate code.
 type EC2Cache struct {
-	mu sync.RWMutex
+	BaseCache // Provides: Lock/RLock, RegisterUpdateNotifier, NotifyUpdate, MarkUpdated, GetLastUpdate, etc.
 
 	// instances maps instance ID to instance data
 	// Key: instance ID (e.g., "i-1234567890abcdef0")
 	// Value: pointer to Instance struct (includes AccountID and Region fields)
 	instances map[string]*aws.Instance
-
-	// lastUpdate tracks when the cache was last modified
-	lastUpdate time.Time
-
-	// notifiers are callbacks invoked after cache updates
-	// Separate mutex to prevent deadlock during notification
-	notifyMu  sync.RWMutex
-	notifiers []UpdateNotifier
 }
 
 // NewEC2Cache creates a new empty EC2 instance cache.
 func NewEC2Cache() *EC2Cache {
 	return &EC2Cache{
-		instances:  make(map[string]*aws.Instance),
-		lastUpdate: time.Time{}, // Zero time indicates never updated
+		BaseCache: NewBaseCache(),
+		instances: make(map[string]*aws.Instance),
 	}
 }
 
@@ -87,8 +77,8 @@ func NewEC2Cache() *EC2Cache {
 //	    cache.SetInstances("123456789012", "us-west-2", instances)
 //	}
 func (c *EC2Cache) SetInstances(accountID, region string, instances []aws.Instance) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock() // From BaseCache
+	defer c.Unlock()
 
 	// Remove existing instances for this account+region combination
 	// This is more efficient than clearing the entire cache and prevents
@@ -105,44 +95,26 @@ func (c *EC2Cache) SetInstances(accountID, region string, instances []aws.Instan
 		c.instances[instances[i].InstanceID] = &instances[i]
 	}
 
-	c.lastUpdate = time.Now()
+	c.MarkUpdated() // From BaseCache
 
 	// Notify subscribers after releasing the write lock
 	// This prevents deadlock if notifiers try to read from the cache
-	c.notifyUpdate()
+	c.NotifyUpdate() // From BaseCache
 }
 
-// RegisterUpdateNotifier adds a callback to be invoked when cache data changes.
+// RegisterUpdateNotifier is inherited from BaseCache.
 // Multiple notifiers can be registered. Callbacks are invoked in separate goroutines
 // to prevent blocking cache operations.
 //
 // This is typically used to trigger cost recalculation when EC2 inventory changes.
-func (c *EC2Cache) RegisterUpdateNotifier(fn UpdateNotifier) {
-	c.notifyMu.Lock()
-	defer c.notifyMu.Unlock()
-	c.notifiers = append(c.notifiers, fn)
-}
-
-// notifyUpdate invokes all registered notifiers in separate goroutines.
-// This method should be called after cache modifications, outside of the main mutex lock.
-func (c *EC2Cache) notifyUpdate() {
-	c.notifyMu.RLock()
-	defer c.notifyMu.RUnlock()
-
-	for _, fn := range c.notifiers {
-		// Run in goroutine to prevent blocking cache operations
-		// This means notifiers must be thread-safe
-		go fn()
-	}
-}
 
 // GetInstance returns a specific instance by its ID.
 // Returns a copy of the instance and true if found, or nil and false if not found.
 //
 // The returned instance is a copy to prevent external code from modifying cache data.
 func (c *EC2Cache) GetInstance(instanceID string) (*aws.Instance, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	if inst, ok := c.instances[instanceID]; ok {
 		// Return a copy to prevent external modification
@@ -158,8 +130,8 @@ func (c *EC2Cache) GetInstance(instanceID string) (*aws.Instance, bool) {
 //
 // This is useful for calculating per-account costs or generating account-level metrics.
 func (c *EC2Cache) GetInstancesByAccount(accountID string) []aws.Instance {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	var result []aws.Instance
 	for _, inst := range c.instances {
@@ -176,8 +148,8 @@ func (c *EC2Cache) GetInstancesByAccount(accountID string) []aws.Instance {
 //
 // This is useful for region-specific cost analysis or detecting regional capacity issues.
 func (c *EC2Cache) GetInstancesByRegion(region string) []aws.Instance {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	var result []aws.Instance
 	for _, inst := range c.instances {
@@ -194,8 +166,8 @@ func (c *EC2Cache) GetInstancesByRegion(region string) []aws.Instance {
 //
 // This is useful for organization-wide cost analysis and inventory reporting.
 func (c *EC2Cache) GetAllInstances() []aws.Instance {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	result := make([]aws.Instance, 0, len(c.instances))
 	for _, inst := range c.instances {
@@ -213,8 +185,8 @@ func (c *EC2Cache) GetAllInstances() []aws.Instance {
 // This method filters the cache to running instances only, avoiding the need
 // for callers to manually filter state.
 func (c *EC2Cache) GetRunningInstances() []aws.Instance {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	var result []aws.Instance
 	for _, inst := range c.instances {
@@ -230,23 +202,22 @@ func (c *EC2Cache) GetRunningInstances() []aws.Instance {
 // Returns zero time if cache has never been updated.
 //
 // This is useful for monitoring cache freshness and detecting stale data.
+// This is an alias for BaseCache.GetLastUpdate() for backward compatibility.
 func (c *EC2Cache) GetLastUpdateTime() time.Time {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.lastUpdate
+	return c.GetLastUpdate() // From BaseCache
 }
 
-// Clear removes all cached data.
+// Clear removes all cached data and resets the lastUpdate timestamp.
 // This should only be called when completely resetting the cache,
 // such as during shutdown or major reconfiguration.
 //
 // Under normal operation, use SetInstances to replace data incrementally
 // rather than clearing the entire cache.
 func (c *EC2Cache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock() // From BaseCache
+	defer c.Unlock()
 
 	c.instances = make(map[string]*aws.Instance)
+	// Reset lastUpdate to zero to indicate cache has never been populated
 	c.lastUpdate = time.Time{}
 }
