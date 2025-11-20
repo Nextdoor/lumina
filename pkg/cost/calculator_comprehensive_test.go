@@ -324,13 +324,15 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 				"t3.medium:us-west-2":  0.50,
 			}
 
-			spotPrices := map[string]float64{
-				"m5.xlarge:us-west-2a": 0.50,
-				"m5.xlarge:us-west-2b": 0.50,
-				"c5.xlarge:us-west-2a": 0.40,
-				"c5.xlarge:us-west-2b": 0.40,
-				"t3.medium:us-west-2a": 0.20,
-				"t3.medium:us-west-2b": 0.20,
+			pricingCache := &mockPricingCache{
+				spotPrices: map[string]float64{
+					"m5.xlarge:us-west-2a:linux": 0.50,
+					"m5.xlarge:us-west-2b:linux": 0.50,
+					"c5.xlarge:us-west-2a:linux": 0.40,
+					"c5.xlarge:us-west-2b:linux": 0.40,
+					"t3.medium:us-west-2a:linux": 0.20,
+					"t3.medium:us-west-2b:linux": 0.20,
+				},
 			}
 
 			input := CalculationInput{
@@ -338,7 +340,7 @@ func TestCalculatorComprehensiveScenarios(t *testing.T) {
 				ReservedInstances: tt.reservedInstances,
 				SavingsPlans:      tt.savingsPlans,
 				OnDemandPrices:    onDemandPrices,
-				SpotPrices:        spotPrices,
+				PricingCache:      pricingCache,
 			}
 
 			result := calc.Calculate(input)
@@ -506,7 +508,7 @@ func TestCalculatorMultipleSavingsPlansCommitmentAccounting(t *testing.T) {
 		Instances:         instances,
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      savingsPlans,
-		SpotPrices:        make(map[string]float64),
+		PricingCache:      &mockPricingCache{},
 		OnDemandPrices: map[string]float64{
 			"m5.xlarge:us-west-2": 1.00, // $1.00/hr on-demand
 		},

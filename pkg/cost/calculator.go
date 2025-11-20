@@ -230,8 +230,9 @@ func (c *Calculator) applySpotPricing(input CalculationInput, costs map[string]*
 		}
 
 		// Look up current spot price for this instance type + AZ
-		spotKey := inst.InstanceType + ":" + inst.AvailabilityZone
-		spotPrice := input.SpotPrices[spotKey]
+		// Use the cache accessor method to avoid key format dependencies
+		// Default to Linux/UNIX for product description (most common)
+		spotPrice, _ := input.PricingCache.GetSpotPrice(inst.InstanceType, inst.AvailabilityZone, "Linux/UNIX")
 
 		// For spot instances, ALWAYS use the spot price as the effective cost.
 		// Spot instances cannot use Reserved Instances or Savings Plans per AWS billing rules.

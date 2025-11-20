@@ -62,7 +62,7 @@ func TestCalculatorBasicFlow(t *testing.T) {
 		},
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      []aws.SavingsPlan{},
-		SpotPrices:        make(map[string]float64),
+		PricingCache:      &mockPricingCache{},
 		OnDemandPrices: map[string]float64{
 			"m5.xlarge:us-west-2":  1.00,
 			"c5.2xlarge:us-west-2": 2.00,
@@ -262,8 +262,10 @@ func TestCalculatorSpotPricing(t *testing.T) {
 		},
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      []aws.SavingsPlan{},
-		SpotPrices: map[string]float64{
-			"m5.xlarge:us-west-2a": 0.30, // Spot price is much lower than on-demand
+		PricingCache: &mockPricingCache{
+			spotPrices: map[string]float64{
+				"m5.xlarge:us-west-2a:linux": 0.30, // Spot price is much lower than on-demand
+			},
 		},
 		OnDemandPrices: map[string]float64{
 			"m5.xlarge:us-west-2": 1.00,
@@ -387,7 +389,7 @@ func TestCalculatorEmptyInput(t *testing.T) {
 		Instances:         []aws.Instance{},
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      []aws.SavingsPlan{},
-		SpotPrices:        make(map[string]float64),
+		PricingCache:      &mockPricingCache{},
 		OnDemandPrices:    make(map[string]float64),
 	}
 
@@ -1240,7 +1242,7 @@ func TestCalculatorMultipleSavingsPlansOnSameInstance(t *testing.T) {
 		Instances:         []aws.Instance{instance},
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      savingsPlans,
-		SpotPrices:        make(map[string]float64),
+		PricingCache:      &mockPricingCache{},
 		OnDemandPrices: map[string]float64{
 			"m5.large:us-west-2": 0.10, // $0.10/hour shelf price
 		},
@@ -1385,7 +1387,7 @@ func TestCalculatorMultipleComputeSPsMatchCommitment(t *testing.T) {
 		Instances:         instances,
 		ReservedInstances: []aws.ReservedInstance{},
 		SavingsPlans:      savingsPlans,
-		SpotPrices:        make(map[string]float64),
+		PricingCache:      &mockPricingCache{},
 		OnDemandPrices:    onDemandPrices,
 	}
 
@@ -1762,11 +1764,13 @@ func TestCalculatorMixedTierPricingAccuracy(t *testing.T) {
 		"Tier 1 and Tier 2 rates should produce different costs")
 }
 
-// mockPricingCache implements PricingCacheReader for testing with actual cache rates.
+// mockPricingCache implements PricingCacheInterface for testing with actual cache rates.
 // This simulates the real PricingCache behavior but allows us to control the rates.
 type mockPricingCache struct {
 	// spRates uses the same key format as the real cache: "spArn,instanceType,region,tenancy,os"
 	spRates map[string]float64
+	// spotPrices uses the same key format as the real cache: "instanceType:az:os"
+	spotPrices map[string]float64
 }
 
 // GetSPRate implements PricingCacheReader.GetSPRate.
@@ -1788,4 +1792,30 @@ func (m *mockPricingCache) GetSPRate(spArn, instanceType, region, tenancy, opera
 
 	rate, exists := m.spRates[key]
 	return rate, exists
+}
+
+// GetSpotPrice implements PricingCacheInterface.GetSpotPrice.
+// This matches the behavior of the real PricingCache.GetSpotPrice() method.
+func (m *mockPricingCache) GetSpotPrice(instanceType, availabilityZone, productDescription string) (float64, bool) {
+	if m.spotPrices == nil {
+		return 0, false
+	}
+
+	// Normalize product description to match real cache behavior
+	normalizedPD := strings.ToLower(productDescription)
+	switch normalizedPD {
+	case "linux/unix", "linux/unix (amazon vpc)":
+		normalizedPD = "linux"
+	case "windows", "windows (amazon vpc)":
+		normalizedPD = "windows"
+	}
+
+	// Build key in the same format as the real cache (colon-separated, lowercase)
+	key := fmt.Sprintf("%s:%s:%s",
+		strings.ToLower(instanceType),
+		strings.ToLower(availabilityZone),
+		normalizedPD)
+
+	price, exists := m.spotPrices[key]
+	return price, exists
 }

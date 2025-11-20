@@ -110,3 +110,4 @@ testData:
   pricing:
     "us-east-1:m5.xlarge:linux": 0.192
     "us-east-1:c5.large:linux": 0.085
+    "us-east-1:m5.large:linux": 0.096

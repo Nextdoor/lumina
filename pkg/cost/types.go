@@ -45,6 +45,14 @@ import (
 	"github.com/nextdoor/lumina/pkg/aws"
 )
 
+// PricingCacheInterface defines the interface for accessing pricing data.
+// This allows the calculator to retrieve prices without depending on map key formats.
+type PricingCacheInterface interface {
+	// GetSpotPrice retrieves the current spot price for a specific instance type + AZ + OS.
+	// Returns (price, true) if found, (0, false) if not found.
+	GetSpotPrice(instanceType, availabilityZone, productDescription string) (float64, bool)
+}
+
 // CoverageType represents how an instance's cost is covered.
 type CoverageType string
 
@@ -219,10 +227,10 @@ type CalculationInput struct {
 	// Includes both EC2 Instance SPs and Compute SPs.
 	SavingsPlans []aws.SavingsPlan
 
-	// SpotPrices maps instance-type+AZ to current spot market price ($/hour).
-	// Key format: "instance_type:availability_zone" (e.g., "m5.xlarge:us-west-2a")
-	// Only needed for spot instances to get current market rates.
-	SpotPrices map[string]float64
+	// PricingCache provides access to on-demand and spot pricing data.
+	// The calculator uses accessor methods (GetSpotPrice, GetOnDemandPrice) to
+	// retrieve prices, avoiding fragile key format dependencies.
+	PricingCache PricingCacheInterface
 
 	// OnDemandPrices maps instance-type+region to on-demand price ($/hour).
 	// Key format: "instance_type:region" (e.g., "m5.xlarge:us-west-2")

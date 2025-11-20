@@ -38,6 +38,23 @@
           "Value": "production"
         }
       ]
+    },
+    {
+      "image_id": "ami-12345678",
+      "instance_type": "m5.large",
+      "count": 1,
+      "region": "us-east-1",
+      "lifecycle": "spot",
+      "tags": [
+        {
+          "Key": "Name",
+          "Value": "lumina-test-spot-1"
+        },
+        {
+          "Key": "Environment",
+          "Value": "test"
+        }
+      ]
     }
   ]
 }

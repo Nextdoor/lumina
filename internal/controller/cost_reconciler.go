@@ -130,35 +130,21 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	// Default to Linux OS pricing (most common). Future enhancement: detect actual OS per instance.
 	onDemandPrices := r.PricingCache.GetOnDemandPricesForInstances(instanceKeys, "Linux")
 
-	// Build spot price keys for running instances
-	// Spot prices are zone-specific and OS-specific (unlike on-demand which is region-level)
-	spotKeys := make([]cache.SpotPriceKey, 0, len(instances))
-	for _, inst := range instances {
-		spotKeys = append(spotKeys, cache.SpotPriceKey{
-			InstanceType:       inst.InstanceType,
-			AvailabilityZone:   inst.AvailabilityZone,
-			ProductDescription: "Linux/UNIX", // Default to Linux, same as on-demand
-		})
-	}
-
-	// Get spot pricing data for running instances
-	// The pricing cache returns a map keyed by "instance_type:availability_zone:os"
-	spotPrices := r.PricingCache.GetSpotPricesForInstances(spotKeys)
-
 	log.V(1).Info("gathered data for cost calculation",
 		"instances", len(instances),
 		"reserved_instances", len(ris),
 		"savings_plans", len(sps),
-		"on_demand_prices", len(onDemandPrices),
-		"spot_prices", len(spotPrices))
+		"on_demand_prices", len(onDemandPrices))
 
 	// Build calculation input
+	// Pass the PricingCache directly so the calculator can use accessor methods
+	// for spot pricing instead of fragile map key lookups
 	input := cost.CalculationInput{
 		Instances:         instances,
 		ReservedInstances: ris,
 		SavingsPlans:      sps,
+		PricingCache:      r.PricingCache,
 		OnDemandPrices:    onDemandPrices,
-		SpotPrices:        spotPrices,
 	}
 
 	// Run cost calculation algorithm
