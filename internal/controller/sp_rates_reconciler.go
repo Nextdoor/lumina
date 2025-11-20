@@ -320,10 +320,11 @@ func (r *SPRatesReconciler) getUniqueInstanceTypesRegionsAndTenancies() ([]strin
 // Config uses title case (e.g., "Linux", "Windows") but the cache uses lowercase
 // (e.g., "linux", "windows") for consistent lookups.
 func (r *SPRatesReconciler) getOperatingSystemsNormalized() []string {
-	// Use configured operating systems, defaulting to ["Linux", "Windows"]
+	// Use configured operating systems, defaulting to [Linux, Windows]
 	osList := r.OperatingSystems
 	if len(osList) == 0 {
-		osList = []string{"Linux", "Windows"}
+		// Default to both Linux and Windows platforms
+		return []string{aws.PlatformLinux, aws.PlatformWindows}
 	}
 
 	// Normalize to lowercase for cache keys
@@ -364,9 +365,9 @@ func (r *SPRatesReconciler) fetchRatesForSPWithFilters(
 	awsOperatingSystems := make([]string, len(operatingSystems))
 	for i, os := range operatingSystems {
 		switch os {
-		case "linux":
+		case aws.PlatformLinux:
 			awsOperatingSystems[i] = "Linux/UNIX"
-		case "windows":
+		case aws.PlatformWindows:
 			awsOperatingSystems[i] = "Windows"
 		default:
 			awsOperatingSystems[i] = os

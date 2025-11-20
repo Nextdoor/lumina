@@ -273,23 +273,23 @@ func normalizeProductDescription(input string) string {
 	normalized := strings.ToLower(strings.TrimSpace(input))
 
 	// EC2 Platform values (already normalized)
-	if normalized == "" || normalized == "linux" {
-		return "linux"
+	if normalized == "" || normalized == PlatformLinux {
+		return PlatformLinux
 	}
-	if normalized == "windows" {
-		return "windows"
+	if normalized == PlatformWindows {
+		return PlatformWindows
 	}
 
 	// Savings Plans ProductDescription values
 	if strings.Contains(normalized, "linux") || strings.Contains(normalized, "unix") {
-		return "linux"
+		return PlatformLinux
 	}
 	if strings.Contains(normalized, "windows") {
-		return "windows"
+		return PlatformWindows
 	}
 
 	// Default to linux for unknown values (most instances are Linux)
-	return "linux"
+	return PlatformLinux
 }
 
 // normalizeTenancyForSPRate normalizes tenancy values from Savings Plan rate properties

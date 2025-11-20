@@ -24,6 +24,19 @@ import (
 	"time"
 )
 
+// Platform constants for operating system types.
+// These are normalized, lowercase values used throughout the codebase.
+const (
+	PlatformLinux   = "linux"
+	PlatformWindows = "windows"
+)
+
+// Lifecycle constants for EC2 instance types.
+const (
+	LifecycleOnDemand = "on-demand"
+	LifecycleSpot     = "spot"
+)
+
 // AccountConfig represents configuration for accessing an AWS account.
 // Supports both direct credentials and AssumeRole-based access.
 type AccountConfig struct {
