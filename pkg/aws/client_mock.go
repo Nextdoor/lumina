@@ -223,6 +223,7 @@ func (m *MockEC2Client) DescribeSpotPriceHistory(
 	ctx context.Context,
 	regions []string,
 	instanceTypes []string,
+	productDescriptions []string,
 ) ([]SpotPrice, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -262,6 +263,22 @@ func (m *MockEC2Client) DescribeSpotPriceHistory(
 			}
 		}
 		filtered = typeFiltered
+	}
+
+	// Filter by product description (OS) if specified
+	if len(productDescriptions) > 0 {
+		pdMap := make(map[string]bool)
+		for _, pd := range productDescriptions {
+			pdMap[pd] = true
+		}
+
+		pdFiltered := []SpotPrice{}
+		for _, sp := range filtered {
+			if pdMap[sp.ProductDescription] {
+				pdFiltered = append(pdFiltered, sp)
+			}
+		}
+		filtered = pdFiltered
 	}
 
 	return filtered, nil

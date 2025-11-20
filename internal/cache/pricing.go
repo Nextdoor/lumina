@@ -107,20 +107,32 @@ type PricingCache struct {
 	// These are PURCHASE-TIME rates that were locked in when the SP was bought.
 	spRates map[string]float64
 
+	// spotPrices stores current spot pricing keyed by "instanceType:availabilityZone"
+	// All keys are lowercase for case-insensitive lookups.
+	// Example key: "m5.xlarge:us-west-2a" → 0.0537
+	// Note: Spot prices are per-AZ, not per-region, and change frequently.
+	spotPrices map[string]float64
+
 	// Domain-specific metadata
 	// spRatesLastUpdated tracks when SP rates were last updated (separate from on-demand prices)
 	spRatesLastUpdated time.Time
+	// spotLastUpdated tracks when spot prices were last updated (separate from on-demand/SP prices)
+	spotLastUpdated time.Time
 	// isPopulated tracks if on-demand prices have been loaded (separate from BaseCache's lastUpdate)
 	isPopulated bool
+	// spotIsPopulated tracks if spot prices have been loaded
+	spotIsPopulated bool
 }
 
 // NewPricingCache creates a new empty pricing cache.
 func NewPricingCache() *PricingCache {
 	return &PricingCache{
-		BaseCache:      NewBaseCache(),
-		onDemandPrices: make(map[string]float64),
-		spRates:        make(map[string]float64),
-		isPopulated:    false,
+		BaseCache:       NewBaseCache(),
+		onDemandPrices:  make(map[string]float64),
+		spRates:         make(map[string]float64),
+		spotPrices:      make(map[string]float64),
+		isPopulated:     false,
+		spotIsPopulated: false,
 	}
 }
 
@@ -534,4 +546,110 @@ func (c *PricingCache) GetMissingSPRatesForInstances(
 	}
 
 	return missingInstanceTypesSlice, missingRegionsSlice, missingTenanciesSlice, missingOSSlice
+}
+
+// GetSpotPrice returns the current spot price for an instance type in an availability zone.
+// Returns the price and true if found, or 0 and false if not found.
+//
+// This is an O(1) lookup operation.
+//
+// All keys are normalized to lowercase for consistent lookups regardless of input casing.
+//
+// Note: Spot prices are per-AZ (not per-region), so you must provide the full AZ name
+// (e.g., "us-west-2a" not just "us-west-2").
+func (c *PricingCache) GetSpotPrice(instanceType, availabilityZone string) (float64, bool) {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	// Normalize to lowercase for case-insensitive lookups
+	key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, availabilityZone))
+	price, exists := c.spotPrices[key]
+	return price, exists
+}
+
+// SetSpotPrices replaces all spot pricing data in the cache.
+// This is typically called by the spot pricing reconciler after querying AWS spot price history.
+//
+// The input map should use keys in the format "instanceType:availabilityZone".
+// Example: "m5.xlarge:us-west-2a" → 0.0537
+// All keys are normalized to lowercase for case-insensitive lookups.
+func (c *PricingCache) SetSpotPrices(prices map[string]float64) {
+	c.Lock() // From BaseCache
+	// Normalize all keys to lowercase for consistent lookups
+	normalizedPrices := make(map[string]float64, len(prices))
+	for key, price := range prices {
+		normalizedPrices[strings.ToLower(key)] = price
+	}
+	c.spotPrices = normalizedPrices
+	c.spotIsPopulated = len(prices) > 0
+	c.spotLastUpdated = time.Now()
+	c.Unlock()
+
+	// Notify subscribers AFTER releasing the write lock to prevent deadlock
+	c.NotifyUpdate() // From BaseCache
+}
+
+// GetAllSpotPrices returns a copy of all spot prices.
+// This is useful for debugging or exporting cache contents.
+func (c *PricingCache) GetAllSpotPrices() map[string]float64 {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	// Return a copy to prevent external modifications
+	copy := make(map[string]float64, len(c.spotPrices))
+	for k, v := range c.spotPrices {
+		copy[k] = v
+	}
+	return copy
+}
+
+// GetSpotPricesForInstances returns spot pricing for specific instances.
+// This is more efficient than GetAllSpotPrices when you only need a subset of the data.
+//
+// Returns a map keyed by "instanceType:availabilityZone" for easier lookup
+// by the cost calculator.
+func (c *PricingCache) GetSpotPricesForInstances(instances []InstanceKey) map[string]float64 {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	result := make(map[string]float64, len(instances))
+	for _, inst := range instances {
+		// Normalize to lowercase for case-insensitive lookups
+		// Note: InstanceKey needs an AvailabilityZone field for spot pricing
+		key := strings.ToLower(fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region))
+		if price, exists := c.spotPrices[key]; exists {
+			// Return with key format expected by calculator
+			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
+			result[resultKey] = price
+		}
+	}
+	return result
+}
+
+// SpotIsPopulated returns true if the cache has been populated with spot pricing data.
+func (c *PricingCache) SpotIsPopulated() bool {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+	return c.spotIsPopulated
+}
+
+// GetSpotStats returns statistics about the spot pricing cache.
+func (c *PricingCache) GetSpotStats() SpotStats {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	return SpotStats{
+		SpotPriceCount: len(c.spotPrices),
+		LastUpdated:    c.spotLastUpdated,
+		IsPopulated:    c.spotIsPopulated,
+		AgeHours:       time.Since(c.spotLastUpdated).Hours(),
+	}
+}
+
+// SpotStats contains statistics about the spot pricing cache.
+type SpotStats struct {
+	SpotPriceCount int
+	LastUpdated    time.Time
+	IsPopulated    bool
+	AgeHours       float64
 }

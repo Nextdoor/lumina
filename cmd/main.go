@@ -64,12 +64,13 @@ var (
 // reconcilers holds all initialized reconcilers.
 // This struct reduces code duplication between standalone and Kubernetes modes.
 type reconcilers struct {
-	RISP    *controller.RISPReconciler
-	EC2     *controller.EC2Reconciler
-	Pricing *controller.PricingReconciler
-	SPRates *controller.SPRatesReconciler
-	Cost    *controller.CostReconciler
-	ReadyCh chan struct{} // Channel for RISP->SPRates coordination
+	RISP        *controller.RISPReconciler
+	EC2         *controller.EC2Reconciler
+	Pricing     *controller.PricingReconciler
+	SPRates     *controller.SPRatesReconciler
+	SpotPricing *controller.SpotPricingReconciler
+	Cost        *controller.CostReconciler
+	ReadyCh     chan struct{} // Channel for RISP->SPRates coordination
 }
 
 // initializeReconcilers creates all reconciler instances with their dependencies.
@@ -89,17 +90,18 @@ func initializeReconcilers(
 	//
 	// Dependency graph:
 	//   Pricing ─┐
-	//            ├─→ SPRates ─┐
-	//   RISP ────┤             ├─→ Cost (waits for all 4)
-	//            │             │
-	//   EC2 ─────┴─────────────┘
+	//            ├─→ SPRates ────┐
+	//   RISP ────┤                │
+	//            │                ├─→ Cost (waits for all 5)
+	//   EC2 ─────┴─→ SpotPricing ─┘
 	//
 	// This ensures the Cost reconciler's first calculation has complete, accurate data
-	// rather than running 4-5 times with increasingly complete data during startup.
+	// rather than running 5-6 times with increasingly complete data during startup.
 	pricingReadyCh := make(chan struct{})
 	rispReadyCh := make(chan struct{})
 	ec2ReadyCh := make(chan struct{})
 	spRatesReadyCh := make(chan struct{})
+	spotPricingReadyCh := make(chan struct{})
 
 	return &reconcilers{
 		Pricing: &controller.PricingReconciler{
@@ -143,18 +145,30 @@ func initializeReconcilers(
 			EC2ReadyChan:     ec2ReadyCh,
 			ReadyChan:        spRatesReadyCh,
 		},
+		SpotPricing: &controller.SpotPricingReconciler{
+			AWSClient:           awsClient,
+			Config:              cfg,
+			EC2Cache:            ec2Cache,
+			Cache:               pricingCache,
+			Metrics:             luminaMetrics,
+			Log:                 ctrl.Log.WithName("spot-pricing-reconciler"),
+			ProductDescriptions: []string{"Linux/UNIX"},
+			EC2ReadyChan:        ec2ReadyCh,
+			ReadyChan:           spotPricingReadyCh,
+		},
 		Cost: &controller.CostReconciler{
-			Calculator:       costCalculator,
-			Config:           cfg,
-			EC2Cache:         ec2Cache,
-			RISPCache:        rispCache,
-			PricingCache:     pricingCache,
-			Metrics:          luminaMetrics,
-			Log:              ctrl.Log.WithName("cost-reconciler"),
-			PricingReadyChan: pricingReadyCh,
-			RISPReadyChan:    rispReadyCh,
-			EC2ReadyChan:     ec2ReadyCh,
-			SPRatesReadyChan: spRatesReadyCh,
+			Calculator:           costCalculator,
+			Config:               cfg,
+			EC2Cache:             ec2Cache,
+			RISPCache:            rispCache,
+			PricingCache:         pricingCache,
+			Metrics:              luminaMetrics,
+			Log:                  ctrl.Log.WithName("cost-reconciler"),
+			PricingReadyChan:     pricingReadyCh,
+			RISPReadyChan:        rispReadyCh,
+			EC2ReadyChan:         ec2ReadyCh,
+			SPRatesReadyChan:     spRatesReadyCh,
+			SpotPricingReadyChan: spotPricingReadyCh,
 		},
 		ReadyCh: rispReadyCh,
 	}
@@ -269,6 +283,14 @@ func runStandalone(
 		}
 	}()
 	setupLog.Info("started SP rates reconciler")
+
+	// Start spot pricing reconciler - waits for EC2 to be ready via channel
+	go func() {
+		if err := recs.SpotPricing.Run(ctx); err != nil {
+			setupLog.Error(err, "spot pricing reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started spot pricing reconciler")
 
 	// Create debouncer that triggers cost calculation 1 second after last cache update
 	// This prevents "thundering herd" when EC2, RISP, and Pricing caches all update simultaneously
@@ -674,6 +696,14 @@ func main() {
 		}
 	}()
 	setupLog.Info("started SP rates reconciler (goroutine)")
+
+	// Start spot pricing reconciler - waits for EC2 via channel
+	go func() {
+		if err := recs.SpotPricing.Run(ctx); err != nil {
+			setupLog.Error(err, "spot pricing reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started spot pricing reconciler (goroutine)")
 
 	// Setup EC2 reconciler as event-driven controller
 	// This watches Node resources and reconciles on changes

@@ -33,6 +33,7 @@ import (
 //   - GET /debug/cache/pricing/sp       - List all SP rates in cache
 //   - GET /debug/cache/pricing/sp?sp=<arn> - Filter SP rates by SP ARN
 //   - GET /debug/cache/pricing/sp/lookup?instance_type=<type>&region=<region>&tenancy=<tenancy>&os=<os>&sp=<arn> - Lookup specific SP rate
+//   - GET /debug/cache/pricing/spot     - List all spot prices in cache
 //   - GET /debug/cache/stats            - Show cache statistics
 type DebugHandler struct {
 	EC2Cache     *cache.EC2Cache
@@ -58,6 +59,8 @@ func (h *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handlePricingSPLookup(w, r)
 	case "pricing/sp":
 		h.handlePricingSP(w, r)
+	case "pricing/spot":
+		h.handlePricingSpot(w, r)
 	case "stats":
 		h.handleStats(w, r)
 	default:
@@ -75,6 +78,7 @@ func (h *DebugHandler) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/debug/cache/pricing/sp       - List all SP rates",
 			"/debug/cache/pricing/sp?sp=<arn> - Filter SP rates by ARN",
 			"/debug/cache/pricing/sp/lookup?instance_type=<type>&region=<region>&tenancy=<tenancy>&os=<os>&sp=<arn> - Lookup specific SP rate",
+			"/debug/cache/pricing/spot     - List all spot prices",
 			"/debug/cache/stats            - Show cache statistics",
 		},
 	}
@@ -148,6 +152,28 @@ func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, _ *http.Requ
 	response := map[string]interface{}{
 		"total_count": len(prices),
 		"prices":      prices,
+	}
+
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
+}
+
+// handlePricingSpot returns all spot prices in cache.
+func (h *DebugHandler) handlePricingSpot(w http.ResponseWriter, _ *http.Request) {
+	if h.PricingCache == nil {
+		http.Error(w, "Pricing cache not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	prices := h.PricingCache.GetAllSpotPrices()
+	stats := h.PricingCache.GetSpotStats()
+
+	response := map[string]interface{}{
+		"total_count": len(prices),
+		"stats": map[string]interface{}{
+			"is_populated":     stats.IsPopulated,
+			"spot_price_count": stats.SpotPriceCount,
+		},
+		"prices": prices,
 	}
 
 	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
@@ -338,9 +364,11 @@ func (h *DebugHandler) handleStats(w http.ResponseWriter, _ *http.Request) {
 	if h.PricingCache != nil {
 		onDemand := h.PricingCache.GetAllOnDemandPrices()
 		spRates := h.PricingCache.GetAllSPRates()
+		spotStats := h.PricingCache.GetSpotStats()
 		stats["pricing"] = map[string]interface{}{
 			"ondemand_prices": len(onDemand),
 			"sp_rates":        len(spRates),
+			"spot_prices":     spotStats.SpotPriceCount,
 		}
 	}
 

@@ -77,14 +77,15 @@ type CostReconciler struct {
 
 	// Ready channels for waiting on dependencies during initialization.
 	// The cost reconciler waits for all of these to be ready before its first calculation.
-	PricingReadyChan chan struct{} // Wait for on-demand pricing to load
-	RISPReadyChan    chan struct{} // Wait for Savings Plans and RIs to load
-	EC2ReadyChan     chan struct{} // Wait for EC2 instances to load
-	SPRatesReadyChan chan struct{} // Wait for SP rates to load
+	PricingReadyChan     chan struct{} // Wait for on-demand pricing to load
+	RISPReadyChan        chan struct{} // Wait for Savings Plans and RIs to load
+	EC2ReadyChan         chan struct{} // Wait for EC2 instances to load
+	SPRatesReadyChan     chan struct{} // Wait for SP rates to load
+	SpotPricingReadyChan chan struct{} // Wait for spot pricing to load
 
 	// initialized tracks whether the initial dependency wait has completed.
 	// This prevents the debouncer from triggering calculations before all
-	// dependencies (Pricing, RISP, EC2, SPRates) are confirmed ready.
+	// dependencies (Pricing, RISP, EC2, SPRates, SpotPricing) are confirmed ready.
 	// Uses atomic operations for thread-safe access from multiple goroutines.
 	initialized atomic.Bool
 }
@@ -274,6 +275,13 @@ func (r *CostReconciler) waitForDependencies() {
 		log.Info("waiting for SP rates cache to be ready")
 		<-r.SPRatesReadyChan
 		log.Info("SP rates cache ready")
+	}
+
+	// Wait for spot pricing cache to be ready
+	if r.SpotPricingReadyChan != nil {
+		log.Info("waiting for spot pricing cache to be ready")
+		<-r.SpotPricingReadyChan
+		log.Info("spot pricing cache ready")
 	}
 
 	log.Info("all dependencies ready")

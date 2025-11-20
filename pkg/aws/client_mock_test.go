@@ -427,7 +427,7 @@ func TestMockEC2Client_DescribeSpotPriceHistory(t *testing.T) {
 			mockEC2.SpotPrices = tt.spotPrices
 
 			ctx := context.Background()
-			result, err := mockEC2.DescribeSpotPriceHistory(ctx, tt.regions, tt.instanceTypes)
+			result, err := mockEC2.DescribeSpotPriceHistory(ctx, tt.regions, tt.instanceTypes, nil)
 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)

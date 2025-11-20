@@ -26,7 +26,9 @@ import (
 )
 
 const (
-	testLocalStackEndpoint = "http://localhost:4566"
+	testLocalStackEndpoint  = "http://localhost:4566"
+	testInstanceTypeT3Micro = "t3.micro"
+	testInstanceTypeM5Large = "m5.large"
 )
 
 // isLocalStackAvailable checks if LocalStack is running and accessible.
@@ -155,8 +157,13 @@ func TestRealEC2ClientDescribeReservedInstances(t *testing.T) {
 	}
 }
 
-// TestRealEC2ClientDescribeSpotPriceHistory tests the DescribeSpotPriceHistory method.
+// TestRealEC2ClientDescribeSpotPriceHistory tests querying spot price history.
+// Note: LocalStack may not support DescribeSpotPriceHistory - the test will skip if unsupported.
 func TestRealEC2ClientDescribeSpotPriceHistory(t *testing.T) {
+	if !isLocalStackAvailable() {
+		t.Skip("Skipping test: LocalStack is not available at " + testLocalStackEndpoint)
+	}
+
 	ctx := context.Background()
 	creds := credentials.StaticCredentialsProvider{
 		Value: aws.Credentials{
@@ -165,18 +172,45 @@ func TestRealEC2ClientDescribeSpotPriceHistory(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	prices, err := client.DescribeSpotPriceHistory(ctx, []string{testRegion}, []string{"t3.micro"})
+	// Try to query spot prices - may return empty or error if unsupported
+	// Pass nil for productDescriptions to use the default (Linux/UNIX)
+	instanceTypes := []string{testInstanceTypeM5Large, testInstanceTypeT3Micro}
+	prices, err := client.DescribeSpotPriceHistory(ctx, []string{testRegion}, instanceTypes, nil)
+
+	// If we get an "unsupported" error, skip the test
 	if err != nil {
-		t.Errorf("expected no error from stub, got: %v", err)
+		errMsg := err.Error()
+		if errMsg == "operation error EC2: DescribeSpotPriceHistory, https response error StatusCode: 501" ||
+			errMsg == "operation error EC2: DescribeSpotPriceHistory, exceeded maximum number of attempts" {
+			t.Skip("LocalStack does not support DescribeSpotPriceHistory API")
+		}
 	}
 
-	if len(prices) != 0 {
-		t.Errorf("expected empty spot prices from stub, got %d", len(prices))
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	// Verify we got a non-nil result (may be empty array)
+	if prices == nil {
+		t.Error("expected non-nil prices slice")
+	}
+
+	// If we got prices, verify they have the expected fields
+	for _, price := range prices {
+		if price.InstanceType == "" {
+			t.Error("expected non-empty InstanceType")
+		}
+		if price.AvailabilityZone == "" {
+			t.Error("expected non-empty AvailabilityZone")
+		}
+		if price.SpotPrice < 0 {
+			t.Errorf("expected non-negative SpotPrice, got %.4f", price.SpotPrice)
+		}
 	}
 }
 
@@ -280,8 +314,8 @@ func TestConvertReservedInstance(t *testing.T) {
 		if result.ReservedInstanceID != "" {
 			t.Errorf("expected empty ReservedInstanceID, got %s", result.ReservedInstanceID)
 		}
-		if result.InstanceType != "t3.micro" {
-			t.Errorf("expected InstanceType t3.micro, got %s", result.InstanceType)
+		if result.InstanceType != testInstanceTypeT3Micro {
+			t.Errorf("expected InstanceType %s, got %s", testInstanceTypeT3Micro, result.InstanceType)
 		}
 		if result.Region != "us-east-1" {
 			t.Errorf("expected Region us-east-1, got %s", result.Region)
@@ -440,8 +474,8 @@ func TestConvertInstance(t *testing.T) {
 		if result.InstanceID != "" {
 			t.Errorf("expected empty InstanceID, got %s", result.InstanceID)
 		}
-		if result.InstanceType != "t3.micro" {
-			t.Errorf("expected InstanceType t3.micro, got %s", result.InstanceType)
+		if result.InstanceType != testInstanceTypeT3Micro {
+			t.Errorf("expected InstanceType %s, got %s", testInstanceTypeT3Micro, result.InstanceType)
 		}
 		if result.AvailabilityZone != "" {
 			t.Errorf("expected empty AvailabilityZone, got %s", result.AvailabilityZone)
@@ -493,4 +527,134 @@ func TestConvertInstance(t *testing.T) {
 			t.Errorf("expected Valid tag 'value', got %s", result.Tags["Valid"])
 		}
 	})
+}
+
+// TestDeduplicateSpotPrices tests that deduplication keeps only the most recent price.
+func TestDeduplicateSpotPrices(t *testing.T) {
+	now := time.Now()
+	older := now.Add(-1 * time.Hour)
+
+	tests := []struct {
+		name     string
+		input    []SpotPrice
+		expected int // Expected number of unique prices
+	}{
+		{
+			name:     "empty slice",
+			input:    []SpotPrice{},
+			expected: 0,
+		},
+		{
+			name: "single price",
+			input: []SpotPrice{
+				{InstanceType: testInstanceTypeM5Large, AvailabilityZone: "us-west-2a", SpotPrice: 0.05, Timestamp: now},
+			},
+			expected: 1,
+		},
+		{
+			name: "duplicate prices - keep most recent",
+			input: []SpotPrice{
+				{InstanceType: testInstanceTypeM5Large, AvailabilityZone: "us-west-2a", SpotPrice: 0.05, Timestamp: older},
+				{InstanceType: testInstanceTypeM5Large, AvailabilityZone: "us-west-2a", SpotPrice: 0.06, Timestamp: now},
+			},
+			expected: 1,
+		},
+		{
+			name: "different AZs",
+			input: []SpotPrice{
+				{InstanceType: testInstanceTypeM5Large, AvailabilityZone: "us-west-2a", SpotPrice: 0.05, Timestamp: now},
+				{InstanceType: "m5.large", AvailabilityZone: "us-west-2b", SpotPrice: 0.06, Timestamp: now},
+			},
+			expected: 2,
+		},
+		{
+			name: "different instance types",
+			input: []SpotPrice{
+				{InstanceType: testInstanceTypeM5Large, AvailabilityZone: "us-west-2a", SpotPrice: 0.05, Timestamp: now},
+				{InstanceType: testInstanceTypeT3Micro, AvailabilityZone: "us-west-2a", SpotPrice: 0.01, Timestamp: now},
+			},
+			expected: 2,
+		},
+		{
+			name: "multiple duplicates",
+			input: []SpotPrice{
+				{
+					InstanceType:     testInstanceTypeM5Large,
+					AvailabilityZone: "us-west-2a",
+					SpotPrice:        0.05,
+					Timestamp:        older.Add(-2 * time.Hour),
+				},
+				{
+					InstanceType:     testInstanceTypeM5Large,
+					AvailabilityZone: "us-west-2a",
+					SpotPrice:        0.06,
+					Timestamp:        older,
+				},
+				{
+					InstanceType:     testInstanceTypeM5Large,
+					AvailabilityZone: "us-west-2a",
+					SpotPrice:        0.07,
+					Timestamp:        now, // Most recent
+				},
+				{
+					InstanceType:     testInstanceTypeT3Micro,
+					AvailabilityZone: "us-west-2a",
+					SpotPrice:        0.01,
+					Timestamp:        older,
+				},
+				{
+					InstanceType:     testInstanceTypeT3Micro,
+					AvailabilityZone: "us-west-2a",
+					SpotPrice:        0.02,
+					Timestamp:        now, // Most recent
+				},
+			},
+			expected: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := deduplicateSpotPrices(tt.input)
+
+			if len(result) != tt.expected {
+				t.Errorf("expected %d unique prices, got %d", tt.expected, len(result))
+			}
+
+			// Verify we kept the most recent prices
+			if tt.name == "duplicate prices - keep most recent" {
+				if len(result) > 0 && result[0].SpotPrice != 0.06 {
+					t.Errorf("expected most recent price 0.06, got %.2f", result[0].SpotPrice)
+				}
+				if len(result) > 0 && !result[0].Timestamp.Equal(now) {
+					t.Error("expected most recent timestamp to be kept")
+				}
+			}
+
+			if tt.name == "multiple duplicates" {
+				// Find the m5.large price
+				var m5Price, t3Price *SpotPrice
+				for i := range result {
+					if result[i].InstanceType == testInstanceTypeM5Large {
+						m5Price = &result[i]
+					}
+					if result[i].InstanceType == testInstanceTypeT3Micro {
+						t3Price = &result[i]
+					}
+				}
+
+				if m5Price == nil {
+					t.Error("expected to find m5.large in results")
+				} else if m5Price.SpotPrice != 0.07 {
+					t.Errorf("expected m5.large price 0.07 (most recent), got %.2f", m5Price.SpotPrice)
+				}
+
+				if t3Price == nil {
+					t.Error("expected to find t3.micro in results")
+				} else if t3Price.SpotPrice != 0.02 {
+					t.Errorf("expected t3.micro price 0.02 (most recent), got %.2f", t3Price.SpotPrice)
+				}
+			}
+		})
+	}
 }

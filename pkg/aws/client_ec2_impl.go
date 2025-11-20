@@ -17,6 +17,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
@@ -165,9 +166,110 @@ func (c *RealEC2Client) DescribeReservedInstances(ctx context.Context, regions [
 }
 
 // DescribeSpotPriceHistory returns current spot prices for the specified instance types.
-func (c *RealEC2Client) DescribeSpotPriceHistory(_ context.Context, _ []string, _ []string) ([]SpotPrice, error) {
-	// TODO: Implement real EC2 DescribeSpotPriceHistory call
-	return []SpotPrice{}, nil
+// If regions is empty, queries the client's configured region.
+// If instanceTypes is empty, returns prices for all instance types.
+// If productDescriptions is empty, defaults to ["Linux/UNIX"] for consistency with other pricing methods.
+//
+// The method queries the most recent spot price for each instance type + AZ combination.
+// Results are deduplicated to return only the latest price per combination.
+//
+// Note: Spot prices vary by availability zone, not just region. The returned prices
+// include the AZ to enable accurate cost calculations.
+func (c *RealEC2Client) DescribeSpotPriceHistory(
+	ctx context.Context,
+	regions []string,
+	instanceTypes []string,
+	productDescriptions []string,
+) ([]SpotPrice, error) {
+	// If no regions specified, query the client's configured region
+	queryRegions := regions
+	if len(queryRegions) == 0 {
+		queryRegions = []string{c.region}
+	}
+
+	// Default to Linux/UNIX if no product descriptions specified
+	// This matches the behavior of other pricing methods (GetOnDemandPrice, GetSPRate)
+	// which default to Linux when no OS is specified
+	queryProductDescriptions := productDescriptions
+	if len(queryProductDescriptions) == 0 {
+		queryProductDescriptions = []string{"Linux/UNIX"}
+	}
+
+	var allPrices []SpotPrice
+
+	for _, region := range queryRegions {
+		// Build input for spot price history
+		// We want the most recent price for each instance type + AZ
+		input := &ec2.DescribeSpotPriceHistoryInput{
+			// Use the specified product descriptions (or default to Linux/UNIX)
+			ProductDescriptions: queryProductDescriptions,
+			// Get most recent prices first
+			StartTime: aws.Time(time.Now().Add(-1 * time.Hour)),
+			// Limit results per page
+			MaxResults: aws.Int32(1000),
+		}
+
+		// Filter to specific instance types if provided
+		if len(instanceTypes) > 0 {
+			for _, instanceType := range instanceTypes {
+				input.InstanceTypes = append(input.InstanceTypes, types.InstanceType(instanceType))
+			}
+		}
+
+		// Handle pagination
+		paginator := ec2.NewDescribeSpotPriceHistoryPaginator(c.client, input)
+		for paginator.HasMorePages() {
+			output, err := paginator.NextPage(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to describe spot prices in %s: %w", region, err)
+			}
+
+			// Convert AWS SDK types to our types
+			for _, price := range output.SpotPriceHistory {
+				// Parse spot price string to float64
+				priceFloat, err := strconv.ParseFloat(aws.ToString(price.SpotPrice), 64)
+				if err != nil {
+					// Skip invalid prices (shouldn't happen with real AWS data)
+					continue
+				}
+
+				allPrices = append(allPrices, SpotPrice{
+					InstanceType:       string(price.InstanceType),
+					AvailabilityZone:   aws.ToString(price.AvailabilityZone),
+					SpotPrice:          priceFloat,
+					Timestamp:          aws.ToTime(price.Timestamp),
+					ProductDescription: string(price.ProductDescription),
+				})
+			}
+		}
+	}
+
+	// Deduplicate to get the most recent price for each instance type + AZ
+	return deduplicateSpotPrices(allPrices), nil
+}
+
+// deduplicateSpotPrices returns only the most recent price for each instance type + AZ combination.
+// AWS may return multiple historical prices; we want only the latest.
+func deduplicateSpotPrices(prices []SpotPrice) []SpotPrice {
+	// Build map keyed by instance type + AZ
+	latest := make(map[string]SpotPrice)
+
+	for _, price := range prices {
+		key := price.InstanceType + ":" + price.AvailabilityZone
+
+		// Keep the price with the most recent timestamp
+		if existing, exists := latest[key]; !exists || price.Timestamp.After(existing.Timestamp) {
+			latest[key] = price
+		}
+	}
+
+	// Convert back to slice
+	result := make([]SpotPrice, 0, len(latest))
+	for _, price := range latest {
+		result = append(result, price)
+	}
+
+	return result
 }
 
 // GetInstanceByID returns a specific instance by ID.

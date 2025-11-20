@@ -115,6 +115,12 @@ type ReconciliationConfig struct {
 	// Recommended: 24h (daily) - AWS pricing changes monthly, daily refresh is sufficient
 	Pricing string `yaml:"pricing,omitempty"`
 
+	// SpotPricing is how often to reconcile AWS spot pricing data.
+	// Format: Go duration string (e.g., "15m", "30m", "1h")
+	// Default: 15m
+	// Recommended: 15m - Spot prices change hourly, so 15min provides reasonable freshness
+	SpotPricing string `yaml:"spotPricing,omitempty"`
+
 	// Cost reconciliation is event-driven (no configurable interval needed).
 	// Cost calculations trigger automatically when EC2, RISP, or Pricing caches update.
 	// A 1-second debouncer prevents redundant calculations when multiple caches update simultaneously.

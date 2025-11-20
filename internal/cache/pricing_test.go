@@ -992,3 +992,216 @@ func TestNormalizeOS_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestGetSetSpotPrice tests basic spot price get/set operations.
+func TestGetSetSpotPrice(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Get from empty cache
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	if exists {
+		t.Error("expected price not to exist in empty cache")
+	}
+	if price != 0 {
+		t.Errorf("expected price 0, got %.4f", price)
+	}
+
+	// Set spot prices
+	prices := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+		"m5.xlarge:us-east-1a":  0.0521,
+	}
+	cache.SetSpotPrices(prices)
+
+	// Verify cache is populated
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should be populated after setting spot prices")
+	}
+
+	// Get existing price
+	price, exists = cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	if !exists {
+		t.Error("expected price to exist")
+	}
+	if price != 0.0537 {
+		t.Errorf("expected price 0.0537, got %.4f", price)
+	}
+
+	// Get non-existent price
+	_, exists = cache.GetSpotPrice("r5.large", "eu-west-1a")
+	if exists {
+		t.Error("expected price not to exist")
+	}
+
+	// Verify stats
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 3 {
+		t.Errorf("expected 3 prices, got %d", stats.SpotPriceCount)
+	}
+	if !stats.IsPopulated {
+		t.Error("stats should show cache is populated")
+	}
+	if time.Since(stats.LastUpdated) > time.Second {
+		t.Error("last updated should be recent")
+	}
+}
+
+// TestGetAllSpotPrices tests retrieving all spot prices.
+func TestGetAllSpotPrices(t *testing.T) {
+	cache := NewPricingCache()
+
+	prices := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+	}
+	cache.SetSpotPrices(prices)
+
+	allPrices := cache.GetAllSpotPrices()
+	if len(allPrices) != 2 {
+		t.Errorf("expected 2 prices, got %d", len(allPrices))
+	}
+
+	// Verify it's a copy (modifications don't affect cache)
+	allPrices["test:key"] = 999.99
+	if _, exists := cache.GetSpotPrice("test", "key"); exists {
+		t.Error("external modifications should not affect cache")
+	}
+}
+
+// TestSpotIsPopulated tests spot cache population tracking.
+func TestSpotIsPopulated(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache is not populated
+	if cache.SpotIsPopulated() {
+		t.Error("empty cache should not be populated")
+	}
+
+	// Populate cache
+	cache.SetSpotPrices(map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	})
+
+	// Cache is now populated
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should be populated after setting prices")
+	}
+}
+
+// TestSpotStats tests spot pricing statistics.
+func TestSpotStats(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache stats
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 0 {
+		t.Errorf("expected 0 prices, got %d", stats.SpotPriceCount)
+	}
+	if stats.IsPopulated {
+		t.Error("empty cache should not be populated")
+	}
+
+	// Populate cache
+	cache.SetSpotPrices(map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+		"m5.xlarge:us-east-1a":  0.0521,
+	})
+
+	stats = cache.GetSpotStats()
+	if stats.SpotPriceCount != 3 {
+		t.Errorf("expected 3 prices, got %d", stats.SpotPriceCount)
+	}
+	if !stats.IsPopulated {
+		t.Error("populated cache should report as populated")
+	}
+	if stats.AgeHours < 0 {
+		t.Errorf("age should be non-negative, got %.2f", stats.AgeHours)
+	}
+	if stats.AgeHours > 1 {
+		t.Errorf("fresh cache should be < 1 hour old, got %.2f", stats.AgeHours)
+	}
+}
+
+// TestSpotPriceCaseInsensitive tests case-insensitive spot price lookups.
+func TestSpotPriceCaseInsensitive(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Set prices with mixed case
+	cache.SetSpotPrices(map[string]float64{
+		"M5.Xlarge:US-WEST-2A": 0.0537,
+	})
+
+	// Should find price with different casing
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	if !exists {
+		t.Error("expected price to exist (case-insensitive)")
+	}
+	if price != 0.0537 {
+		t.Errorf("expected price 0.0537, got %.4f", price)
+	}
+
+	// Also test uppercase query
+	price, exists = cache.GetSpotPrice("M5.XLARGE", "US-WEST-2A")
+	if !exists {
+		t.Error("expected price to exist (uppercase query)")
+	}
+	if price != 0.0537 {
+		t.Errorf("expected price 0.0537, got %.4f", price)
+	}
+}
+
+// TestSetSpotPrices_EmptyMap tests setting empty spot prices map.
+func TestSetSpotPrices_EmptyMap(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Populate first
+	cache.SetSpotPrices(map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	})
+
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should be populated")
+	}
+
+	// Set empty map
+	cache.SetSpotPrices(map[string]float64{})
+
+	// Cache should no longer be populated
+	if cache.SpotIsPopulated() {
+		t.Error("cache should not be populated after setting empty map")
+	}
+
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 0 {
+		t.Errorf("expected 0 prices, got %d", stats.SpotPriceCount)
+	}
+}
+
+// TestSpotPriceNotification tests that spot price updates trigger notifications.
+func TestSpotPriceNotification(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Track notifications with a channel
+	notified := make(chan int, 1)
+
+	// Register a notifier
+	cache.RegisterUpdateNotifier(func() {
+		notified <- 1
+	})
+
+	// Trigger notification by setting spot prices
+	prices := map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	}
+	cache.SetSpotPrices(prices)
+
+	// Wait for notification (with timeout)
+	select {
+	case <-notified:
+		// Success
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected notifier to be called after SetSpotPrices")
+	}
+}
