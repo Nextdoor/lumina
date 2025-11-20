@@ -130,15 +130,27 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	// Default to Linux OS pricing (most common). Future enhancement: detect actual OS per instance.
 	onDemandPrices := r.PricingCache.GetOnDemandPricesForInstances(instanceKeys, "Linux")
 
-	// Spot pricing will be implemented in Phase 8
-	// For now, use empty map (spot instances will fall back to on-demand estimates)
-	spotPrices := make(map[string]float64)
+	// Build spot price keys for running instances
+	// Spot prices are zone-specific and OS-specific (unlike on-demand which is region-level)
+	spotKeys := make([]cache.SpotPriceKey, 0, len(instances))
+	for _, inst := range instances {
+		spotKeys = append(spotKeys, cache.SpotPriceKey{
+			InstanceType:       inst.InstanceType,
+			AvailabilityZone:   inst.AvailabilityZone,
+			ProductDescription: "Linux/UNIX", // Default to Linux, same as on-demand
+		})
+	}
+
+	// Get spot pricing data for running instances
+	// The pricing cache returns a map keyed by "instance_type:availability_zone:os"
+	spotPrices := r.PricingCache.GetSpotPricesForInstances(spotKeys)
 
 	log.V(1).Info("gathered data for cost calculation",
 		"instances", len(instances),
 		"reserved_instances", len(ris),
 		"savings_plans", len(sps),
-		"on_demand_prices", len(onDemandPrices))
+		"on_demand_prices", len(onDemandPrices),
+		"spot_prices", len(spotPrices))
 
 	// Build calculation input
 	input := cost.CalculationInput{
