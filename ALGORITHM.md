@@ -198,13 +198,13 @@ graph LR
 
 **EC2 Instance Savings Plans** ([AWS EC2 Instance SP docs](https://docs.aws.amazon.com/savingsplans/latest/userguide/sp-types.html#sp-ec2-instance)):
 - Apply to specific instance family (e.g., "m5") in specific region (e.g., "us-west-2")
-- Provide ~72% discount (configurable in code)
+- Provide ~28% discount (you pay 72% of on-demand)
 - Higher priority than Compute SPs
 - Example: SP for "m5 in us-west-2" covers m5.large, m5.xlarge, m5.2xlarge, etc.
 
 **Compute Savings Plans** ([AWS Compute SP docs](https://docs.aws.amazon.com/savingsplans/latest/userguide/sp-types.html#sp-compute)):
 - Apply to ANY instance family in ANY region
-- Provide ~66% discount (configurable in code)
+- Provide ~28% discount (you pay 72% of on-demand)
 - Lower priority than EC2 Instance SPs
 - Example: SP covers m5, c5, r5, across all regions
 
@@ -267,15 +267,15 @@ For each Savings Plan (in priority order: EC2 Instance SPs first, then Compute S
 
 #### Scenario 1: Full Coverage ✅
 
-**Setup:** Instance needs $0.34/hr, SP has $60.00/hr remaining (plenty!)
+**Setup:** Instance needs $0.72/hr, SP has $60.00/hr remaining (plenty!)
 
 ```mermaid
 flowchart LR
-    I1["m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.34"]
+    I1["m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.72"]
     SP1["Savings Plan<br/>$60.00 available"]
-    Result["Final Cost<br/>$0.34/hr"]
+    Result["Final Cost<br/>$0.72/hr"]
 
-    I1 -->|"Needs $0.34"| SP1
+    I1 -->|"Needs $0.72"| SP1
     SP1 -->|"✅ Fully covers"| Result
 
     style I1 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
@@ -284,24 +284,24 @@ flowchart LR
 ```
 
 **Result:**
-- ✅ SP contributes: **$0.34** (full SP rate)
-- ✅ Instance pays: **$0.34** (fully discounted)
-- ✅ SP remaining: **$59.66** (plenty left)
+- ✅ SP contributes: **$0.72** (full SP rate)
+- ✅ Instance pays: **$0.72** (fully discounted)
+- ✅ SP remaining: **$59.28** (plenty left)
 - ✅ No on-demand spillover
 
 ---
 
 #### Scenario 2: Partial Coverage ⚠️ (SP Exhaustion)
 
-**Setup:** Instance needs $0.34/hr, but SP only has $0.10/hr remaining (not enough!)
+**Setup:** Instance needs $0.72/hr, but SP only has $0.10/hr remaining (not enough!)
 
 ```mermaid
 flowchart LR
-    I2["m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.34"]
+    I2["m5.xlarge<br/>ShelfPrice: $1.00<br/>SP Rate: $0.72"]
     SP2["Savings Plan<br/>⚠️ Only $0.10 left"]
     Result2["Final Cost<br/>$0.90/hr<br/>$0.10 SP + $0.80 OD"]
 
-    I2 -->|"Needs $0.34"| SP2
+    I2 -->|"Needs $0.72"| SP2
     SP2 -->|"⚠️ Partial only"| Result2
 
     style I2 fill:#fff,stroke:#1976d2,stroke-width:3px,color:#000
@@ -325,23 +325,23 @@ The difference represents **real on-demand costs** from partial coverage.
 
 ### Example: Large-Scale SP Allocation
 
-**Scenario:** $60/hr Compute SP commitment, 66% discount, 200 m5.xlarge instances ($1.00 OD, $0.34 SP rate)
+**Scenario:** $60/hr Compute SP commitment, 28% discount (0.72 multiplier), 200 m5.xlarge instances ($1.00 OD, $0.72 SP rate)
 
 ```mermaid
 graph TD
     Start[Compute Savings Plan<br/>Commitment: $60.00/hr<br/>Available: $60.00/hr] --> Sort[Sort 200 instances<br/>by savings priority]
 
-    Sort --> Phase1[Cover instances 1-176<br/>176 × $0.34 = $59.84<br/>✅ Fully covered]
-    Phase1 --> Phase2[Instance 177 partial<br/>EffectiveCost: $1.00<br/>SP: $0.16 + OD: $0.84]
-    Phase2 --> Phase3[Instances 178-200<br/>23 × $1.00 OD each<br/>🚫 No SP coverage]
+    Sort --> Phase1[Cover instances 1-83<br/>83 × $0.72 = $59.76<br/>✅ Fully covered]
+    Phase1 --> Phase2[Instance 84 partial<br/>EffectiveCost: $1.00<br/>SP: $0.24 + OD: $0.76]
+    Phase2 --> Phase3[Instances 85-200<br/>116 × $1.00 OD each<br/>🚫 No SP coverage]
 
-    Phase1 -.->|Commitment consumed: $59.84| Status1
+    Phase1 -.->|Commitment consumed: $59.76| Status1
     Phase2 -.->|Commitment consumed: $60.00| Status2
     Phase3 -.->|No SP capacity left| Status3
 
-    Status1[SP Status:<br/>Remaining: $0.16]
+    Status1[SP Status:<br/>Remaining: $0.24]
     Status2[SP Status:<br/>Remaining: $0.00<br/>🔴 Exhausted]
-    Status3[23 instances on On-Demand]
+    Status3[116 instances on On-Demand]
 
     style Phase1 fill:#99ccff,color:#000
     style Phase2 fill:#ffcc99,color:#000
@@ -351,12 +351,12 @@ graph TD
 
 **Allocation breakdown:**
 1. **Sort instances** by savings priority (highest % first)
-2. **Cover first 176 instances fully**: 176 × $0.34 = $59.84 consumed
-3. **Instance #177 gets partial coverage**:
-   - SP contributes: $0.16 (all that's left)
-   - On-demand spillover: $0.84 (remainder at OD rate)
-   - **EffectiveCost: $1.00** (what instance pays: $0.16 SP + $0.84 OD)
-4. **Remaining 23 instances**: On-demand ($1.00 each, no SP coverage)
+2. **Cover first 83 instances fully**: 83 × $0.72 = $59.76 consumed
+3. **Instance #84 gets partial coverage**:
+   - SP contributes: $0.24 (all that's left)
+   - On-demand spillover: $0.76 (remainder at OD rate)
+   - **EffectiveCost: $1.00** (what instance pays: $0.24 SP + $0.76 OD)
+4. **Remaining 116 instances**: On-demand ($1.00 each, no SP coverage)
 
 **SP Metrics:**
 - Commitment: $60.00/hr
@@ -364,13 +364,13 @@ graph TD
 - Remaining: $0.00/hr
 
 **Instance Cost Metrics:**
-- Instances 1-176: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 0.34` × 176 = **$59.84** (fully covered)
-- Instance 177: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 1.00` (**EffectiveCost includes $0.84 OD spillover!**)
-- Instances 178-200: `ec2_instance_hourly_cost{cost_type="on_demand"} = 1.00` × 23 = **$23.00** (no SP coverage)
+- Instances 1-83: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 0.72` × 83 = **$59.76** (fully covered)
+- Instance 84: `ec2_instance_hourly_cost{cost_type="compute_savings_plan"} = 1.00` (**EffectiveCost includes $0.76 OD spillover!**)
+- Instances 85-200: `ec2_instance_hourly_cost{cost_type="on_demand"} = 1.00` × 116 = **$116.00** (no SP coverage)
 
-**Total instance costs: $59.84 + $1.00 + $23.00 = $83.84/hr**
+**Total instance costs: $59.76 + $1.00 + $116.00 = $176.76/hr**
 
-**Critical observation:** The SP-covered instance costs (**$59.84 + $1.00 = $60.84**) exceed SP utilization (**$60.00**) by **$0.84**, which is the on-demand spillover from instance #177's partial coverage.
+**Critical observation:** The SP-covered instance costs (**$59.76 + $1.00 = $60.76**) exceed SP utilization (**$60.00**) by **$0.76**, which is the on-demand spillover from instance #84's partial coverage.
 
 ---
 
@@ -385,14 +385,14 @@ The examples in this document are based on **actual test scenarios** with simple
 
 All test scenarios use consistent, simple pricing to make the math easy to follow:
 
-| Instance Type | On-Demand | Compute SP (66% discount) | Spot Market |
-|--------------|-----------|---------------------------|-------------|
-| m5.2xlarge   | $2.00/hr  | $0.68/hr                  | N/A         |
-| m5.xlarge    | $1.00/hr  | $0.34/hr                  | $0.50/hr    |
-| c5.xlarge    | $1.00/hr  | $0.34/hr                  | $0.40/hr    |
-| t3.medium    | $0.50/hr  | $0.17/hr                  | $0.20/hr    |
+| Instance Type | On-Demand | Compute SP (28% discount, 0.72 multiplier) | Spot Market |
+|--------------|-----------|---------------------------------------------|-------------|
+| m5.2xlarge   | $2.00/hr  | $1.44/hr                                    | N/A         |
+| m5.xlarge    | $1.00/hr  | $0.72/hr                                    | $0.50/hr    |
+| c5.xlarge    | $1.00/hr  | $0.72/hr                                    | $0.40/hr    |
+| t3.medium    | $0.50/hr  | $0.36/hr                                    | $0.20/hr    |
 
-**Note:** EC2 Instance Savings Plans provide 72% discount (higher than Compute SP's 66%).
+**Note:** Both EC2 Instance and Compute Savings Plans default to 28% discount (~0.72 multiplier) unless configured otherwise.
 
 ### Scenario 1: RI Coverage Only
 
@@ -428,12 +428,12 @@ All test scenarios use consistent, simple pricing to make the math easy to follo
 **Setup:**
 - **Reserved Instances:** 5 RIs for m5.2xlarge in us-west-2a
 - **Instances:** 15 m5.xlarge instances (mixed on-demand and spot)
-- **Savings Plans:** 1 Compute SP with $3.00/hr commitment (66% discount → $0.34 SP rate for m5.xlarge)
+- **Savings Plans:** 1 Compute SP with $3.00/hr commitment (28% discount → $0.72 SP rate for m5.xlarge)
 
 **Expected Results:**
 - **First 5 instances:** RI-covered (EffectiveCost: $0.00)
-- **Next ~8.8 instances:** SP-covered
-  - $3.00 commitment ÷ $0.34 SP rate = ~8.8 instances
+- **Next ~4.2 instances:** SP-covered
+  - $3.00 commitment ÷ $0.72 SP rate = ~4.17 instances
   - Last instance gets partial coverage (SP exhaustion + on-demand spillover)
 - **Remaining instances:** On-demand (EffectiveCost: $1.00)
 
@@ -504,8 +504,8 @@ graph TB
         ComputeSP1[Compute SP<br/>Has $60 left]
 
         Instance1 -->|Gets $0.50| EC2SP1
-        Instance1 -->|Gets $0.18 more| ComputeSP1
-        Result1[Instance EffectiveCost: $0.68<br/>✅ Multiple SPs applied]
+        Instance1 -->|Gets $0.94 more| ComputeSP1
+        Result1[Instance EffectiveCost: $1.44<br/>✅ Multiple SPs applied]
 
         style Result1 fill:#99ff99,color:#000
     end
@@ -563,21 +563,21 @@ The simplified model **under-estimates costs** when:
 **Example where AWS differs:**
 ```
 Instance: m5.2xlarge, ShelfPrice=$2.00
-EC2 Instance SP: Has $0.50 left (not enough for full $0.56 SP rate)
+EC2 Instance SP: Has $0.50 left (not enough for full $1.44 SP rate)
 Compute SP: Has $60 left (plenty of capacity)
 
 AWS Behavior:
 - EC2 Instance SP contributes: $0.50
-- Compute SP contributes: $0.18 (to reach full Compute SP rate of $0.68)
-- Instance EffectiveCost: $0.68
+- Compute SP contributes: $0.94 (to reach full Compute SP rate of $1.44)
+- Instance EffectiveCost: $1.44
 
 Lumina Behavior:
 - EC2 Instance SP contributes: $0.50
 - Compute SP: BLOCKED (instance already has SP coverage)
-- Instance EffectiveCost: $1.50 ($0.50 from SP + $1.50 on-demand spillover)
+- Instance EffectiveCost: $1.50 ($0.50 from SP + $1.00 on-demand spillover)
 ```
 
-**Impact:** Lumina shows $0.82/hr higher cost for this instance than AWS bills.
+**Impact:** Lumina shows $0.06/hr higher cost for this instance than AWS bills ($1.50 vs $1.44).
 
 ## Known Limitations
 
@@ -636,8 +636,8 @@ Lumina fetches real Savings Plan rates using the [AWS DescribeSavingsPlanRates A
 
 If a rate isn't cached (new instance type just appeared, or cache warming in progress), Lumina falls back to configured discount multipliers:
 
-- **EC2 Instance SP:** 72% discount (28% of on-demand)
-- **Compute SP:** 66% discount (34% of on-demand)
+- **EC2 Instance SP:** 28% discount (you pay 72% of on-demand, multiplier = 0.72)
+- **Compute SP:** 28% discount (you pay 72% of on-demand, multiplier = 0.72)
 
 **Pricing accuracy tracking:**
 - When Tier 2 rates are used: `PricingAccuracy = "estimated"`
@@ -788,7 +788,7 @@ ec2_instance_hourly_cost{
   cost_type="compute_savings_plan",  # or: reserved_instance, on_demand, spot
   availability_zone="us-west-2a",
   lifecycle="on-demand"
-} = 0.34
+} = 0.72
 ```
 
 **Savings Plan Utilization:**
@@ -820,14 +820,14 @@ sum(savings_plan_current_utilization_rate)
 ```mermaid
 graph LR
     subgraph "SP-Covered Instances"
-        I1[Instance 1<br/>EffectiveCost: $0.34<br/>SP Contribution: $0.34]
+        I1[Instance 1<br/>EffectiveCost: $0.72<br/>SP Contribution: $0.72]
         I2[Instance 2<br/>EffectiveCost: $0.90<br/>SP Contribution: $0.10<br/>OD Spillover: $0.80]
-        I3[Instance 3<br/>EffectiveCost: $0.34<br/>SP Contribution: $0.34]
+        I3[Instance 3<br/>EffectiveCost: $0.72<br/>SP Contribution: $0.72]
     end
 
     subgraph "Metrics"
-        M1[ec2_instance_hourly_cost<br/>$0.34 + $0.90 + $0.34 = $1.58]
-        M2[savings_plan_current_utilization_rate<br/>$0.34 + $0.10 + $0.34 = $0.78]
+        M1[ec2_instance_hourly_cost<br/>$0.72 + $0.90 + $0.72 = $2.34]
+        M2[savings_plan_current_utilization_rate<br/>$0.72 + $0.10 + $0.72 = $1.54]
     end
 
     I1 --> M1
@@ -890,7 +890,7 @@ sum(savings_plan_hourly_commitment) - sum(savings_plan_current_utilization_rate)
 
 ### ~~Priority 1: Actual SP Rate Lookup~~ ✅ COMPLETED
 
-**Problem:** ~~Using placeholder discount percentages (72%, 66%)~~
+**Problem:** ~~Using placeholder discount percentages (28% discount = 0.72 multiplier)~~
 
 **Solution:** ✅ Integrated with AWS DescribeSavingsPlanRates API with intelligent caching
 
