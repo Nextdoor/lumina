@@ -17,6 +17,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -373,8 +374,17 @@ func convertTestSavingsPlans(testSPs []config.TestSavingsPlan, accountID string)
 		start, _ := time.Parse(time.RFC3339, testSP.Start)
 		end, _ := time.Parse(time.RFC3339, testSP.End)
 
+		// Extract SavingsPlanID from ARN
+		// ARN format: arn:aws:savingsplans::ACCOUNT:savingsplan/SP_ID
+		spID := ""
+		parts := strings.Split(testSP.SavingsPlanARN, "/")
+		if len(parts) == 2 {
+			spID = parts[1]
+		}
+
 		sp := aws.SavingsPlan{
 			SavingsPlanARN:  testSP.SavingsPlanARN,
+			SavingsPlanID:   spID,
 			SavingsPlanType: testSP.SavingsPlanType,
 			State:           testSP.State,
 			Commitment:      testSP.Commitment,

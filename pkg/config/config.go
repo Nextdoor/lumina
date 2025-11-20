@@ -208,6 +208,12 @@ type TestData struct {
 	// Key format: "accountID"
 	SavingsPlans map[string][]TestSavingsPlan `yaml:"savingsPlans,omitempty"`
 
+	// SavingsPlanRates contains mock Savings Plan rates data for testing.
+	// Used when LocalStack free tier doesn't support DescribeSavingsPlanRates API.
+	// Key format: "savingsPlanId" -> list of rates
+	// Example: {"sp-12345": [{rate: 0.05, instanceType: "m5.xlarge", ...}]}
+	SavingsPlanRates map[string][]TestSavingsPlanRate `yaml:"savingsPlanRates,omitempty"`
+
 	// PricingFlat contains mock pricing data in flat format for testing.
 	// Map keys are in format "region:instanceType:operatingSystem" -> price
 	// Example: {"us-west-2:m5.xlarge:Linux": 0.192}
@@ -233,6 +239,22 @@ type TestSavingsPlan struct {
 	InstanceFamily  string  `yaml:"instanceFamily,omitempty"`
 	Start           string  `yaml:"start"` // ISO 8601 format
 	End             string  `yaml:"end"`   // ISO 8601 format
+}
+
+// TestSavingsPlanRate represents a mock Savings Plan rate for E2E testing.
+// Fields match the aws.SavingsPlanRate structure so they can be converted directly.
+type TestSavingsPlanRate struct {
+	Rate               float64 `yaml:"rate"`               // The SP rate in USD per hour
+	Currency           string  `yaml:"currency"`           // "USD"
+	Unit               string  `yaml:"unit"`               // "Hrs"
+	ProductType        string  `yaml:"productType"`        // "Linux/UNIX", "Windows", etc.
+	ServiceCode        string  `yaml:"serviceCode"`        // "AmazonEC2"
+	UsageType          string  `yaml:"usageType"`          // "BoxUsage:m5.xlarge"
+	Operation          string  `yaml:"operation"`          // "RunInstances", "RunInstances:0002", etc.
+	InstanceType       string  `yaml:"instanceType"`       // "m5.xlarge"
+	Region             string  `yaml:"region"`             // "us-east-1"
+	Tenancy            string  `yaml:"tenancy"`            // "shared", "dedicated", "host"
+	ProductDescription string  `yaml:"productDescription"` // OS type (for legacy compatibility)
 }
 
 // AWSAccount represents a single AWS account to monitor.
