@@ -414,19 +414,6 @@ type SPRateStats struct {
 	AgeHours    float64
 }
 
-// HasSPRate checks if a rate exists for the given SP ARN, instance type, region, tenancy, and OS.
-// This is useful for the reconciler to determine which rates are missing.
-func (c *PricingCache) HasSPRate(spArn, instanceType, region, tenancy, operatingSystem string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Normalize OS before lookup (same as GetSPRate)
-	normalizedOS := normalizeOS(operatingSystem)
-	key := BuildSPRateKey(spArn, instanceType, region, tenancy, normalizedOS)
-	_, exists := c.spRates[key]
-	return exists
-}
-
 // HasAnySPRate checks if ANY rate exists for the given Savings Plan ARN.
 // This is more efficient than GetAllSPRates() when you just need to know if rates exist.
 // Returns true if at least one rate is cached for this SP ARN.
@@ -438,7 +425,7 @@ func (c *PricingCache) HasAnySPRate(spArn string) bool {
 
 	// Normalize SP ARN to lowercase for case-insensitive comparison
 	normalizedArn := strings.ToLower(spArn)
-	arnPrefix := normalizedArn + ","
+	arnPrefix := normalizedArn + spRateKeySeparator
 
 	// Check if any key starts with this SP ARN
 	// Keys are formatted as "spArn,instanceType,region,tenancy" (comma-separated)
@@ -491,7 +478,7 @@ func (c *PricingCache) GetMissingSPRatesForInstances(
 	existingKeys := make(map[cacheKey]bool)
 
 	// Build prefix for this SP ARN
-	arnPrefix := normalizedArn + ","
+	arnPrefix := normalizedArn + spRateKeySeparator
 
 	// Scan cache for existing rates for this SP
 	for key := range c.spRates {

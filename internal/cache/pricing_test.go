@@ -363,12 +363,12 @@ func TestAddSPRates(t *testing.T) {
 	}
 }
 
-// TestHasSPRate tests checking for specific SP rate existence.
-func TestHasSPRate(t *testing.T) {
+// TestGetSPRate tests checking for specific SP rate existence.
+func TestGetSPRate(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Empty cache
-	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux") {
+	if _, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux"); exists {
 		t.Error("expected rate not to exist in empty cache")
 	}
 
@@ -382,37 +382,37 @@ func TestHasSPRate(t *testing.T) {
 	cache.AddSPRates(rates)
 
 	// Check existing rate with default tenancy, linux
-	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux") {
-		t.Error("expected rate to exist for default tenancy, linux")
+	if rate, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "linux"); !exists || rate != 0.0537 {
+		t.Error("expected rate 0.0537 to exist for default tenancy, linux")
 	}
 
 	// Check existing rate with dedicated tenancy, linux
-	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "linux") {
-		t.Error("expected rate to exist for dedicated tenancy, linux")
+	if rate, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "linux"); !exists || rate != 0.1708 {
+		t.Error("expected rate 0.1708 to exist for dedicated tenancy, linux")
 	}
 
 	// Check existing rate with default tenancy, windows
-	if !cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "windows") {
-		t.Error("expected rate to exist for default tenancy, windows")
+	if rate, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "default", "windows"); !exists || rate != 0.1074 {
+		t.Error("expected rate 0.1074 to exist for default tenancy, windows")
 	}
 
 	// Check non-existent rate (wrong tenancy)
-	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "host", "linux") {
+	if _, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "host", "linux"); exists {
 		t.Error("expected rate not to exist for host tenancy")
 	}
 
 	// Check non-existent rate (wrong OS)
-	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "windows") {
+	if _, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "m5.xlarge", "us-west-2", "dedicated", "windows"); exists {
 		t.Error("expected rate not to exist for dedicated tenancy, windows")
 	}
 
 	// Check non-existent rate (different instance type)
-	if cache.HasSPRate("arn:aws:savingsplans::123:savingsplan/abc", "c5.xlarge", "us-west-2", "default", "linux") {
+	if _, exists := cache.GetSPRate("arn:aws:savingsplans::123:savingsplan/abc", "c5.xlarge", "us-west-2", "default", "linux"); exists {
 		t.Error("expected rate not to exist")
 	}
 
 	// Check non-existent rate (different SP)
-	if cache.HasSPRate("arn:aws:savingsplans::456:savingsplan/def", "m5.xlarge", "us-west-2", "default", "linux") {
+	if _, exists := cache.GetSPRate("arn:aws:savingsplans::456:savingsplan/def", "m5.xlarge", "us-west-2", "default", "linux"); exists {
 		t.Error("expected rate not to exist")
 	}
 }
@@ -482,7 +482,7 @@ func TestGetAllSPRates(t *testing.T) {
 
 	// Verify it's a copy (modifications don't affect cache)
 	allRates["test,key,region,tenancy,os"] = 999.99
-	if cache.HasSPRate("test", "key", "region", "tenancy", "os") {
+	if _, exists := cache.GetSPRate("test", "key", "region", "tenancy", "os"); exists {
 		t.Error("external modifications should not affect cache")
 	}
 }

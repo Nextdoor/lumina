@@ -1584,14 +1584,14 @@ func TestCalculatorEC2InstanceSPRatesFromCache(t *testing.T) {
 	pricingCache := &mockPricingCache{
 		spRates: map[string]float64{
 			// SP-EC2-001: Better rates for m5 family
-			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.xlarge,us-west-2,default,linux":   0.045,
-			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.2xlarge,us-west-2,default,linux":  0.090,
-			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.4xlarge,us-west-2,default,linux":  0.180,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.xlarge,us-west-2,default,linux":  0.045,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.2xlarge,us-west-2,default,linux": 0.090,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.4xlarge,us-west-2,default,linux": 0.180,
 
 			// SP-EC2-002: Worse rates for m5 family (older purchase)
-			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.xlarge,us-west-2,default,linux":   0.060,
-			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.2xlarge,us-west-2,default,linux":  0.120,
-			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.4xlarge,us-west-2,default,linux":  0.240,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.xlarge,us-west-2,default,linux":  0.060,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.2xlarge,us-west-2,default,linux": 0.120,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.4xlarge,us-west-2,default,linux": 0.240,
 		},
 	}
 
@@ -1745,13 +1745,16 @@ func TestCalculatorMixedTierPricingAccuracy(t *testing.T) {
 	// Verify Tier 1 instance has accurate pricing
 	cost1 := result.InstanceCosts["i-tier1"]
 	assert.InDelta(t, 0.050, cost1.EffectiveCost, 0.001, "Should use cached rate of $0.050")
-	assert.Equal(t, PricingAccurate, cost1.PricingAccuracy, "CRITICAL: Pricing should be marked as ACCURATE (Tier 1 cache lookup)")
+	assert.Equal(t, PricingAccurate, cost1.PricingAccuracy,
+		"CRITICAL: Pricing should be marked as ACCURATE (Tier 1 cache lookup)")
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN)
 
 	// Verify Tier 2 instance has estimated pricing
 	cost2 := result.InstanceCosts["i-tier2"]
-	assert.InDelta(t, 0.072, cost2.EffectiveCost, 0.001, "Should use Tier 2 discount (0.72 * $0.10 = $0.072)")
-	assert.Equal(t, PricingEstimated, cost2.PricingAccuracy, "CRITICAL: Pricing should be marked as ESTIMATED (Tier 2 discount fallback)")
+	assert.InDelta(t, 0.072, cost2.EffectiveCost, 0.001,
+		"Should use Tier 2 discount (0.72 * $0.10 = $0.072)")
+	assert.Equal(t, PricingEstimated, cost2.PricingAccuracy,
+		"CRITICAL: Pricing should be marked as ESTIMATED (Tier 2 discount fallback)")
 	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-002", cost2.SavingsPlanARN)
 
 	// Verify costs are different (Tier 1 vs Tier 2 rates)
