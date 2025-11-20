@@ -47,18 +47,18 @@ func (h *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Parse path to determine which cache to inspect
 	path := strings.TrimPrefix(r.URL.Path, "/debug/cache/")
 
-	switch {
-	case path == "ec2":
+	switch path {
+	case "ec2":
 		h.handleEC2(w, r)
-	case path == "risp":
+	case "risp":
 		h.handleRISP(w, r)
-	case path == "pricing/ondemand":
+	case "pricing/ondemand":
 		h.handlePricingOnDemand(w, r)
-	case path == "pricing/sp/lookup":
+	case "pricing/sp/lookup":
 		h.handlePricingSPLookup(w, r)
-	case path == "pricing/sp":
+	case "pricing/sp":
 		h.handlePricingSP(w, r)
-	case path == "stats":
+	case "stats":
 		h.handleStats(w, r)
 	default:
 		h.handleIndex(w, r)
@@ -66,7 +66,7 @@ func (h *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleIndex shows available endpoints.
-func (h *DebugHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
+func (h *DebugHandler) handleIndex(w http.ResponseWriter, _ *http.Request) {
 	response := map[string]interface{}{
 		"endpoints": []string{
 			"/debug/cache/ec2              - List all EC2 instances",
@@ -78,11 +78,11 @@ func (h *DebugHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"/debug/cache/stats            - Show cache statistics",
 		},
 	}
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
 // handleEC2 returns all EC2 instances in cache.
-func (h *DebugHandler) handleEC2(w http.ResponseWriter, r *http.Request) {
+func (h *DebugHandler) handleEC2(w http.ResponseWriter, _ *http.Request) {
 	if h.EC2Cache == nil {
 		http.Error(w, "EC2 cache not available", http.StatusServiceUnavailable)
 		return
@@ -109,11 +109,11 @@ func (h *DebugHandler) handleEC2(w http.ResponseWriter, r *http.Request) {
 		"by_region":   byRegion,
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
 // handleRISP returns all Reserved Instances and Savings Plans in cache.
-func (h *DebugHandler) handleRISP(w http.ResponseWriter, r *http.Request) {
+func (h *DebugHandler) handleRISP(w http.ResponseWriter, _ *http.Request) {
 	if h.RISPCache == nil {
 		http.Error(w, "RISP cache not available", http.StatusServiceUnavailable)
 		return
@@ -133,11 +133,11 @@ func (h *DebugHandler) handleRISP(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
 // handlePricingOnDemand returns all on-demand prices in cache.
-func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, r *http.Request) {
+func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, _ *http.Request) {
 	if h.PricingCache == nil {
 		http.Error(w, "Pricing cache not available", http.StatusServiceUnavailable)
 		return
@@ -150,7 +150,7 @@ func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, r *http.Requ
 		"prices":      prices,
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
 // handlePricingSP returns all SP rates in cache, optionally filtered by SP ARN.
@@ -178,7 +178,7 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 			"total_count": len(filteredRates),
 			"rates":       filteredRates,
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 		return
 	}
 
@@ -215,7 +215,7 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 		"key_format":  "spArn,instanceType,region,tenancy,os (comma-separated)",
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
 // handlePricingSPLookup looks up a specific SP rate for a given instance type, region, tenancy, OS, and SP ARN.
@@ -312,11 +312,11 @@ func (h *DebugHandler) handlePricingSPLookup(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
 }
 
 // handleStats returns cache statistics.
-func (h *DebugHandler) handleStats(w http.ResponseWriter, r *http.Request) {
+func (h *DebugHandler) handleStats(w http.ResponseWriter, _ *http.Request) {
 	stats := make(map[string]interface{})
 
 	if h.EC2Cache != nil {
@@ -344,7 +344,7 @@ func (h *DebugHandler) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	json.NewEncoder(w).Encode(stats)
+	_ = json.NewEncoder(w).Encode(stats) // Best-effort encoding for debug endpoint
 }
 
 // NewDebugHandler creates a new DebugHandler with the provided caches.

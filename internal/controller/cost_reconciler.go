@@ -282,7 +282,7 @@ func (r *CostReconciler) waitForDependencies() {
 // waitForDependenciesAndCalculate waits for all reconciler dependencies to be ready,
 // then performs the first cost calculation. This is used in Kubernetes mode where
 // the controller-runtime manages reconciliation triggers.
-func (r *CostReconciler) waitForDependenciesAndCalculate(k8sClient client.Client) {
+func (r *CostReconciler) waitForDependenciesAndCalculate(_ client.Client) {
 	log := r.Log.WithName("init")
 
 	// Wait for all dependencies
