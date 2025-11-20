@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nextdoor/lumina/internal/cache"
 )
@@ -33,6 +34,7 @@ import (
 //   - GET /debug/cache/pricing/sp       - List all SP rates in cache
 //   - GET /debug/cache/pricing/sp?sp=<arn> - Filter SP rates by SP ARN
 //   - GET /debug/cache/pricing/sp/lookup?instance_type=<type>&region=<region>&tenancy=<tenancy>&os=<os>&sp=<arn> - Lookup specific SP rate
+//   - GET /debug/cache/pricing/spot     - List all spot prices in cache
 //   - GET /debug/cache/stats            - Show cache statistics
 type DebugHandler struct {
 	EC2Cache     *cache.EC2Cache
@@ -58,6 +60,8 @@ func (h *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handlePricingSPLookup(w, r)
 	case "pricing/sp":
 		h.handlePricingSP(w, r)
+	case "pricing/spot":
+		h.handlePricingSpot(w, r)
 	case "stats":
 		h.handleStats(w, r)
 	default:
@@ -75,6 +79,7 @@ func (h *DebugHandler) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			"/debug/cache/pricing/sp       - List all SP rates",
 			"/debug/cache/pricing/sp?sp=<arn> - Filter SP rates by ARN",
 			"/debug/cache/pricing/sp/lookup?instance_type=<type>&region=<region>&tenancy=<tenancy>&os=<os>&sp=<arn> - Lookup specific SP rate",
+			"/debug/cache/pricing/spot     - List all spot prices",
 			"/debug/cache/stats            - Show cache statistics",
 		},
 	}
@@ -89,6 +94,7 @@ func (h *DebugHandler) handleEC2(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	instances := h.EC2Cache.GetAllInstances()
+	lastUpdate := h.EC2Cache.GetLastUpdateTime()
 
 	// Group by region for easier inspection
 	byRegion := make(map[string][]interface{})
@@ -106,6 +112,8 @@ func (h *DebugHandler) handleEC2(w http.ResponseWriter, _ *http.Request) {
 
 	response := map[string]interface{}{
 		"total_count": len(instances),
+		"last_update": lastUpdate,
+		"age_seconds": time.Since(lastUpdate).Seconds(),
 		"by_region":   byRegion,
 	}
 
@@ -121,8 +129,11 @@ func (h *DebugHandler) handleRISP(w http.ResponseWriter, _ *http.Request) {
 
 	ris := h.RISPCache.GetAllReservedInstances()
 	sps := h.RISPCache.GetAllSavingsPlans()
+	stats := h.RISPCache.GetStats()
 
 	response := map[string]interface{}{
+		"last_update": stats.LastUpdate,
+		"age_seconds": time.Since(stats.LastUpdate).Seconds(),
 		"reserved_instances": map[string]interface{}{
 			"count": len(ris),
 			"items": ris,
@@ -144,10 +155,48 @@ func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, _ *http.Requ
 	}
 
 	prices := h.PricingCache.GetAllOnDemandPrices()
+	stats := h.PricingCache.GetStats()
 
 	response := map[string]interface{}{
 		"total_count": len(prices),
+		"last_update": stats.LastUpdated,
+		"age_seconds": time.Since(stats.LastUpdated).Seconds(),
 		"prices":      prices,
+	}
+
+	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
+}
+
+// handlePricingSpot returns all spot prices in cache with individual timestamps.
+func (h *DebugHandler) handlePricingSpot(w http.ResponseWriter, _ *http.Request) {
+	if h.PricingCache == nil {
+		http.Error(w, "Pricing cache not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Get spot prices with timestamps for debugging
+	pricesWithTimestamps := h.PricingCache.GetAllSpotPricesWithTimestamps()
+	stats := h.PricingCache.GetSpotStats()
+
+	// Convert to simple list format showing cache staleness
+	prices := make([]map[string]interface{}, 0, len(pricesWithTimestamps))
+	for key, sp := range pricesWithTimestamps {
+		prices = append(prices, map[string]interface{}{
+			"key":   key,
+			"price": sp.SpotPrice,
+			"age":   time.Since(sp.FetchedAt).Seconds(),
+		})
+	}
+
+	response := map[string]interface{}{
+		"total_count": len(prices),
+		"stats": map[string]interface{}{
+			"is_populated":       stats.IsPopulated,
+			"spot_price_count":   stats.SpotPriceCount,
+			"cache_last_updated": stats.LastUpdated,
+			"cache_age_seconds":  time.Since(stats.LastUpdated).Seconds(),
+		},
+		"prices": prices,
 	}
 
 	_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
@@ -162,6 +211,7 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 
 	spArn := r.URL.Query().Get("sp")
 	allRates := h.PricingCache.GetAllSPRates()
+	stats := h.PricingCache.GetSPRateStats()
 
 	if spArn != "" {
 		// Filter rates by SP ARN
@@ -176,6 +226,8 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 		response := map[string]interface{}{
 			"sp_arn":      spArn,
 			"total_count": len(filteredRates),
+			"last_update": stats.LastUpdated,
+			"age_seconds": time.Since(stats.LastUpdated).Seconds(),
 			"rates":       filteredRates,
 		}
 		_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
@@ -211,6 +263,8 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"total_rates": len(allRates),
 		"sp_count":    len(bySpArn),
+		"last_update": stats.LastUpdated,
+		"age_seconds": time.Since(stats.LastUpdated).Seconds(),
 		"by_sp_arn":   bySpArn,
 		"key_format":  "spArn,instanceType,region,tenancy,os (comma-separated)",
 	}
@@ -338,9 +392,11 @@ func (h *DebugHandler) handleStats(w http.ResponseWriter, _ *http.Request) {
 	if h.PricingCache != nil {
 		onDemand := h.PricingCache.GetAllOnDemandPrices()
 		spRates := h.PricingCache.GetAllSPRates()
+		spotStats := h.PricingCache.GetSpotStats()
 		stats["pricing"] = map[string]interface{}{
 			"ondemand_prices": len(onDemand),
 			"sp_rates":        len(spRates),
+			"spot_prices":     spotStats.SpotPriceCount,
 		}
 	}
 

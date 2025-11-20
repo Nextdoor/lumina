@@ -76,6 +76,81 @@ healthProbeBindAddress: ":8081"
 # Default: 10m
 accountValidationInterval: "10m"
 
+# Reconciliation Configuration
+# Controls how often different data sources are queried and refreshed
+reconciliation:
+  # RISP (Reserved Instances + Savings Plans) reconciliation interval
+  # Format: Go duration string (e.g., "30m", "1h", "2h")
+  # Default: 1h
+  # Recommended: 1h - RI/SP data changes infrequently (purchases, expirations)
+  risp: "1h"
+
+  # EC2 instance inventory reconciliation interval
+  # Format: Go duration string (e.g., "1m", "5m", "10m")
+  # Default: 5m
+  # Recommended: 5m - EC2 instances change frequently due to autoscaling
+  ec2: "5m"
+
+  # Pricing data reconciliation interval (on-demand pricing from AWS Pricing API)
+  # Format: Go duration string (e.g., "12h", "24h", "48h")
+  # Default: 24h
+  # Recommended: 24h - AWS pricing changes monthly, daily refresh is sufficient
+  pricing: "24h"
+
+  # Spot pricing reconciliation interval
+  # Controls how often to CHECK for stale spot prices
+  # Format: Go duration string (e.g., "15s", "30s", "1m")
+  # Default: 15s
+  # Recommended: 15s - Fast checks are OK because lazy-loading means 0 API calls in steady-state
+  #
+  # NOTE: This works together with pricing.spotPriceCacheExpiration:
+  #   - spotPricing: How often to CHECK for stale prices
+  #   - spotPriceCacheExpiration: How old prices must be before considered stale
+  spotPricing: "15s"
+
+# Pricing Configuration
+# Controls which pricing data to load and how to cache it
+pricing:
+  # Operating systems to load pricing data for
+  # Valid values: "Linux", "Windows", "RHEL", "SUSE"
+  # Default: ["Linux", "Windows"]
+  # Example: ["Linux"] for Linux-only environments (faster, lower memory)
+  operatingSystems:
+    - "Linux"
+    - "Windows"
+
+  # Spot price cache expiration
+  # Controls how old cached spot prices must be before being refreshed
+  # Format: Go duration string (e.g., "30m", "1h", "2h")
+  # Default: 1h
+  # Recommended: 1h - AWS spot prices change hourly
+  #
+  # NOTE: This works together with reconciliation.spotPricing:
+  #   - reconciliation.spotPricing: How often to CHECK (default: 15s)
+  #   - spotPriceCacheExpiration: How old before stale (default: 1h)
+  #
+  # Example: With spotPriceCacheExpiration=1h and spotPricing=15s,
+  # the reconciler checks every 15 seconds for prices older than 1 hour
+  # and refreshes them.
+  #
+  # Tuning advice:
+  #   - Tight budget → shorter expiration (more accurate, more API calls)
+  #   - Loose budget → longer expiration (less accurate, fewer API calls)
+  spotPriceCacheExpiration: "1h"
+
+  # Default Savings Plan discount multipliers (fallback when API rates unavailable)
+  # These are MULTIPLIERS (what you pay), not discount percentages
+  # Formula: effectiveCost = onDemandPrice * multiplier
+  #
+  # Typical AWS Savings Plan rates:
+  #   - 1-year commitment: ~28% OFF → you pay 72% → multiplier 0.72
+  #   - 3-year commitment: ~50% OFF → you pay 50% → multiplier 0.50
+  #
+  # Default: 0.72 for both (1-year rates)
+  # defaultDiscounts:
+  #   ec2Instance: 0.72  # EC2 Instance Savings Plans
+  #   compute: 0.72      # Compute Savings Plans
+
 # IAM Role Requirements:
 #
 # Each AWS account must have an IAM role with the following permissions:

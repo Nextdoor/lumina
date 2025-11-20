@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // MockClient is a mock implementation of the Client interface for testing.
@@ -223,6 +224,7 @@ func (m *MockEC2Client) DescribeSpotPriceHistory(
 	ctx context.Context,
 	regions []string,
 	instanceTypes []string,
+	productDescriptions []string,
 ) ([]SpotPrice, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -262,6 +264,29 @@ func (m *MockEC2Client) DescribeSpotPriceHistory(
 			}
 		}
 		filtered = typeFiltered
+	}
+
+	// Filter by product description (OS) if specified
+	if len(productDescriptions) > 0 {
+		pdMap := make(map[string]bool)
+		for _, pd := range productDescriptions {
+			pdMap[pd] = true
+		}
+
+		pdFiltered := []SpotPrice{}
+		for _, sp := range filtered {
+			if pdMap[sp.ProductDescription] {
+				pdFiltered = append(pdFiltered, sp)
+			}
+		}
+		filtered = pdFiltered
+	}
+
+	// Set FetchedAt to current time for all returned prices
+	// This simulates the behavior of the real AWS client
+	fetchTime := time.Now()
+	for i := range filtered {
+		filtered[i].FetchedAt = fetchTime
 	}
 
 	return filtered, nil

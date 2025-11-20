@@ -17,9 +17,10 @@ limitations under the License.
 package cache
 
 import (
-	"fmt"
 	"strings"
 	"time"
+
+	"github.com/nextdoor/lumina/pkg/aws"
 )
 
 const (
@@ -59,12 +60,7 @@ const (
 // This function is exported so the SP rates reconciler can build keys consistently
 // when constructing rate maps to add to the cache.
 func BuildSPRateKey(spArn, instanceType, region, tenancy, os string) string {
-	return strings.ToLower(fmt.Sprintf("%s%s%s%s%s%s%s%s%s",
-		spArn, spRateKeySeparator,
-		instanceType, spRateKeySeparator,
-		region, spRateKeySeparator,
-		tenancy, spRateKeySeparator,
-		os))
+	return BuildKey(spRateKeySeparator, spArn, instanceType, region, tenancy, os)
 }
 
 // parseSPRateKey splits a cache key into its components.
@@ -107,20 +103,34 @@ type PricingCache struct {
 	// These are PURCHASE-TIME rates that were locked in when the SP was bought.
 	spRates map[string]float64
 
+	// spotPrices stores current spot pricing keyed by "instanceType:availabilityZone:productDescription"
+	// All keys are lowercase for case-insensitive lookups.
+	// Example key: "m5.xlarge:us-west-2a:linux/unix" → aws.SpotPrice{...}
+	// Note: Spot prices vary by ProductDescription (Linux/UNIX vs Windows) and are per-AZ, not per-region.
+	// ProductDescription is required because Windows instances have different spot prices than Linux.
+	// We store the full SpotPrice struct to preserve individual timestamps per price.
+	spotPrices map[string]aws.SpotPrice
+
 	// Domain-specific metadata
 	// spRatesLastUpdated tracks when SP rates were last updated (separate from on-demand prices)
 	spRatesLastUpdated time.Time
+	// spotLastUpdated tracks when spot prices were last updated (separate from on-demand/SP prices)
+	spotLastUpdated time.Time
 	// isPopulated tracks if on-demand prices have been loaded (separate from BaseCache's lastUpdate)
 	isPopulated bool
+	// spotIsPopulated tracks if spot prices have been loaded
+	spotIsPopulated bool
 }
 
 // NewPricingCache creates a new empty pricing cache.
 func NewPricingCache() *PricingCache {
 	return &PricingCache{
-		BaseCache:      NewBaseCache(),
-		onDemandPrices: make(map[string]float64),
-		spRates:        make(map[string]float64),
-		isPopulated:    false,
+		BaseCache:       NewBaseCache(),
+		onDemandPrices:  make(map[string]float64),
+		spRates:         make(map[string]float64),
+		spotPrices:      make(map[string]aws.SpotPrice),
+		isPopulated:     false,
+		spotIsPopulated: false,
 	}
 }
 
@@ -134,8 +144,7 @@ func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem st
 	c.RLock() // From BaseCache
 	defer c.RUnlock()
 
-	// Normalize to lowercase for case-insensitive lookups
-	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", region, instanceType, operatingSystem))
+	key := BuildKey(":", region, instanceType, operatingSystem)
 	price, exists := c.onDemandPrices[key]
 	return price, exists
 }
@@ -185,10 +194,13 @@ func (c *PricingCache) GetAllOnDemandPrices() map[string]float64 {
 // instance types and regions. This is more efficient than GetAllOnDemandPrices
 // when you only need a subset of the data.
 //
+// Uses OnDemandKey to ensure compile-time type safety - callers must provide
+// InstanceType and Region for each instance.
+//
 // Returns a map keyed by "instanceType:region" (without OS) for easier lookup
 // by the cost calculator.
 func (c *PricingCache) GetOnDemandPricesForInstances(
-	instances []InstanceKey,
+	instances []OnDemandKey,
 	operatingSystem string,
 ) map[string]float64 {
 	c.RLock() // From BaseCache
@@ -196,21 +208,35 @@ func (c *PricingCache) GetOnDemandPricesForInstances(
 
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
-		// Normalize to lowercase for case-insensitive lookups
-		key := strings.ToLower(fmt.Sprintf("%s:%s:%s", inst.Region, inst.InstanceType, operatingSystem))
+		key := BuildKey(":", inst.Region, inst.InstanceType, operatingSystem)
 		if price, exists := c.onDemandPrices[key]; exists {
 			// Return with simplified key for calculator
-			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
+			resultKey := BuildKey(":", inst.InstanceType, inst.Region)
 			result[resultKey] = price
 		}
 	}
 	return result
 }
 
-// InstanceKey represents an instance type and region combination.
-type InstanceKey struct {
+// OnDemandKey represents the required fields for looking up on-demand pricing.
+// This provides compile-time type safety - you cannot call GetOnDemandPricesForInstances
+// without providing all required fields.
+type OnDemandKey struct {
 	InstanceType string
 	Region       string
+}
+
+// SpotPriceKey represents the required fields for looking up spot pricing.
+// Spot prices vary by availability zone and operating system, so both fields are required.
+// This provides compile-time type safety - you cannot call GetSpotPricesForInstances
+// without providing all required fields.
+type SpotPriceKey struct {
+	InstanceType string
+	// AvailabilityZone must be the full AZ name (e.g., "us-west-2a" not just "us-west-2")
+	AvailabilityZone string
+	// ProductDescription should match AWS values like "Linux/UNIX" or "Windows"
+	// This is normalized internally to handle variations like "Linux/UNIX (Amazon VPC)"
+	ProductDescription string
 }
 
 // IsPopulated returns true if the cache has been populated with pricing data.
@@ -297,6 +323,28 @@ func (c *PricingCache) GetSPRate(spArn, instanceType, region, tenancy, operating
 	}
 
 	return rate, exists
+}
+
+// normalizeProductDescription normalizes AWS spot price ProductDescription values
+// by stripping common suffixes and mapping to canonical values.
+//
+// AWS returns ProductDescription values like:
+//   - "Linux/UNIX (Amazon VPC)" → "linux/unix"
+//   - "Windows (Amazon VPC)"    → "windows"
+//   - "Linux/UNIX"              → "linux/unix"
+//   - "Windows"                 → "windows"
+//
+// This ensures cache keys match regardless of whether AWS includes the VPC suffix.
+func normalizeProductDescription(input string) string {
+	// Lowercase and trim whitespace
+	normalized := strings.ToLower(strings.TrimSpace(input))
+
+	// Strip common suffixes that AWS adds
+	// These suffixes don't affect pricing - they're just metadata
+	normalized = strings.TrimSuffix(normalized, " (amazon vpc)")
+	normalized = strings.TrimSuffix(normalized, " (amazon)")
+
+	return normalized
 }
 
 // normalizeOS normalizes operating system values to a consistent format.
@@ -534,4 +582,206 @@ func (c *PricingCache) GetMissingSPRatesForInstances(
 	}
 
 	return missingInstanceTypesSlice, missingRegionsSlice, missingTenanciesSlice, missingOSSlice
+}
+
+// GetSpotPrice returns the current spot price for an instance type in an availability zone with a specific product description.
+// Returns the price and true if found, or 0 and false if not found.
+//
+// This is an O(1) lookup operation.
+//
+// All keys are normalized to lowercase for consistent lookups regardless of input casing.
+// The productDescription parameter should match AWS's ProductDescription values (e.g., "Linux/UNIX", "Windows").
+//
+// Note: Spot prices are per-AZ (not per-region) and vary by ProductDescription, so you must provide:
+//   - Full AZ name (e.g., "us-west-2a" not just "us-west-2")
+//   - ProductDescription (e.g., "Linux/UNIX" or "Windows") - different OSes have different spot prices
+func (c *PricingCache) GetSpotPrice(instanceType, availabilityZone, productDescription string) (float64, bool) {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	// Normalize product description to match cached keys
+	normalizedPD := normalizeProductDescription(productDescription)
+
+	key := BuildKey(":", instanceType, availabilityZone, normalizedPD)
+	spotPrice, exists := c.spotPrices[key]
+	if !exists {
+		return 0, false
+	}
+	return spotPrice.SpotPrice, true
+}
+
+// InsertSpotPrices adds or updates spot prices in the cache without removing existing prices.
+// This is typically called by the spot pricing reconciler after querying AWS spot price history.
+//
+// The input map should use keys in the format "instanceType:availabilityZone:productDescription".
+// Example: "m5.xlarge:us-west-2a:linux/unix" → aws.SpotPrice{SpotPrice: 0.0537, ProductDescription: "Linux/UNIX", ...}
+// All keys are normalized to lowercase for case-insensitive lookups.
+//
+// IMPORTANT: The SpotPrice struct must have ProductDescription field populated, as it's used to build the cache key.
+// Windows and Linux instances have different spot prices, so ProductDescription is required to differentiate them.
+//
+// This method merges new prices with existing ones - it does not replace the entire cache.
+// To remove prices, use DeleteSpotPrice.
+//
+// Returns the number of prices that were newly added (not counting updates to existing prices).
+func (c *PricingCache) InsertSpotPrices(prices map[string]aws.SpotPrice) int {
+	c.Lock() // From BaseCache
+
+	// Initialize cache if it doesn't exist yet
+	if c.spotPrices == nil {
+		c.spotPrices = make(map[string]aws.SpotPrice)
+	}
+
+	// Track how many are new vs updates
+	newCount := 0
+
+	// Insert/update each price
+	// Note: The key passed in should already include ProductDescription, but we rebuild it
+	// from the SpotPrice struct to ensure consistency (the struct is the source of truth)
+	for _, price := range prices {
+		// Build key from SpotPrice struct fields to ensure it includes ProductDescription
+		// Format: "instanceType:availabilityZone:productDescription" (all lowercase)
+		normalizedPD := normalizeProductDescription(price.ProductDescription)
+		key := BuildKey(":", price.InstanceType, price.AvailabilityZone, normalizedPD)
+
+		if _, exists := c.spotPrices[key]; !exists {
+			newCount++
+		}
+		c.spotPrices[key] = price
+	}
+
+	c.spotIsPopulated = len(c.spotPrices) > 0
+	c.spotLastUpdated = time.Now()
+	c.Unlock()
+
+	// Notify subscribers AFTER releasing the write lock to prevent deadlock
+	c.NotifyUpdate() // From BaseCache
+
+	return newCount
+}
+
+// DeleteSpotPrice removes a spot price from the cache by its key.
+// This is typically called when a spot price becomes permanently unavailable
+// (e.g., instance type retired, availability zone no longer exists).
+//
+// The method takes separate instanceType, availabilityZone, and productDescription parameters
+// and constructs the cache key internally in the format "instanceType:availabilityZone:productDescription".
+// Example: DeleteSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX") removes key "m5.xlarge:us-west-2a:linux/unix"
+//
+// Lookup is case-insensitive - DeleteSpotPrice("M5.XLARGE", "US-WEST-2A", "LINUX/UNIX") will find
+// and delete a price stored as "m5.xlarge:us-west-2a:linux/unix".
+//
+// Returns:
+//   - true: Price was found and successfully deleted from cache
+//   - false: Price was not in cache (no-op)
+//
+// Thread-safety: This method uses write locks to prevent concurrent modification.
+func (c *PricingCache) DeleteSpotPrice(instanceType, availabilityZone, productDescription string) bool {
+	c.Lock() // From BaseCache - exclusive write access
+	defer c.Unlock()
+
+	// Build normalized key (case-insensitive) from components
+	// Format: "instanceType:availabilityZone:productDescription" all lowercase
+	// Example: "m5.xlarge:us-west-2a:linux/unix"
+	normalizedPD := normalizeProductDescription(productDescription)
+	key := BuildKey(":", instanceType, availabilityZone, normalizedPD)
+
+	// Check if price exists before attempting deletion
+	if _, exists := c.spotPrices[key]; exists {
+		// Remove from cache
+		delete(c.spotPrices, key)
+
+		// Update populated flag - cache is no longer populated if we deleted the last price
+		// This flag is used by SpotIsPopulated() to indicate if cache has any data
+		c.spotIsPopulated = len(c.spotPrices) > 0
+
+		return true
+	}
+
+	// Price didn't exist - nothing to delete
+	return false
+}
+
+// GetAllSpotPrices returns a copy of all spot prices (price values only, without timestamps).
+// This is useful for cost calculations that only need the price values.
+// For debugging with timestamps, use GetAllSpotPricesWithTimestamps().
+func (c *PricingCache) GetAllSpotPrices() map[string]float64 {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	// Return a copy with just price values to prevent external modifications
+	copy := make(map[string]float64, len(c.spotPrices))
+	for k, v := range c.spotPrices {
+		copy[k] = v.SpotPrice
+	}
+	return copy
+}
+
+// GetAllSpotPricesWithTimestamps returns a copy of all spot prices with full metadata including timestamps.
+// This is useful for debugging and showing data freshness in debug endpoints.
+func (c *PricingCache) GetAllSpotPricesWithTimestamps() map[string]aws.SpotPrice {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	// Return a copy to prevent external modifications
+	copy := make(map[string]aws.SpotPrice, len(c.spotPrices))
+	for k, v := range c.spotPrices {
+		copy[k] = v
+	}
+	return copy
+}
+
+// GetSpotPricesForInstances returns spot pricing for specific instances.
+// This is more efficient than GetAllSpotPrices when you only need a subset of the data.
+//
+// Uses SpotPriceKey to ensure compile-time type safety - callers must provide
+// AvailabilityZone and ProductDescription for each instance.
+//
+// Returns a map keyed by "instanceType:availabilityZone:productDescription" for lookup
+// by the cost calculator.
+func (c *PricingCache) GetSpotPricesForInstances(instances []SpotPriceKey) map[string]float64 {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	result := make(map[string]float64, len(instances))
+	for _, inst := range instances {
+		// Spot prices are zone-specific and OS-specific, so we need all three fields
+		normalizedPD := normalizeProductDescription(inst.ProductDescription)
+		cacheKey := BuildKey(":", inst.InstanceType, inst.AvailabilityZone, normalizedPD)
+
+		if spotPrice, exists := c.spotPrices[cacheKey]; exists {
+			// Return with the same key format for consistency
+			resultKey := BuildKey(":", inst.InstanceType, inst.AvailabilityZone, normalizedPD)
+			result[resultKey] = spotPrice.SpotPrice
+		}
+	}
+	return result
+}
+
+// SpotIsPopulated returns true if the cache has been populated with spot pricing data.
+func (c *PricingCache) SpotIsPopulated() bool {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+	return c.spotIsPopulated
+}
+
+// GetSpotStats returns statistics about the spot pricing cache.
+func (c *PricingCache) GetSpotStats() SpotStats {
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
+
+	return SpotStats{
+		SpotPriceCount: len(c.spotPrices),
+		LastUpdated:    c.spotLastUpdated,
+		IsPopulated:    c.spotIsPopulated,
+		AgeHours:       time.Since(c.spotLastUpdated).Hours(),
+	}
+}
+
+// SpotStats contains statistics about the spot pricing cache.
+type SpotStats struct {
+	SpotPriceCount int
+	LastUpdated    time.Time
+	IsPopulated    bool
+	AgeHours       float64
 }

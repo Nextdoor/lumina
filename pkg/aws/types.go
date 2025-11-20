@@ -31,6 +31,15 @@ const (
 	PlatformWindows = "windows"
 )
 
+// ProductDescription constants for AWS spot pricing and Reserved Instance queries.
+// These are the values expected by AWS DescribeSpotPriceHistory and DescribeReservedInstances APIs.
+const (
+	ProductDescriptionLinuxUnix = "Linux/UNIX"
+	ProductDescriptionWindows   = "Windows"
+	ProductDescriptionSUSE      = "SUSE Linux"
+	ProductDescriptionRHEL      = "Red Hat Enterprise Linux"
+)
+
 // Lifecycle constants for EC2 instance types.
 const (
 	LifecycleOnDemand = "on-demand"
@@ -208,8 +217,12 @@ type SpotPrice struct {
 	// SpotPrice is the current hourly spot price in USD
 	SpotPrice float64
 
-	// Timestamp is when this price was observed
+	// Timestamp is when AWS recorded this price change (from AWS API)
 	Timestamp time.Time
+
+	// FetchedAt is when we retrieved this data from AWS
+	// This is used to determine cache staleness
+	FetchedAt time.Time
 
 	// ProductDescription is the OS type (e.g., "Linux/UNIX")
 	ProductDescription string

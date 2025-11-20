@@ -48,7 +48,14 @@ type EC2Client interface {
 	// DescribeSpotPriceHistory returns current spot prices for the specified instance types.
 	// If instanceTypes is empty, returns prices for all instance types.
 	// If regions is empty, queries all regions.
-	DescribeSpotPriceHistory(ctx context.Context, regions []string, instanceTypes []string) ([]SpotPrice, error)
+	// productDescriptions filters by operating system (e.g., ["Linux/UNIX"], ["Windows"]).
+	// If empty, defaults to ["Linux/UNIX"] for consistency with other pricing methods.
+	DescribeSpotPriceHistory(
+		ctx context.Context,
+		regions []string,
+		instanceTypes []string,
+		productDescriptions []string,
+	) ([]SpotPrice, error)
 
 	// GetInstanceByID returns a specific instance by ID.
 	// Returns nil if the instance is not found.

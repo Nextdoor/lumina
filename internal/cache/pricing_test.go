@@ -18,8 +18,11 @@ package cache
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/nextdoor/lumina/pkg/aws"
 )
 
 // TestNewPricingCache tests cache initialization.
@@ -132,7 +135,7 @@ func TestGetOnDemandPricesForInstances(t *testing.T) {
 	}
 	cache.SetOnDemandPrices(prices)
 
-	instances := []InstanceKey{
+	instances := []OnDemandKey{
 		{InstanceType: "m5.xlarge", Region: "us-west-2"},
 		{InstanceType: "c5.2xlarge", Region: "us-west-2"},
 		{InstanceType: "r5.large", Region: "us-west-2"}, // Not in cache
@@ -156,6 +159,154 @@ func TestGetOnDemandPricesForInstances(t *testing.T) {
 	// Should not include r5.large (not in cache)
 	if _, exists := filtered["r5.large:us-west-2"]; exists {
 		t.Error("should not include instances not in cache")
+	}
+}
+
+// TestGetSpotPricesForInstances tests filtered spot price retrieval.
+func TestGetSpotPricesForInstances(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Set up spot prices with different zones and product descriptions
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a:Linux/UNIX":  0.05,
+		"m5.xlarge:us-west-2b:Linux/UNIX":  0.06,
+		"m5.xlarge:us-west-2a:Windows":     0.08,
+		"c5.2xlarge:us-west-2a:Linux/UNIX": 0.10,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	// Test retrieving specific instances
+	instances := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+		{
+			InstanceType:       "c5.2xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+		{
+			// Not in cache
+			InstanceType:       "r5.large",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	filtered := cache.GetSpotPricesForInstances(instances)
+
+	// Should find 2 matches
+	if len(filtered) != 2 {
+		t.Errorf("expected 2 filtered prices, got %d", len(filtered))
+	}
+
+	// Check result key format (instanceType:availabilityZone:productDescription)
+	expectedKey1 := "m5.xlarge:us-west-2a:linux/unix"
+	if price, exists := filtered[expectedKey1]; !exists || price != 0.05 {
+		t.Errorf("expected m5.xlarge price 0.05, got %.4f (exists: %v)", price, exists)
+	}
+
+	expectedKey2 := "c5.2xlarge:us-west-2a:linux/unix"
+	if price, exists := filtered[expectedKey2]; !exists || price != 0.10 {
+		t.Errorf("expected c5.2xlarge price 0.10, got %.4f (exists: %v)", price, exists)
+	}
+
+	// Should not include r5.large (not in cache)
+	notFoundKey := "r5.large:us-west-2a:linux/unix"
+	if _, exists := filtered[notFoundKey]; exists {
+		t.Error("should not include instances not in cache")
+	}
+
+	// Verify different zones have different prices
+	instancesZoneB := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2b",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+	filteredZoneB := cache.GetSpotPricesForInstances(instancesZoneB)
+	expectedKeyZoneB := "m5.xlarge:us-west-2b:linux/unix"
+	if price, exists := filteredZoneB[expectedKeyZoneB]; !exists || price != 0.06 {
+		t.Errorf("expected m5.xlarge zone b price 0.06, got %.4f (exists: %v)", price, exists)
+	}
+
+	// Verify different product descriptions have different prices
+	instancesWindows := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Windows",
+		},
+	}
+	filteredWindows := cache.GetSpotPricesForInstances(instancesWindows)
+	expectedKeyWindows := "m5.xlarge:us-west-2a:windows"
+	if price, exists := filteredWindows[expectedKeyWindows]; !exists || price != 0.08 {
+		t.Errorf("expected m5.xlarge windows price 0.08, got %.4f (exists: %v)", price, exists)
+	}
+}
+
+// TestGetSpotPricesForInstancesWithNormalization tests that product description normalization works.
+func TestGetSpotPricesForInstancesWithNormalization(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Set up spot prices with AWS VPC suffix (as AWS returns them)
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a:Linux/UNIX (Amazon VPC)": 0.05,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	// Query with normalized product description (without VPC suffix)
+	instances := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	filtered := cache.GetSpotPricesForInstances(instances)
+
+	// Should find the price despite different ProductDescription formatting
+	if len(filtered) != 1 {
+		t.Errorf("expected 1 price with normalization, got %d", len(filtered))
+	}
+
+	expectedKey := "m5.xlarge:us-west-2a:linux/unix"
+	if price, exists := filtered[expectedKey]; !exists || price != 0.05 {
+		t.Errorf("expected normalized price 0.05, got %.4f (exists: %v)", price, exists)
+	}
+}
+
+// TestGetSpotPricesForInstancesEmpty tests empty results.
+func TestGetSpotPricesForInstancesEmpty(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache
+	instances := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	filtered := cache.GetSpotPricesForInstances(instances)
+	if len(filtered) != 0 {
+		t.Errorf("expected 0 prices from empty cache, got %d", len(filtered))
+	}
+
+	// Empty instance list
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a:Linux/UNIX": 0.05,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	filteredEmpty := cache.GetSpotPricesForInstances([]SpotPriceKey{})
+	if len(filteredEmpty) != 0 {
+		t.Errorf("expected 0 prices from empty instance list, got %d", len(filteredEmpty))
 	}
 }
 
@@ -990,5 +1141,374 @@ func TestNormalizeOS_EdgeCases(t *testing.T) {
 				t.Errorf("normalizeOS(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// spotPriceMapFromFloats is a test helper that converts a map of instance:az -> price
+// into a map of instance:az -> aws.SpotPrice struct with current timestamps.
+func spotPriceMapFromFloats(prices map[string]float64) map[string]aws.SpotPrice {
+	spotPrices := make(map[string]aws.SpotPrice, len(prices))
+	now := time.Now()
+
+	for key, price := range prices {
+		// Parse key format "instanceType:availabilityZone:productDescription"
+		// For backward compatibility, also support "instanceType:availabilityZone" (defaults to Linux/UNIX)
+		parts := strings.Split(key, ":")
+		instanceType := ""
+		az := ""
+		productDescription := "Linux/UNIX" // Default
+
+		if len(parts) >= 2 {
+			instanceType = parts[0]
+			az = parts[1]
+		}
+		if len(parts) >= 3 {
+			productDescription = parts[2]
+		}
+
+		spotPrices[key] = aws.SpotPrice{
+			InstanceType:       instanceType,
+			AvailabilityZone:   az,
+			SpotPrice:          price,
+			Timestamp:          now, // When AWS recorded the price
+			FetchedAt:          now, // When we fetched it
+			ProductDescription: productDescription,
+		}
+	}
+
+	return spotPrices
+}
+
+// TestGetSetSpotPrice tests basic spot price get/set operations.
+func TestGetSetSpotPrice(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Get from empty cache
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if exists {
+		t.Error("expected price not to exist in empty cache")
+	}
+	if price != 0 {
+		t.Errorf("expected price 0, got %.4f", price)
+	}
+
+	// Set spot prices
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+		"m5.xlarge:us-east-1a":  0.0521,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	// Verify cache is populated
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should be populated after setting spot prices")
+	}
+
+	// Get existing price
+	price, exists = cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if !exists {
+		t.Error("expected price to exist")
+	}
+	if price != 0.0537 {
+		t.Errorf("expected price 0.0537, got %.4f", price)
+	}
+
+	// Get non-existent price
+	_, exists = cache.GetSpotPrice("r5.large", "eu-west-1a", "Linux/UNIX")
+	if exists {
+		t.Error("expected price not to exist")
+	}
+
+	// Verify stats
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 3 {
+		t.Errorf("expected 3 prices, got %d", stats.SpotPriceCount)
+	}
+	if !stats.IsPopulated {
+		t.Error("stats should show cache is populated")
+	}
+	if time.Since(stats.LastUpdated) > time.Second {
+		t.Error("last updated should be recent")
+	}
+}
+
+// TestGetAllSpotPrices tests retrieving all spot prices.
+func TestGetAllSpotPrices(t *testing.T) {
+	cache := NewPricingCache()
+
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	allPrices := cache.GetAllSpotPrices()
+	if len(allPrices) != 2 {
+		t.Errorf("expected 2 prices, got %d", len(allPrices))
+	}
+
+	// Verify it's a copy (modifications don't affect cache)
+	allPrices["test:key:linux/unix"] = 999.99
+	if _, exists := cache.GetSpotPrice("test", "key", "Linux/UNIX"); exists {
+		t.Error("external modifications should not affect cache")
+	}
+}
+
+// TestSpotIsPopulated tests spot cache population tracking.
+func TestSpotIsPopulated(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache is not populated
+	if cache.SpotIsPopulated() {
+		t.Error("empty cache should not be populated")
+	}
+
+	// Populate cache
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	}))
+
+	// Cache is now populated
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should be populated after setting prices")
+	}
+}
+
+// TestSpotStats tests spot pricing statistics.
+func TestSpotStats(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache stats
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 0 {
+		t.Errorf("expected 0 prices, got %d", stats.SpotPriceCount)
+	}
+	if stats.IsPopulated {
+		t.Error("empty cache should not be populated")
+	}
+
+	// Populate cache
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+		"m5.xlarge:us-east-1a":  0.0521,
+	}))
+
+	stats = cache.GetSpotStats()
+	if stats.SpotPriceCount != 3 {
+		t.Errorf("expected 3 prices, got %d", stats.SpotPriceCount)
+	}
+	if !stats.IsPopulated {
+		t.Error("populated cache should report as populated")
+	}
+	if stats.AgeHours < 0 {
+		t.Errorf("age should be non-negative, got %.2f", stats.AgeHours)
+	}
+	if stats.AgeHours > 1 {
+		t.Errorf("fresh cache should be < 1 hour old, got %.2f", stats.AgeHours)
+	}
+}
+
+// TestSpotPriceCaseInsensitive tests case-insensitive spot price lookups.
+func TestSpotPriceCaseInsensitive(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Set prices with mixed case
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
+		"M5.Xlarge:US-WEST-2A": 0.0537,
+	}))
+
+	// Should find price with different casing
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if !exists {
+		t.Error("expected price to exist (case-insensitive)")
+	}
+	if price != 0.0537 {
+		t.Errorf("expected price 0.0537, got %.4f", price)
+	}
+
+	// Also test uppercase query
+	price, exists = cache.GetSpotPrice("M5.XLARGE", "US-WEST-2A", "LINUX/UNIX")
+	if !exists {
+		t.Error("expected price to exist (uppercase query)")
+	}
+	if price != 0.0537 {
+		t.Errorf("expected price 0.0537, got %.4f", price)
+	}
+}
+
+// TestInsertSpotPrices_EmptyMap tests that inserting an empty map doesn't affect existing prices.
+func TestInsertSpotPrices_EmptyMap(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Populate first
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	}))
+
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should be populated")
+	}
+
+	// Insert empty map (should not clear cache - InsertSpotPrices merges, doesn't replace)
+	newCount := cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{}))
+
+	// Cache should still be populated with original price
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should still be populated after inserting empty map")
+	}
+
+	if newCount != 0 {
+		t.Errorf("expected 0 new prices from empty insert, got %d", newCount)
+	}
+
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 1 {
+		t.Errorf("expected 1 price (original), got %d", stats.SpotPriceCount)
+	}
+}
+
+// TestSpotPriceNotification tests that spot price updates trigger notifications.
+func TestSpotPriceNotification(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Track notifications with a channel
+	notified := make(chan int, 1)
+
+	// Register a notifier
+	cache.RegisterUpdateNotifier(func() {
+		notified <- 1
+	})
+
+	// Trigger notification by setting spot prices
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	// Wait for notification (with timeout)
+	select {
+	case <-notified:
+		// Success
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected notifier to be called after InsertSpotPrices")
+	}
+}
+
+// TestInsertSpotPrices_Merge tests that InsertSpotPrices merges with existing prices.
+func TestInsertSpotPrices_Merge(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Insert initial prices
+	initial := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+	}
+	newCount := cache.InsertSpotPrices(spotPriceMapFromFloats(initial))
+	if newCount != 2 {
+		t.Errorf("expected 2 new prices, got %d", newCount)
+	}
+
+	// Insert more prices (some new, some updates)
+	additional := map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0540, // Update existing
+		"r5.large:us-west-2a":  0.0300, // New
+	}
+	newCount = cache.InsertSpotPrices(spotPriceMapFromFloats(additional))
+	if newCount != 1 {
+		t.Errorf("expected 1 new price, got %d", newCount)
+	}
+
+	// Verify all 3 prices exist
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 3 {
+		t.Errorf("expected 3 total prices, got %d", stats.SpotPriceCount)
+	}
+
+	// Verify the updated price
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if !exists {
+		t.Error("expected updated price to exist")
+	}
+	if price != 0.0540 {
+		t.Errorf("expected updated price 0.0540, got %.4f", price)
+	}
+
+	// Verify the original price that wasn't updated
+	price, exists = cache.GetSpotPrice("c5.2xlarge", "us-west-2b", "Linux/UNIX")
+	if !exists {
+		t.Error("expected original price to still exist")
+	}
+	if price != 0.068 {
+		t.Errorf("expected original price 0.068, got %.4f", price)
+	}
+}
+
+// TestDeleteSpotPrice tests removing spot prices from the cache.
+func TestDeleteSpotPrice(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Populate cache
+	prices := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+		"r5.large:us-east-1a":   0.0300,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(prices))
+
+	// Delete existing price
+	deleted := cache.DeleteSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if !deleted {
+		t.Error("expected delete to return true for existing price")
+	}
+
+	// Verify it's gone
+	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if exists {
+		t.Error("expected price to be deleted")
+	}
+
+	// Verify other prices still exist
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 2 {
+		t.Errorf("expected 2 remaining prices, got %d", stats.SpotPriceCount)
+	}
+
+	// Try to delete non-existent price
+	deleted = cache.DeleteSpotPrice("t3.micro", "us-west-1a", "Linux/UNIX")
+	if deleted {
+		t.Error("expected delete to return false for non-existent price")
+	}
+
+	// Delete all remaining prices
+	cache.DeleteSpotPrice("c5.2xlarge", "us-west-2b", "Linux/UNIX")
+	cache.DeleteSpotPrice("r5.large", "us-east-1a", "Linux/UNIX")
+
+	// Cache should no longer be populated
+	if cache.SpotIsPopulated() {
+		t.Error("cache should not be populated after deleting all prices")
+	}
+}
+
+// TestDeleteSpotPrice_CaseInsensitive tests case-insensitive deletion.
+func TestDeleteSpotPrice_CaseInsensitive(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Insert with lowercase
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	}))
+
+	// Delete with different casing
+	deleted := cache.DeleteSpotPrice("M5.XLARGE", "US-WEST-2A", "LINUX/UNIX")
+	if !deleted {
+		t.Error("expected case-insensitive delete to work")
+	}
+
+	// Verify it's gone
+	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a", "Linux/UNIX")
+	if exists {
+		t.Error("expected price to be deleted")
 	}
 }
