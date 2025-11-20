@@ -135,7 +135,7 @@ func TestGetOnDemandPricesForInstances(t *testing.T) {
 	}
 	cache.SetOnDemandPrices(prices)
 
-	instances := []InstanceKey{
+	instances := []OnDemandKey{
 		{InstanceType: "m5.xlarge", Region: "us-west-2"},
 		{InstanceType: "c5.2xlarge", Region: "us-west-2"},
 		{InstanceType: "r5.large", Region: "us-west-2"}, // Not in cache
@@ -159,6 +159,154 @@ func TestGetOnDemandPricesForInstances(t *testing.T) {
 	// Should not include r5.large (not in cache)
 	if _, exists := filtered["r5.large:us-west-2"]; exists {
 		t.Error("should not include instances not in cache")
+	}
+}
+
+// TestGetSpotPricesForInstances tests filtered spot price retrieval.
+func TestGetSpotPricesForInstances(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Set up spot prices with different zones and product descriptions
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a:Linux/UNIX":  0.05,
+		"m5.xlarge:us-west-2b:Linux/UNIX":  0.06,
+		"m5.xlarge:us-west-2a:Windows":     0.08,
+		"c5.2xlarge:us-west-2a:Linux/UNIX": 0.10,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	// Test retrieving specific instances
+	instances := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+		{
+			InstanceType:       "c5.2xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+		{
+			// Not in cache
+			InstanceType:       "r5.large",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	filtered := cache.GetSpotPricesForInstances(instances)
+
+	// Should find 2 matches
+	if len(filtered) != 2 {
+		t.Errorf("expected 2 filtered prices, got %d", len(filtered))
+	}
+
+	// Check result key format (instanceType:availabilityZone:productDescription)
+	expectedKey1 := "m5.xlarge:us-west-2a:linux/unix"
+	if price, exists := filtered[expectedKey1]; !exists || price != 0.05 {
+		t.Errorf("expected m5.xlarge price 0.05, got %.4f (exists: %v)", price, exists)
+	}
+
+	expectedKey2 := "c5.2xlarge:us-west-2a:linux/unix"
+	if price, exists := filtered[expectedKey2]; !exists || price != 0.10 {
+		t.Errorf("expected c5.2xlarge price 0.10, got %.4f (exists: %v)", price, exists)
+	}
+
+	// Should not include r5.large (not in cache)
+	notFoundKey := "r5.large:us-west-2a:linux/unix"
+	if _, exists := filtered[notFoundKey]; exists {
+		t.Error("should not include instances not in cache")
+	}
+
+	// Verify different zones have different prices
+	instancesZoneB := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2b",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+	filteredZoneB := cache.GetSpotPricesForInstances(instancesZoneB)
+	expectedKeyZoneB := "m5.xlarge:us-west-2b:linux/unix"
+	if price, exists := filteredZoneB[expectedKeyZoneB]; !exists || price != 0.06 {
+		t.Errorf("expected m5.xlarge zone b price 0.06, got %.4f (exists: %v)", price, exists)
+	}
+
+	// Verify different product descriptions have different prices
+	instancesWindows := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Windows",
+		},
+	}
+	filteredWindows := cache.GetSpotPricesForInstances(instancesWindows)
+	expectedKeyWindows := "m5.xlarge:us-west-2a:windows"
+	if price, exists := filteredWindows[expectedKeyWindows]; !exists || price != 0.08 {
+		t.Errorf("expected m5.xlarge windows price 0.08, got %.4f (exists: %v)", price, exists)
+	}
+}
+
+// TestGetSpotPricesForInstancesWithNormalization tests that product description normalization works.
+func TestGetSpotPricesForInstancesWithNormalization(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Set up spot prices with AWS VPC suffix (as AWS returns them)
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a:Linux/UNIX (Amazon VPC)": 0.05,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	// Query with normalized product description (without VPC suffix)
+	instances := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	filtered := cache.GetSpotPricesForInstances(instances)
+
+	// Should find the price despite different ProductDescription formatting
+	if len(filtered) != 1 {
+		t.Errorf("expected 1 price with normalization, got %d", len(filtered))
+	}
+
+	expectedKey := "m5.xlarge:us-west-2a:linux/unix"
+	if price, exists := filtered[expectedKey]; !exists || price != 0.05 {
+		t.Errorf("expected normalized price 0.05, got %.4f (exists: %v)", price, exists)
+	}
+}
+
+// TestGetSpotPricesForInstancesEmpty tests empty results.
+func TestGetSpotPricesForInstancesEmpty(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Empty cache
+	instances := []SpotPriceKey{
+		{
+			InstanceType:       "m5.xlarge",
+			AvailabilityZone:   "us-west-2a",
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	filtered := cache.GetSpotPricesForInstances(instances)
+	if len(filtered) != 0 {
+		t.Errorf("expected 0 prices from empty cache, got %d", len(filtered))
+	}
+
+	// Empty instance list
+	priceMap := map[string]float64{
+		"m5.xlarge:us-west-2a:Linux/UNIX": 0.05,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
+
+	filteredEmpty := cache.GetSpotPricesForInstances([]SpotPriceKey{})
+	if len(filteredEmpty) != 0 {
+		t.Errorf("expected 0 prices from empty instance list, got %d", len(filteredEmpty))
 	}
 }
 

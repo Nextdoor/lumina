@@ -194,10 +194,13 @@ func (c *PricingCache) GetAllOnDemandPrices() map[string]float64 {
 // instance types and regions. This is more efficient than GetAllOnDemandPrices
 // when you only need a subset of the data.
 //
+// Uses OnDemandKey to ensure compile-time type safety - callers must provide
+// InstanceType and Region for each instance.
+//
 // Returns a map keyed by "instanceType:region" (without OS) for easier lookup
 // by the cost calculator.
 func (c *PricingCache) GetOnDemandPricesForInstances(
-	instances []InstanceKey,
+	instances []OnDemandKey,
 	operatingSystem string,
 ) map[string]float64 {
 	c.RLock() // From BaseCache
@@ -215,10 +218,25 @@ func (c *PricingCache) GetOnDemandPricesForInstances(
 	return result
 }
 
-// InstanceKey represents an instance type and region combination.
-type InstanceKey struct {
+// OnDemandKey represents the required fields for looking up on-demand pricing.
+// This provides compile-time type safety - you cannot call GetOnDemandPricesForInstances
+// without providing all required fields.
+type OnDemandKey struct {
 	InstanceType string
 	Region       string
+}
+
+// SpotPriceKey represents the required fields for looking up spot pricing.
+// Spot prices vary by availability zone and operating system, so both fields are required.
+// This provides compile-time type safety - you cannot call GetSpotPricesForInstances
+// without providing all required fields.
+type SpotPriceKey struct {
+	InstanceType string
+	// AvailabilityZone must be the full AZ name (e.g., "us-west-2a" not just "us-west-2")
+	AvailabilityZone string
+	// ProductDescription should match AWS values like "Linux/UNIX" or "Windows"
+	// This is normalized internally to handle variations like "Linux/UNIX (Amazon VPC)"
+	ProductDescription string
 }
 
 // IsPopulated returns true if the cache has been populated with pricing data.
@@ -716,19 +734,24 @@ func (c *PricingCache) GetAllSpotPricesWithTimestamps() map[string]aws.SpotPrice
 // GetSpotPricesForInstances returns spot pricing for specific instances.
 // This is more efficient than GetAllSpotPrices when you only need a subset of the data.
 //
-// Returns a map keyed by "instanceType:availabilityZone" for easier lookup
+// Uses SpotPriceKey to ensure compile-time type safety - callers must provide
+// AvailabilityZone and ProductDescription for each instance.
+//
+// Returns a map keyed by "instanceType:availabilityZone:productDescription" for lookup
 // by the cost calculator.
-func (c *PricingCache) GetSpotPricesForInstances(instances []InstanceKey) map[string]float64 {
+func (c *PricingCache) GetSpotPricesForInstances(instances []SpotPriceKey) map[string]float64 {
 	c.RLock() // From BaseCache
 	defer c.RUnlock()
 
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
-		// Note: InstanceKey needs an AvailabilityZone field for spot pricing
-		key := BuildKey(":", inst.InstanceType, inst.Region)
-		if spotPrice, exists := c.spotPrices[key]; exists {
-			// Return with key format expected by calculator
-			resultKey := BuildKey(":", inst.InstanceType, inst.Region)
+		// Spot prices are zone-specific and OS-specific, so we need all three fields
+		normalizedPD := normalizeProductDescription(inst.ProductDescription)
+		cacheKey := BuildKey(":", inst.InstanceType, inst.AvailabilityZone, normalizedPD)
+
+		if spotPrice, exists := c.spotPrices[cacheKey]; exists {
+			// Return with the same key format for consistency
+			resultKey := BuildKey(":", inst.InstanceType, inst.AvailabilityZone, normalizedPD)
 			result[resultKey] = spotPrice.SpotPrice
 		}
 	}

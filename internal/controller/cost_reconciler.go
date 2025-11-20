@@ -117,9 +117,9 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	sps := r.RISPCache.GetAllSavingsPlans()
 
 	// Build instance keys for pricing lookup
-	instanceKeys := make([]cache.InstanceKey, 0, len(instances))
+	instanceKeys := make([]cache.OnDemandKey, 0, len(instances))
 	for _, inst := range instances {
-		instanceKeys = append(instanceKeys, cache.InstanceKey{
+		instanceKeys = append(instanceKeys, cache.OnDemandKey{
 			InstanceType: inst.InstanceType,
 			Region:       inst.Region,
 		})
