@@ -31,7 +31,54 @@ const (
 	// OSWindows represents the normalized Windows operating system value.
 	// This matches EC2 instances with Platform="windows" and SP rates for Windows.
 	OSWindows = "windows"
+
+	// SPRateNotAvailable is a sentinel value stored in the cache to indicate that
+	// a specific rate combination (SP ARN + instance type + region + tenancy + OS)
+	// was queried from AWS but no rate was returned. This prevents repeated API calls
+	// for rate combinations that don't exist (e.g., Windows rates for a Linux-only SP).
+	//
+	// Why -1.0? This value:
+	// - Is invalid as a real hourly rate (rates are always >= 0)
+	// - Won't be confused with $0/hour free-tier pricing
+	// - Makes it obvious in debug output that this is a marker value
+	SPRateNotAvailable = -1.0
 )
+
+// SP rate cache keys use comma-separated format to avoid ARN colon conflicts:
+// Format: "spArn,instanceType,region,tenancy,os"
+// Example: "arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux"
+//
+// All keys are stored in lowercase for case-insensitive lookups.
+const (
+	spRateKeySeparator = ","
+	spRateKeyParts     = 5 // ARN, instanceType, region, tenancy, OS
+)
+
+// BuildSPRateKey constructs a cache key for an SP rate lookup.
+// Returns a lowercase, comma-separated key for consistent cache access.
+//
+// This function is exported so the SP rates reconciler can build keys consistently
+// when constructing rate maps to add to the cache.
+func BuildSPRateKey(spArn, instanceType, region, tenancy, os string) string {
+	return strings.ToLower(fmt.Sprintf("%s%s%s%s%s%s%s%s%s",
+		spArn, spRateKeySeparator,
+		instanceType, spRateKeySeparator,
+		region, spRateKeySeparator,
+		tenancy, spRateKeySeparator,
+		os))
+}
+
+// parseSPRateKey splits a cache key into its components.
+// Returns (instanceType, region, tenancy, os, ok).
+// The SP ARN is not returned as it's typically already known from context.
+func parseSPRateKey(key string) (instanceType, region, tenancy, os string, ok bool) {
+	parts := strings.Split(key, spRateKeySeparator)
+	if len(parts) != spRateKeyParts {
+		return "", "", "", "", false
+	}
+	// parts[0] is spArn (caller typically doesn't need it)
+	return parts[1], parts[2], parts[3], parts[4], true
+}
 
 // PricingCache provides thread-safe access to AWS pricing data.
 // It stores on-demand pricing for EC2 instances and Savings Plan offering rates.
@@ -242,6 +289,9 @@ func (c *PricingCache) IsStale(maxAge time.Duration) bool {
 // All keys are normalized to lowercase for consistent lookups regardless of input casing.
 // The tenancy parameter should be "default" (shared), "dedicated", or "host".
 // The operatingSystem parameter should be normalized ("linux" or "windows").
+//
+// Note: The cache may contain sentinel values (SPRateNotAvailable) for rate combinations that
+// were queried but don't exist. These are treated as "not found" to prevent cost calculation errors.
 func (c *PricingCache) GetSPRate(spArn, instanceType, region, tenancy, operatingSystem string) (float64, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -250,10 +300,16 @@ func (c *PricingCache) GetSPRate(spArn, instanceType, region, tenancy, operating
 	// Empty string (from EC2 instances with no Platform field) should normalize to "linux"
 	normalizedOS := normalizeOS(operatingSystem)
 
-	// Normalize to lowercase for case-insensitive lookups
-	// Key format: spArn,instanceType,region,tenancy,os (comma-separated to avoid ARN colon conflicts)
-	key := strings.ToLower(fmt.Sprintf("%s,%s,%s,%s,%s", spArn, instanceType, region, tenancy, normalizedOS))
+	// Build cache key (lowercase, comma-separated)
+	key := BuildSPRateKey(spArn, instanceType, region, tenancy, normalizedOS)
 	rate, exists := c.spRates[key]
+
+	// Sentinel values indicate this combination was queried but doesn't exist in AWS.
+	// Treat these as "not found" to prevent errors in cost calculations.
+	if exists && rate == SPRateNotAvailable {
+		return 0, false
+	}
+
 	return rate, exists
 }
 
@@ -366,7 +422,7 @@ func (c *PricingCache) HasSPRate(spArn, instanceType, region, tenancy, operating
 
 	// Normalize OS before lookup (same as GetSPRate)
 	normalizedOS := normalizeOS(operatingSystem)
-	key := strings.ToLower(fmt.Sprintf("%s,%s,%s,%s,%s", spArn, instanceType, region, tenancy, normalizedOS))
+	key := BuildSPRateKey(spArn, instanceType, region, tenancy, normalizedOS)
 	_, exists := c.spRates[key]
 	return exists
 }
@@ -440,15 +496,16 @@ func (c *PricingCache) GetMissingSPRatesForInstances(
 	// Scan cache for existing rates for this SP
 	for key := range c.spRates {
 		if strings.HasPrefix(key, arnPrefix) {
-			// Parse the key: "spArn,instanceType,region,tenancy,os"
-			parts := strings.Split(key, ",")
-			if len(parts) == 5 {
-				existingKeys[cacheKey{
-					instanceType: parts[1],
-					region:       parts[2],
-					tenancy:      parts[3],
-					os:           parts[4],
-				}] = true
+			// Parse the cache key to extract components
+			instanceType, region, tenancy, os, ok := parseSPRateKey(key)
+			if ok {
+				cKey := cacheKey{
+					instanceType: instanceType,
+					region:       region,
+					tenancy:      tenancy,
+					os:           os,
+				}
+				existingKeys[cKey] = true
 			}
 		}
 	}
@@ -460,15 +517,16 @@ func (c *PricingCache) GetMissingSPRatesForInstances(
 	missingOS := make(map[string]bool)
 
 	// Check each combination to see if it exists in cache
+	// Normalize all keys to lowercase for case-insensitive comparison (cache keys are stored lowercase)
 	for _, instanceType := range instanceTypes {
 		for _, region := range regions {
 			for _, tenancy := range tenancies {
 				for _, os := range operatingSystems {
 					key := cacheKey{
-						instanceType: instanceType,
-						region:       region,
-						tenancy:      tenancy,
-						os:           os,
+						instanceType: strings.ToLower(instanceType),
+						region:       strings.ToLower(region),
+						tenancy:      strings.ToLower(tenancy),
+						os:           strings.ToLower(os),
 					}
 					if !existingKeys[key] {
 						// This combination is missing

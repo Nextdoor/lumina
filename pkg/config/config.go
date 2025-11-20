@@ -517,3 +517,12 @@ func (c *Config) GetComputeDiscount() float64 {
 	}
 	return 0.72 // Default 1-year rate: ~28% OFF → pay 72%
 }
+
+// GetOperatingSystems returns the configured operating systems for pricing data.
+// Returns ["Linux", "Windows"] if not specified in config.
+func (c *Config) GetOperatingSystems() []string {
+	if len(c.Pricing.OperatingSystems) > 0 {
+		return c.Pricing.OperatingSystems
+	}
+	return []string{"Linux", "Windows"}
+}

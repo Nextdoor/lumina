@@ -17,6 +17,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -74,10 +75,26 @@ type SPRatesReconciler struct {
 	// Logger
 	Log logr.Logger
 
+	// OperatingSystems is the list of operating systems to fetch SP rates for.
+	// This should match the configured operating systems in PricingReconciler.
+	// Normalized to lowercase for cache keys (e.g., ["linux", "windows"]).
+	OperatingSystems []string
+
 	// RISPReadyChan is an optional channel that this reconciler will wait on
 	// before running its initial reconciliation. This ensures the RISP cache is
 	// populated with Savings Plans before we try to fetch rates.
 	RISPReadyChan chan struct{}
+
+	// EC2ReadyChan is an optional channel that this reconciler will wait on
+	// before running its initial reconciliation. This ensures the EC2 cache is
+	// populated with instance types before we try to fetch rates.
+	EC2ReadyChan chan struct{}
+
+	// ReadyChan is an optional channel that will be closed after the initial
+	// reconciliation completes successfully. This allows downstream reconcilers
+	// (like CostReconciler) to wait for SP rates to be populated before they
+	// start their cost calculations.
+	ReadyChan chan struct{}
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -111,6 +128,7 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 
 	// Step 3: Fetch rates for each SP from AWS using the specific filters
 	totalNewRates := 0
+	totalSentinelValues := 0
 	for _, spWithRates := range spsNeedingRates {
 		sp := spWithRates.SavingsPlan
 
@@ -137,15 +155,30 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 			continue
 		}
 
-		// Step 4: Add rates to cache
+		// Step 4: Identify which rate combinations were queried but AWS returned nothing
+		// Store sentinel values for these combinations to prevent future API calls
+		sentinelRates := r.buildSentinelRatesForMissingCombinations(
+			sp,
+			spWithRates.InstanceTypes,
+			spWithRates.Regions,
+			spWithRates.Tenancies,
+			spWithRates.OperatingSystems,
+			rates,
+		)
+
+		// Step 5: Add both actual rates and sentinel values to cache
 		addedCount := r.PricingCache.AddSPRates(rates)
 		totalNewRates += addedCount
+
+		sentinelCount := r.PricingCache.AddSPRates(sentinelRates)
+		totalSentinelValues += sentinelCount
 
 		log.V(1).Info("fetched rates for Savings Plan",
 			"sp_arn", sp.SavingsPlanARN,
 			"sp_type", sp.SavingsPlanType,
 			"fetch_type", fetchType,
-			"rates_added", addedCount)
+			"rates_added", addedCount,
+			"sentinel_values_added", sentinelCount)
 	}
 
 	duration := time.Since(startTime)
@@ -153,13 +186,14 @@ func (r *SPRatesReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		"duration", duration.String(),
 		"sps_processed", len(spsNeedingRates),
 		"new_rates_added", totalNewRates,
+		"sentinel_values_added", totalSentinelValues,
 		"total_rates_cached", len(r.PricingCache.GetAllSPRates()))
 
 	// TODO: Update metrics for SP rates cache
 
-	// Requeue after 2 minutes to check for new Savings Plans
-	// This provides a good balance between responsiveness and API efficiency
-	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+	// Requeue after 15 seconds to check for new Savings Plans or instance types
+	// This is fast because in steady state there are 0 API calls (all rates cached)
+	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 }
 
 // SPWithMissingRates represents a Savings Plan that needs rates fetched, along with
@@ -187,9 +221,9 @@ func (r *SPRatesReconciler) findMissingSPRates(savingsPlans []aws.SavingsPlan) [
 	// Get currently running instance types, regions, and tenancies from EC2 cache
 	instanceTypes, regions, tenancies := r.getUniqueInstanceTypesRegionsAndTenancies()
 
-	// Use operating systems from config (typically ["Linux", "Windows"])
-	// Normalize to cache format: "linux", "windows"
-	operatingSystems := []string{"linux", "windows"}
+	// Get operating systems from config and normalize to cache format ("linux", "windows")
+	// If not configured, defaults to ["Linux", "Windows"] via reconciler initialization
+	operatingSystems := r.getOperatingSystemsNormalized()
 
 	for _, sp := range savingsPlans {
 		// Check if we have ANY rate cached for this SP ARN
@@ -280,6 +314,27 @@ func (r *SPRatesReconciler) getUniqueInstanceTypesRegionsAndTenancies() ([]strin
 	return instanceTypes, regions, tenancies
 }
 
+// getOperatingSystemsNormalized returns the configured operating systems normalized
+// to lowercase cache format. Returns ["linux", "windows"] if not configured.
+//
+// Config uses title case (e.g., "Linux", "Windows") but the cache uses lowercase
+// (e.g., "linux", "windows") for consistent lookups.
+func (r *SPRatesReconciler) getOperatingSystemsNormalized() []string {
+	// Use configured operating systems, defaulting to ["Linux", "Windows"]
+	osList := r.OperatingSystems
+	if len(osList) == 0 {
+		osList = []string{"Linux", "Windows"}
+	}
+
+	// Normalize to lowercase for cache keys
+	normalized := make([]string, len(osList))
+	for i, os := range osList {
+		normalized[i] = strings.ToLower(os)
+	}
+
+	return normalized
+}
+
 // fetchRatesForSPWithFilters fetches rates for a specific Savings Plan from AWS
 // using the provided filters. This supports both full fetches (when no rates exist)
 // and incremental fetches (when new instance types are discovered).
@@ -337,23 +392,77 @@ func (r *SPRatesReconciler) fetchRatesForSPWithFilters(
 	}
 
 	// Convert to map format for cache
-	// Key format: "spArn,instanceType,region,tenancy,os" (comma-separated to avoid ARN colon conflicts)
+	// Use cache.buildSPRateKey() for consistent key format
 	// The ProductDescription field contains the normalized OS (either "linux" or "windows")
 	ratesMap := make(map[string]float64)
 	for _, rate := range rates {
-		key := fmt.Sprintf("%s,%s,%s,%s,%s", sp.SavingsPlanARN, rate.InstanceType, rate.Region, rate.Tenancy, rate.ProductDescription)
+		key := cache.BuildSPRateKey(sp.SavingsPlanARN, rate.InstanceType, rate.Region, rate.Tenancy, rate.ProductDescription)
 		ratesMap[key] = rate.Rate
 	}
 
 	return ratesMap, nil
 }
 
+// buildSentinelRatesForMissingCombinations identifies rate combinations that were queried
+// from AWS but returned no results, and returns a map of sentinel values (-1.0) for those
+// combinations. This prevents repeated API calls for rate combinations that don't exist
+// (e.g., Windows rates for a Linux-only Savings Plan).
+//
+// The function compares the requested combinations (instanceTypes × regions × tenancies × OS)
+// against the actual rates returned from AWS. Any combination that was requested but not
+// returned gets a sentinel value in the cache.
+func (r *SPRatesReconciler) buildSentinelRatesForMissingCombinations(
+	sp aws.SavingsPlan,
+	requestedInstanceTypes []string,
+	requestedRegions []string,
+	requestedTenancies []string,
+	requestedOperatingSystems []string,
+	actualRates map[string]float64,
+) map[string]float64 {
+	sentinelRates := make(map[string]float64)
+
+	// Build a set of all combinations that AWS returned
+	// Key format: "instanceType,region,tenancy,os" (without SP ARN)
+	returnedCombinations := make(map[string]bool)
+	for key := range actualRates {
+		// Parse the key: "spArn,instanceType,region,tenancy,os"
+		parts := strings.Split(key, ",")
+		if len(parts) == 5 {
+			// Store without SP ARN for comparison
+			combinationKey := fmt.Sprintf("%s,%s,%s,%s", parts[1], parts[2], parts[3], parts[4])
+			returnedCombinations[strings.ToLower(combinationKey)] = true
+		}
+	}
+
+	// Check each requested combination against what AWS returned
+	for _, instanceType := range requestedInstanceTypes {
+		for _, region := range requestedRegions {
+			for _, tenancy := range requestedTenancies {
+				for _, os := range requestedOperatingSystems {
+					// Build the combination key (without SP ARN)
+					combinationKey := strings.ToLower(fmt.Sprintf("%s,%s,%s,%s",
+						instanceType, region, tenancy, os))
+
+					// If this combination was NOT returned by AWS, store a sentinel value
+					if !returnedCombinations[combinationKey] {
+						// Build the full cache key with SP ARN using the standard builder
+						cacheKey := cache.BuildSPRateKey(sp.SavingsPlanARN, instanceType, region, tenancy, os)
+						sentinelRates[cacheKey] = cache.SPRateNotAvailable
+					}
+				}
+			}
+		}
+	}
+
+	return sentinelRates
+}
+
 // Run runs the SP rates reconciler as a goroutine with timer-based reconciliation.
 //
-// Waits for RISP cache to be populated before first run, then re-runs every 2 minutes
-// to lazy-load rates for new Savings Plans.
+// Waits for RISP and EC2 caches to be populated before first run, then re-runs every 15 seconds
+// to lazy-load rates for new Savings Plans or newly discovered instance types.
 func (r *SPRatesReconciler) Run(ctx context.Context) error {
-	r.Log.Info("starting SP rates reconciler", "interval", "2m")
+	r.Log.Info("starting SP rates reconciler", "interval", "15s")
 
 	// Wait for RISP reconciler to complete its initial run and populate the cache
 	// This avoids a race condition where we try to fetch rates before any SPs are discovered
@@ -364,22 +473,45 @@ func (r *SPRatesReconciler) Run(ctx context.Context) error {
 			r.Log.Info("SP rates reconciler shutting down before RISP cache was ready")
 			return nil
 		case <-r.RISPReadyChan:
-			r.Log.Info("RISP cache ready, proceeding with initial SP rates reconciliation")
+			r.Log.Info("RISP cache ready")
 		}
 	}
 
-	// Run initial reconciliation now that RISP cache is populated
+	// Wait for EC2 reconciler to complete its initial run and populate the cache
+	// This ensures we have actual instance types to query rates for, avoiding
+	// fetching rates for an incomplete set of instance types at startup
+	if r.EC2ReadyChan != nil {
+		r.Log.Info("waiting for EC2 cache to be populated before initial run")
+		select {
+		case <-ctx.Done():
+			r.Log.Info("SP rates reconciler shutting down before EC2 cache was ready")
+			return nil
+		case <-r.EC2ReadyChan:
+			r.Log.Info("EC2 cache ready, proceeding with initial SP rates reconciliation")
+		}
+	}
+
+	// Run initial reconciliation now that both RISP and EC2 caches are populated
 	r.Log.Info("running initial SP rates reconciliation")
 	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
 		r.Log.Error(err, "initial SP rates reconciliation failed")
 		// Don't return error - continue with periodic reconciliation
 	}
 
-	// Set up 2-minute ticker for periodic reconciliation
-	ticker := time.NewTicker(2 * time.Minute)
+	// Signal that initial reconciliation is complete (if channel was provided)
+	// This allows downstream reconcilers (e.g., CostReconciler) to wait for
+	// SP rates to be populated before starting their cost calculations
+	if r.ReadyChan != nil {
+		close(r.ReadyChan)
+		r.Log.V(1).Info("signaled that SP rates cache is ready for dependent reconcilers")
+	}
+
+	// Set up 15-second ticker for periodic reconciliation
+	// This is fast because in steady state there are 0 API calls (all rates cached)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
-	r.Log.Info("SP rates reconciler ready, periodic reconciliation every 2 minutes")
+	r.Log.Info("SP rates reconciler ready, periodic reconciliation every 15 seconds")
 
 	for {
 		select {

@@ -699,3 +699,294 @@ func TestGetMissingSPRatesForInstances_DifferentSP(t *testing.T) {
 		t.Errorf("expected 1 missing instance type for different SP, got %d", len(missingInstanceTypes))
 	}
 }
+
+// TestParseSPRateKey_ValidKeys tests parsing valid SP rate keys.
+func TestParseSPRateKey_ValidKeys(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		wantInstance string
+		wantRegion   string
+		wantTenancy  string
+		wantOS       string
+		wantOK       bool
+	}{
+		{
+			name:         "standard linux key",
+			key:          "arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux",
+			wantInstance: "m5.xlarge",
+			wantRegion:   "us-west-2",
+			wantTenancy:  "default",
+			wantOS:       "linux",
+			wantOK:       true,
+		},
+		{
+			name:         "windows key",
+			key:          "arn:aws:savingsplans::123:savingsplan/def,c5.2xlarge,us-east-1,dedicated,windows",
+			wantInstance: "c5.2xlarge",
+			wantRegion:   "us-east-1",
+			wantTenancy:  "dedicated",
+			wantOS:       "windows",
+			wantOK:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instance, region, tenancy, os, ok := parseSPRateKey(tt.key)
+			if ok != tt.wantOK {
+				t.Errorf("parseSPRateKey() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if instance != tt.wantInstance {
+				t.Errorf("parseSPRateKey() instance = %v, want %v", instance, tt.wantInstance)
+			}
+			if region != tt.wantRegion {
+				t.Errorf("parseSPRateKey() region = %v, want %v", region, tt.wantRegion)
+			}
+			if tenancy != tt.wantTenancy {
+				t.Errorf("parseSPRateKey() tenancy = %v, want %v", tenancy, tt.wantTenancy)
+			}
+			if os != tt.wantOS {
+				t.Errorf("parseSPRateKey() os = %v, want %v", os, tt.wantOS)
+			}
+		})
+	}
+}
+
+// TestParseSPRateKey_InvalidKeys tests parsing invalid SP rate keys.
+func TestParseSPRateKey_InvalidKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{
+			name: "too few parts",
+			key:  "arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2",
+		},
+		{
+			name: "too many parts",
+			key:  "arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux,extra",
+		},
+		{
+			name: "empty key",
+			key:  "",
+		},
+		{
+			name: "no separators",
+			key:  "invalid-key-format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, _, _, ok := parseSPRateKey(tt.key)
+			if ok {
+				t.Errorf("parseSPRateKey() should return ok=false for invalid key %q", tt.key)
+			}
+		})
+	}
+}
+
+// TestRegisterUpdateNotifier tests registering and triggering update notifiers.
+func TestRegisterUpdateNotifier(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Track notifications with a channel
+	notified := make(chan int, 1)
+
+	// Register a notifier
+	cache.RegisterUpdateNotifier(func() {
+		notified <- 1
+	})
+
+	// Trigger notification by setting prices
+	prices := map[string]float64{
+		"us-west-2:m5.xlarge:Linux": 0.192,
+	}
+	cache.SetOnDemandPrices(prices)
+
+	// Wait for notification (with timeout)
+	select {
+	case <-notified:
+		// Success
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected notifier to be called after SetOnDemandPrices")
+	}
+}
+
+// TestRegisterUpdateNotifier_MultipleNotifiers tests multiple registered notifiers.
+func TestRegisterUpdateNotifier_MultipleNotifiers(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Track notifications from multiple notifiers with channels
+	notified1 := make(chan int, 1)
+	notified2 := make(chan int, 1)
+
+	cache.RegisterUpdateNotifier(func() {
+		notified1 <- 1
+	})
+	cache.RegisterUpdateNotifier(func() {
+		notified2 <- 1
+	})
+
+	// Trigger notification
+	prices := map[string]float64{
+		"us-west-2:m5.xlarge:Linux": 0.192,
+	}
+	cache.SetOnDemandPrices(prices)
+
+	// Wait for both notifiers (with timeout)
+	timeout := time.After(100 * time.Millisecond)
+	notifier1Called := false
+	notifier2Called := false
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-notified1:
+			notifier1Called = true
+		case <-notified2:
+			notifier2Called = true
+		case <-timeout:
+			if !notifier1Called {
+				t.Error("expected notifier 1 to be called")
+			}
+			if !notifier2Called {
+				t.Error("expected notifier 2 to be called")
+			}
+			return
+		}
+	}
+
+	if !notifier1Called {
+		t.Error("expected notifier 1 to be called")
+	}
+	if !notifier2Called {
+		t.Error("expected notifier 2 to be called")
+	}
+}
+
+// TestGetSPRate_WithSentinelValues tests GetSPRate with sentinel values.
+func TestGetSPRate_WithSentinelValues(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Add a real rate and a sentinel value
+	rates := map[string]float64{
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux":   0.0537,
+		"arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,windows": SPRateNotAvailable, // Sentinel
+	}
+	cache.AddSPRates(rates)
+
+	// Test getting real rate
+	rate, exists := cache.GetSPRate(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		"m5.xlarge",
+		"us-west-2",
+		"default",
+		"linux",
+	)
+	if !exists {
+		t.Error("expected rate to exist")
+	}
+	if rate != 0.0537 {
+		t.Errorf("expected rate 0.0537, got %.4f", rate)
+	}
+
+	// Test getting sentinel value - should return exists=false and rate=0
+	rate, exists = cache.GetSPRate(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		"m5.xlarge",
+		"us-west-2",
+		"default",
+		"windows",
+	)
+	if exists {
+		t.Error("expected sentinel value to return exists=false")
+	}
+	if rate != 0 {
+		t.Errorf("expected sentinel value to return rate=0, got %.4f", rate)
+	}
+
+	// Test getting non-existent rate - should also return exists=false
+	rate, exists = cache.GetSPRate(
+		"arn:aws:savingsplans::123:savingsplan/abc",
+		"m5.xlarge",
+		"us-east-1",
+		"default",
+		"linux",
+	)
+	if exists {
+		t.Error("expected non-existent rate to return exists=false")
+	}
+	if rate != 0 {
+		t.Errorf("expected non-existent rate to return rate=0, got %.4f", rate)
+	}
+}
+
+// TestNormalizeOS_EdgeCases tests normalizeOS with RHEL, SUSE, and other edge cases.
+func TestNormalizeOS_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "RHEL variant",
+			input: "Red Hat Enterprise Linux",
+			want:  "linux",
+		},
+		{
+			name:  "RHEL lowercase",
+			input: "red hat",
+			want:  "linux",
+		},
+		{
+			name:  "SUSE variant",
+			input: "SUSE Linux Enterprise",
+			want:  "linux",
+		},
+		{
+			name:  "suse lowercase",
+			input: "suse",
+			want:  "linux",
+		},
+		{
+			name:  "Linux/UNIX AWS format",
+			input: "Linux/UNIX",
+			want:  "linux",
+		},
+		{
+			name:  "Unix variant",
+			input: "UNIX",
+			want:  "linux",
+		},
+		{
+			name:  "Windows with extra spaces",
+			input: "  Windows  ",
+			want:  "windows",
+		},
+		{
+			name:  "Windows Server",
+			input: "Windows Server 2019",
+			want:  "windows",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "linux", // Default fallback
+		},
+		{
+			name:  "unknown OS",
+			input: "FreeBSD",
+			want:  "linux", // Default fallback
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeOS(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeOS(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

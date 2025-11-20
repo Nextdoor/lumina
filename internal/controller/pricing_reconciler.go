@@ -68,6 +68,12 @@ type PricingReconciler struct {
 	// OperatingSystems to load pricing for
 	// Default: ["Linux", "Windows"]
 	OperatingSystems []string
+
+	// ReadyChan is an optional channel that will be closed after the initial
+	// reconciliation completes successfully. This allows downstream reconcilers
+	// (like SPRatesReconciler and CostReconciler) to wait for pricing data to be
+	// populated before they start their work.
+	ReadyChan chan struct{}
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -245,6 +251,14 @@ func (r *PricingReconciler) Run(ctx context.Context) error {
 		return fmt.Errorf("fatal: initial pricing load failed: %w", err)
 	}
 	log.Info("✅ initial pricing reconciliation completed successfully - cache is populated and ready")
+
+	// Signal that initial reconciliation is complete (if channel was provided)
+	// This allows downstream reconcilers (e.g., SPRatesReconciler, CostReconciler) to wait for
+	// pricing data to be populated before starting their work
+	if r.ReadyChan != nil {
+		close(r.ReadyChan)
+		log.V(1).Info("signaled that pricing cache is ready for dependent reconcilers")
+	}
 
 	// Parse reconciliation interval from config, with default fallback to 24 hours
 	interval := 24 * time.Hour // Default
