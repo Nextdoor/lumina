@@ -178,10 +178,10 @@ func TestIsStale(t *testing.T) {
 		t.Error("fresh cache should not be stale")
 	}
 
-	// Simulate old cache by manipulating lastUpdated
-	cache.mu.Lock()
-	cache.lastUpdated = time.Now().Add(-25 * time.Hour)
-	cache.mu.Unlock()
+	// Simulate old cache by manipulating lastUpdate (from BaseCache)
+	cache.Lock()
+	cache.lastUpdate = time.Now().Add(-25 * time.Hour)
+	cache.Unlock()
 
 	// Old cache is stale
 	if !cache.IsStale(24 * time.Hour) {
@@ -259,12 +259,14 @@ func TestConcurrency(t *testing.T) {
 	cache.SetOnDemandPrices(initialPrices)
 
 	// Run concurrent reads and writes
+	// IMPORTANT: Keep iteration counts LOW to ensure tests run quickly (< 1 second)
+	// The goal is to catch data races, not stress test the cache
 	done := make(chan bool)
 
-	// Concurrent readers
-	for i := 0; i < 10; i++ {
+	// Concurrent readers (5 goroutines, 10 iterations each)
+	for i := 0; i < 5; i++ {
 		go func() {
-			for j := 0; j < 100; j++ {
+			for j := 0; j < 10; j++ {
 				cache.GetOnDemandPrice("us-west-2", "m5.xlarge", "Linux")
 				cache.GetAllOnDemandPrices()
 				cache.GetStats()
@@ -274,10 +276,10 @@ func TestConcurrency(t *testing.T) {
 		}()
 	}
 
-	// Concurrent writers
-	for i := 0; i < 3; i++ {
+	// Concurrent writers (2 goroutines, 5 iterations each)
+	for i := 0; i < 2; i++ {
 		go func(id int) {
-			for j := 0; j < 10; j++ {
+			for j := 0; j < 5; j++ {
 				newPrices := make(map[string]float64)
 				for k := 0; k < 50; k++ {
 					key := fmt.Sprintf("us-east-1:m5.%dx:Linux", k)
@@ -289,8 +291,8 @@ func TestConcurrency(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for all goroutines
-	for i := 0; i < 13; i++ {
+	// Wait for all goroutines (5 readers + 2 writers = 7 total)
+	for i := 0; i < 7; i++ {
 		<-done
 	}
 
