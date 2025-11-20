@@ -203,10 +203,11 @@ func (c *RISPCache) GetStats() CacheStats {
 		spCount += len(sps)
 	}
 
+	// Access lastUpdate directly to avoid double-locking (GetLastUpdate acquires its own lock)
 	return CacheStats{
 		ReservedInstanceCount: riCount,
 		SavingsPlanCount:      spCount,
-		LastUpdate:            c.GetLastUpdate(), // From BaseCache
+		LastUpdate:            c.lastUpdate,
 		RegionCount:           len(c.reservedInstances),
 		AccountCount:          len(c.savingsPlans),
 	}

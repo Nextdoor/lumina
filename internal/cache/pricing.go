@@ -147,8 +147,6 @@ func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem st
 // All keys are normalized to lowercase for case-insensitive lookups.
 func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
 	c.Lock() // From BaseCache
-	defer c.Unlock()
-
 	// Normalize all keys to lowercase for consistent lookups
 	normalizedPrices := make(map[string]float64, len(prices))
 	for key, price := range prices {
@@ -157,8 +155,9 @@ func (c *PricingCache) SetOnDemandPrices(prices map[string]float64) {
 	c.onDemandPrices = normalizedPrices
 	c.isPopulated = len(prices) > 0
 	c.MarkUpdated() // From BaseCache
+	c.Unlock()
 
-	// Notify subscribers after releasing the write lock
+	// Notify subscribers AFTER releasing the write lock to prevent deadlock
 	c.NotifyUpdate() // From BaseCache
 }
 
@@ -232,7 +231,8 @@ func (c *PricingCache) GetStats() PricingStats {
 	c.RLock() // From BaseCache
 	defer c.RUnlock()
 
-	lastUpdate := c.GetLastUpdate() // From BaseCache
+	// Access lastUpdate directly to avoid double-locking (GetLastUpdate acquires its own lock)
+	lastUpdate := c.lastUpdate
 	return PricingStats{
 		OnDemandPriceCount: len(c.onDemandPrices),
 		LastUpdated:        lastUpdate,
@@ -260,7 +260,11 @@ func (c *PricingCache) IsStale(maxAge time.Duration) bool {
 		return true
 	}
 
-	return c.BaseCache.IsStale(maxAge) // From BaseCache
+	// Access lastUpdate directly to avoid double-locking (BaseCache.IsStale acquires its own lock)
+	if c.lastUpdate.IsZero() {
+		return true
+	}
+	return time.Since(c.lastUpdate) > maxAge
 }
 
 // GetSPRate returns the Savings Plan rate for a specific SP ARN, instance type, region, tenancy, and OS.
@@ -342,8 +346,6 @@ func normalizeOS(input string) string {
 // Returns the number of NEW rates added (doesn't count updates to existing rates).
 func (c *PricingCache) AddSPRates(rates map[string]float64) int {
 	c.Lock() // From BaseCache
-	defer c.Unlock()
-
 	newRatesCount := 0
 	for key, rate := range rates {
 		normalizedKey := strings.ToLower(key)
@@ -355,8 +357,9 @@ func (c *PricingCache) AddSPRates(rates map[string]float64) int {
 	}
 
 	c.spRatesLastUpdated = time.Now()
+	c.Unlock()
 
-	// Notify subscribers after adding rates
+	// Notify subscribers AFTER releasing the write lock to prevent deadlock
 	// This triggers cost recalculation when new rates are available
 	c.NotifyUpdate() // From BaseCache
 
