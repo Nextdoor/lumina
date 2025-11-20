@@ -18,6 +18,7 @@ package cost
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1432,4 +1433,356 @@ func TestCalculatorMultipleComputeSPsMatchCommitment(t *testing.T) {
 		assert.LessOrEqual(t, util.CurrentUtilizationRate, sp.Commitment,
 			"Utilization rate should not exceed commitment (no over-utilization in this test)")
 	}
+}
+
+// TestCalculatorDifferentSPRatesFromCache tests that the calculator correctly retrieves
+// different rates for different Savings Plans from the pricing cache (Tier 1 lookup).
+//
+// This is a critical test that validates:
+// 1. Each SP ARN gets its own rates from the cache
+// 2. The calculator uses the correct rate for each SP
+// 3. Different SPs with different rates produce different costs
+//
+// This test uses a real PricingCache with actual rates loaded, not the Tier 2 discount fallback.
+func TestCalculatorDifferentSPRatesFromCache(t *testing.T) {
+	baseTime := testBaseTime()
+
+	// Create a real pricing cache and populate it with different rates for different SPs
+	pricingCache := &mockPricingCache{
+		spRates: map[string]float64{
+			// SP-001: Newer SP with better rates (purchased more recently at lower prices)
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-001,m5.xlarge,us-west-2,default,linux":  0.050, // 50% discount
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-001,m5.2xlarge,us-west-2,default,linux": 0.100, // 50% discount
+
+			// SP-002: Older SP with worse rates (purchased earlier at higher prices)
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-002,m5.xlarge,us-west-2,default,linux":  0.070, // 30% discount
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-002,m5.2xlarge,us-west-2,default,linux": 0.140, // 30% discount
+
+			// SP-003: Different region, same instance type
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-003,m5.xlarge,us-east-1,default,linux": 0.055, // 45% discount
+		},
+	}
+
+	calc := NewCalculator(pricingCache, nil)
+
+	// Create instances that will be covered by different SPs
+	input := CalculationInput{
+		Instances: []aws.Instance{
+			{
+				InstanceID:       "i-sp001-covered",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
+			},
+			{
+				InstanceID:       "i-sp002-covered",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
+			},
+			{
+				InstanceID:       "i-sp003-covered",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-east-1",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-east-1a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(3 * time.Hour),
+			},
+		},
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans: []aws.SavingsPlan{
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-001",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      0.050, // Exactly covers one instance at SP-001 rate
+				AccountID:       "123456789012",
+			},
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-002",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      0.070, // Exactly covers one instance at SP-002 rate
+				AccountID:       "123456789012",
+			},
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-003",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      0.055, // Exactly covers one instance at SP-003 rate
+				AccountID:       "123456789012",
+			},
+		},
+		OnDemandPrices: map[string]float64{
+			"m5.xlarge:us-west-2": 0.100, // $0.10/hour on-demand
+			"m5.xlarge:us-east-1": 0.100, // $0.10/hour on-demand
+		},
+	}
+
+	result := calc.Calculate(input)
+
+	// Verify each instance got the correct rate from its SP
+	cost1 := result.InstanceCosts["i-sp001-covered"]
+	assert.Equal(t, CoverageComputeSavingsPlan, cost1.CoverageType, "Instance should be covered by Compute SP")
+	assert.InDelta(t, 0.050, cost1.EffectiveCost, 0.001, "Instance should use SP-001 rate of $0.050")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN,
+		"Instance should be attributed to SP-001")
+	assert.Equal(t, PricingAccurate, cost1.PricingAccuracy, "Pricing should be accurate (Tier 1 from cache)")
+
+	cost2 := result.InstanceCosts["i-sp002-covered"]
+	assert.Equal(t, CoverageComputeSavingsPlan, cost2.CoverageType, "Instance should be covered by Compute SP")
+	assert.InDelta(t, 0.070, cost2.EffectiveCost, 0.001, "Instance should use SP-002 rate of $0.070 (higher than SP-001)")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-002", cost2.SavingsPlanARN,
+		"Instance should be attributed to SP-002")
+	assert.Equal(t, PricingAccurate, cost2.PricingAccuracy, "Pricing should be accurate (Tier 1 from cache)")
+
+	cost3 := result.InstanceCosts["i-sp003-covered"]
+	assert.Equal(t, CoverageComputeSavingsPlan, cost3.CoverageType, "Instance should be covered by Compute SP")
+	assert.InDelta(t, 0.055, cost3.EffectiveCost, 0.001, "Instance should use SP-003 rate of $0.055")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-003", cost3.SavingsPlanARN,
+		"Instance should be attributed to SP-003")
+	assert.Equal(t, PricingAccurate, cost3.PricingAccuracy, "Pricing should be accurate (Tier 1 from cache)")
+
+	// CRITICAL: Verify each instance used a DIFFERENT rate (proving per-SP lookup works)
+	assert.NotEqual(t, cost1.EffectiveCost, cost2.EffectiveCost,
+		"CRITICAL: Instances covered by different SPs should have different costs")
+	assert.NotEqual(t, cost1.EffectiveCost, cost3.EffectiveCost,
+		"CRITICAL: Instances covered by different SPs should have different costs")
+	assert.NotEqual(t, cost2.EffectiveCost, cost3.EffectiveCost,
+		"CRITICAL: Instances covered by different SPs should have different costs")
+
+	// Verify SP utilization matches the rates consumed
+	spUtil1 := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-001"]
+	assert.InDelta(t, 0.050, spUtil1.CurrentUtilizationRate, 0.001, "SP-001 should be fully utilized at $0.050")
+
+	spUtil2 := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-002"]
+	assert.InDelta(t, 0.070, spUtil2.CurrentUtilizationRate, 0.001, "SP-002 should be fully utilized at $0.070")
+
+	spUtil3 := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-003"]
+	assert.InDelta(t, 0.055, spUtil3.CurrentUtilizationRate, 0.001, "SP-003 should be fully utilized at $0.055")
+}
+
+// TestCalculatorEC2InstanceSPRatesFromCache tests that EC2 Instance Savings Plans
+// use different rates for different SPs from the cache.
+func TestCalculatorEC2InstanceSPRatesFromCache(t *testing.T) {
+	baseTime := testBaseTime()
+
+	// Create a real pricing cache with different rates for different EC2 Instance SPs
+	pricingCache := &mockPricingCache{
+		spRates: map[string]float64{
+			// SP-EC2-001: Better rates for m5 family
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.xlarge,us-west-2,default,linux":   0.045,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.2xlarge,us-west-2,default,linux":  0.090,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001,m5.4xlarge,us-west-2,default,linux":  0.180,
+
+			// SP-EC2-002: Worse rates for m5 family (older purchase)
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.xlarge,us-west-2,default,linux":   0.060,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.2xlarge,us-west-2,default,linux":  0.120,
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002,m5.4xlarge,us-west-2,default,linux":  0.240,
+		},
+	}
+
+	calc := NewCalculator(pricingCache, nil)
+
+	// Create instances in m5 family that will use EC2 Instance SPs
+	input := CalculationInput{
+		Instances: []aws.Instance{
+			{
+				InstanceID:       "i-m5-xlarge-1",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
+			},
+			{
+				InstanceID:       "i-m5-xlarge-2",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
+			},
+		},
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans: []aws.SavingsPlan{
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001",
+				SavingsPlanType: "EC2Instance",
+				Region:          "us-west-2",
+				InstanceFamily:  "m5",
+				Commitment:      0.045, // Covers one m5.xlarge at SP-EC2-001 rate
+				AccountID:       "123456789012",
+			},
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002",
+				SavingsPlanType: "EC2Instance",
+				Region:          "us-west-2",
+				InstanceFamily:  "m5",
+				Commitment:      0.060, // Covers one m5.xlarge at SP-EC2-002 rate
+				AccountID:       "123456789012",
+			},
+		},
+		OnDemandPrices: map[string]float64{
+			"m5.xlarge:us-west-2": 0.100, // $0.10/hour on-demand
+		},
+	}
+
+	result := calc.Calculate(input)
+
+	// Verify first instance uses SP-EC2-001 (better rate, applied first due to higher savings %)
+	cost1 := result.InstanceCosts["i-m5-xlarge-1"]
+	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost1.CoverageType, "Instance should be covered by EC2 Instance SP")
+	assert.InDelta(t, 0.045, cost1.EffectiveCost, 0.001, "Instance should use SP-EC2-001 rate of $0.045")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001", cost1.SavingsPlanARN,
+		"Instance should be attributed to SP-EC2-001 (better rate)")
+	assert.Equal(t, PricingAccurate, cost1.PricingAccuracy, "Pricing should be accurate (Tier 1 from cache)")
+
+	// Verify second instance uses SP-EC2-002 (worse rate, applied second)
+	cost2 := result.InstanceCosts["i-m5-xlarge-2"]
+	assert.Equal(t, CoverageEC2InstanceSavingsPlan, cost2.CoverageType, "Instance should be covered by EC2 Instance SP")
+	assert.InDelta(t, 0.060, cost2.EffectiveCost, 0.001, "Instance should use SP-EC2-002 rate of $0.060")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002", cost2.SavingsPlanARN,
+		"Instance should be attributed to SP-EC2-002 (worse rate)")
+	assert.Equal(t, PricingAccurate, cost2.PricingAccuracy, "Pricing should be accurate (Tier 1 from cache)")
+
+	// CRITICAL: Verify different instances used DIFFERENT rates from different SPs
+	assert.NotEqual(t, cost1.EffectiveCost, cost2.EffectiveCost,
+		"CRITICAL: Instances covered by different EC2 Instance SPs should have different costs")
+	assert.Less(t, cost1.EffectiveCost, cost2.EffectiveCost,
+		"First instance should have lower cost (better SP rate)")
+
+	// Verify SP utilization
+	spUtil1 := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-001"]
+	assert.InDelta(t, 0.045, spUtil1.CurrentUtilizationRate, 0.001, "SP-EC2-001 fully utilized")
+
+	spUtil2 := result.SavingsPlanUtilization["arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-002"]
+	assert.InDelta(t, 0.060, spUtil2.CurrentUtilizationRate, 0.001, "SP-EC2-002 fully utilized")
+}
+
+// TestCalculatorMixedTierPricingAccuracy tests that the calculator correctly marks
+// pricing as "accurate" when using Tier 1 (cache) and "estimated" when using Tier 2 (discount).
+func TestCalculatorMixedTierPricingAccuracy(t *testing.T) {
+	baseTime := testBaseTime()
+
+	// Create a cache with rates for only ONE of the two SPs
+	pricingCache := &mockPricingCache{
+		spRates: map[string]float64{
+			// Only SP-001 has cached rates (Tier 1)
+			"arn:aws:savingsplans::123456789012:savingsplan/sp-001,m5.xlarge,us-west-2,default,linux": 0.050,
+			// SP-002 has NO cached rates (will fall back to Tier 2)
+		},
+	}
+
+	calc := NewCalculator(pricingCache, nil)
+
+	input := CalculationInput{
+		Instances: []aws.Instance{
+			{
+				InstanceID:       "i-tier1",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(1 * time.Hour),
+			},
+			{
+				InstanceID:       "i-tier2",
+				InstanceType:     "m5.xlarge",
+				Region:           "us-west-2",
+				AccountID:        "123456789012",
+				AvailabilityZone: "us-west-2a",
+				State:            "running",
+				Tenancy:          "default",
+				LaunchTime:       baseTime.Add(2 * time.Hour),
+			},
+		},
+		ReservedInstances: []aws.ReservedInstance{},
+		SavingsPlans: []aws.SavingsPlan{
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-001",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      0.050, // Covers one instance
+				AccountID:       "123456789012",
+			},
+			{
+				SavingsPlanARN:  "arn:aws:savingsplans::123456789012:savingsplan/sp-002",
+				SavingsPlanType: "Compute",
+				Region:          "all",
+				InstanceFamily:  "all",
+				Commitment:      0.100, // Covers one instance (with Tier 2 fallback)
+				AccountID:       "123456789012",
+			},
+		},
+		OnDemandPrices: map[string]float64{
+			"m5.xlarge:us-west-2": 0.100, // $0.10/hour on-demand
+		},
+	}
+
+	result := calc.Calculate(input)
+
+	// Verify Tier 1 instance has accurate pricing
+	cost1 := result.InstanceCosts["i-tier1"]
+	assert.InDelta(t, 0.050, cost1.EffectiveCost, 0.001, "Should use cached rate of $0.050")
+	assert.Equal(t, PricingAccurate, cost1.PricingAccuracy, "CRITICAL: Pricing should be marked as ACCURATE (Tier 1 cache lookup)")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-001", cost1.SavingsPlanARN)
+
+	// Verify Tier 2 instance has estimated pricing
+	cost2 := result.InstanceCosts["i-tier2"]
+	assert.InDelta(t, 0.072, cost2.EffectiveCost, 0.001, "Should use Tier 2 discount (0.72 * $0.10 = $0.072)")
+	assert.Equal(t, PricingEstimated, cost2.PricingAccuracy, "CRITICAL: Pricing should be marked as ESTIMATED (Tier 2 discount fallback)")
+	assert.Equal(t, "arn:aws:savingsplans::123456789012:savingsplan/sp-002", cost2.SavingsPlanARN)
+
+	// Verify costs are different (Tier 1 vs Tier 2 rates)
+	assert.NotEqual(t, cost1.EffectiveCost, cost2.EffectiveCost,
+		"Tier 1 and Tier 2 rates should produce different costs")
+}
+
+// mockPricingCache implements PricingCacheReader for testing with actual cache rates.
+// This simulates the real PricingCache behavior but allows us to control the rates.
+type mockPricingCache struct {
+	// spRates uses the same key format as the real cache: "spArn,instanceType,region,tenancy,os"
+	spRates map[string]float64
+}
+
+// GetSPRate implements PricingCacheReader.GetSPRate.
+// This matches the behavior of the real PricingCache.GetSPRate() method.
+func (m *mockPricingCache) GetSPRate(spArn, instanceType, region, tenancy, operatingSystem string) (float64, bool) {
+	// Normalize OS to match real cache behavior
+	normalizedOS := operatingSystem
+	if normalizedOS == "" {
+		normalizedOS = "linux" // Default for EC2 instances with empty Platform field
+	}
+
+	// Build key in the same format as the real cache (comma-separated, lowercase)
+	key := fmt.Sprintf("%s,%s,%s,%s,%s",
+		strings.ToLower(spArn),
+		strings.ToLower(instanceType),
+		strings.ToLower(region),
+		strings.ToLower(tenancy),
+		strings.ToLower(normalizedOS))
+
+	rate, exists := m.spRates[key]
+	return rate, exists
 }

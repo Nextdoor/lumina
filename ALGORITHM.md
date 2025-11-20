@@ -600,22 +600,138 @@ Lumina Behavior:
 - Under-estimates costs in edge cases with multiple partial SPs
 - Typically <5% impact on total costs
 
-### 3. Missing SP Rate Data
+### 3. Savings Plans Rate Caching (Tier 1 vs Tier 2 Pricing)
 
-**Limitation:**
-- SP rates are calculated using placeholder discount percentages
-- EC2 Instance SP: 72% discount
-- Compute SP: 66% discount
-- Reality: Discount varies by instance type, region, and purchase date
+**Status:** ✅ IMPLEMENTED - Lumina now uses actual Savings Plans rates from AWS APIs with intelligent caching.
 
-**AWS Documentation:** [Savings Plans pricing](https://aws.amazon.com/savingsplans/pricing/) shows rates vary significantly
+Lumina uses a **two-tier pricing system** to get the most accurate SP rates possible:
 
-**Impact:**
-- SP rates may be off by ±5% per instance
-- Aggregate totals are reasonably accurate
+#### Tier 1: Actual SP Rates from AWS API (Preferred)
 
-**TODO:** Implement actual SP rate lookup from [AWS Pricing API](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/price-changes.html) or hardcoded tables.
-See [GitHub Issue #48](https://github.com/Nextdoor/lumina/issues/48) for implementation plan.
+Lumina fetches real Savings Plan rates using the [AWS DescribeSavingsPlanRates API](https://docs.aws.amazon.com/savingsplans/latest/APIReference/API_DescribeSavingsPlanRates.html). These are the **exact purchase-time rates** that were locked in when each SP was bought.
+
+**How it works:**
+1. The **SP Rates Reconciler** (`SPRatesReconciler`) runs every 1-2 minutes
+2. For each Savings Plan, it queries the AWS API for rates for all discovered instance types/regions
+3. Rates are cached in the **Pricing Cache** using keys like:
+   ```
+   "spArn,instanceType,region,tenancy,os" → rate
+   Example: "arn:aws:savingsplans::123:savingsplan/abc,m5.xlarge,us-west-2,default,linux" → 0.0537
+   ```
+4. The cache uses **incremental fetching**: Only queries for NEW instance types/regions/tenancies/OS combinations
+5. **Sentinel values** (-1.0) mark rate combinations that don't exist (e.g., Windows rate for a Linux-only SP)
+
+**Key features:**
+- **Per-SP rates**: Each Savings Plan ARN gets its own rates (SP1 and SP2 can have different rates for the same instance type)
+- **Tenancy-aware**: Different rates for default (shared) vs dedicated tenancy
+- **OS-aware**: Different rates for Linux vs Windows
+- **Case-insensitive**: All cache keys are normalized to lowercase
+- **Incremental updates**: Only fetches missing rates, doesn't refetch everything
+
+**Pricing accuracy tracking:**
+- When Tier 1 rates are used: `PricingAccuracy = "accurate"`
+- Instance costs reflect exact purchase-time SP rates
+
+#### Tier 2: Discount Multiplier Fallback (Fallback)
+
+If a rate isn't cached (new instance type just appeared, or cache warming in progress), Lumina falls back to configured discount multipliers:
+
+- **EC2 Instance SP:** 72% discount (28% of on-demand)
+- **Compute SP:** 66% discount (34% of on-demand)
+
+**Pricing accuracy tracking:**
+- When Tier 2 rates are used: `PricingAccuracy = "estimated"`
+- Instance costs are approximations based on typical discounts
+
+#### Cache Architecture
+
+```mermaid
+graph TD
+    subgraph "EC2 Reconciler"
+        EC2[Discover new instances<br/>m5.xlarge, r8g.large, etc.]
+    end
+
+    subgraph "SP Rates Reconciler"
+        SPR[Every 1-2 minutes:<br/>Check for missing rates]
+        SPR -->|Query| API[AWS DescribeSavingsPlanRates API]
+        API -->|Returns rates| SPR
+    end
+
+    subgraph "Pricing Cache"
+        Cache["In-memory cache<br/>spArn,instance,region,tenancy,os → rate"]
+        Cache -->|Tier 1: Exact rate| Calc
+        Cache -->|Missing? Tier 2: Discount| Calc
+    end
+
+    subgraph "Cost Calculator"
+        Calc[Calculate instance costs]
+        Calc -->|PricingAccuracy=accurate| M1[Metrics: Tier 1]
+        Calc -->|PricingAccuracy=estimated| M2[Metrics: Tier 2]
+    end
+
+    EC2 -->|New instances found| SPR
+    SPR -->|Add rates| Cache
+    Cache -->|Lookup per SP ARN| Calc
+
+    style Cache fill:#99ccff,color:#000
+    style API fill:#99ff99,color:#000
+    style M1 fill:#99ff99,color:#000
+    style M2 fill:#ffcc99,color:#000
+```
+
+#### API References
+
+- **DescribeSavingsPlanRates**: https://docs.aws.amazon.com/savingsplans/latest/APIReference/API_DescribeSavingsPlanRates.html
+  - Returns actual SP rates for specific instance types, regions, tenancies, and operating systems
+  - Rate values are purchase-time locked-in rates (e.g., $0.0537/hr for m5.xlarge)
+
+- **DescribeSavingsPlans**: https://docs.aws.amazon.com/savingsplans/latest/APIReference/API_DescribeSavingsPlans.html
+  - Returns list of active Savings Plans with ARNs, types, commitments
+  - Used to discover which SPs need rate fetching
+
+#### Implementation Details
+
+**Code locations:**
+- Pricing Cache: [`internal/cache/pricing.go`](internal/cache/pricing.go)
+- SP Rates Reconciler: [`internal/controller/sp_rates_reconciler.go`](internal/controller/sp_rates_reconciler.go)
+- Cache key builder: [`internal/cache/pricing.go:62-68`](internal/cache/pricing.go#L62-L68)
+- Tier 1/Tier 2 lookup: [`pkg/cost/savings_plans.go:621-673`](pkg/cost/savings_plans.go#L621-L673)
+
+**Cache characteristics:**
+- Thread-safe (uses `sync.RWMutex`)
+- Stores rates per SP ARN (different SPs can have different rates)
+- Tracks metadata (last updated timestamp, rate counts)
+- Notifies cost calculator when rates change (triggers recalculation)
+- Uses sentinel values to avoid repeated API calls for non-existent rates
+
+**Rate fetching strategy:**
+- **Lazy loading**: Only fetch rates for instance types that actually exist in the cluster
+- **Incremental**: Query only for missing combinations (don't refetch existing rates)
+- **Efficient batching**: AWS API returns multiple rates per call
+- **Error handling**: API errors don't block cost calculations (falls back to Tier 2)
+
+#### Impact on Accuracy
+
+**Before (Tier 2 only):**
+- SP rates estimated at ±5% accuracy
+- Same discount percentage for all SPs
+- No differentiation by purchase date or instance type
+
+**After (Tier 1 + Tier 2):**
+- SP rates from cache: **exact** (0% error) - marked as `PricingAccuracy = "accurate"`
+- SP rates from fallback: ±5% accuracy - marked as `PricingAccuracy = "estimated"`
+- Different SPs correctly get different rates
+- Tracks which costs are accurate vs estimated via metrics
+
+**Monitoring cache effectiveness:**
+```promql
+# Percentage of instances using accurate pricing
+sum(ec2_instance_hourly_cost{pricing_accuracy="accurate"}) /
+sum(ec2_instance_hourly_cost) * 100
+
+# Instances still using estimated pricing (cache warming or new types)
+sum(ec2_instance_hourly_cost{pricing_accuracy="estimated"})
+```
 
 ### 4. Regional vs Zonal RIs
 
@@ -772,15 +888,15 @@ sum(savings_plan_hourly_commitment) - sum(savings_plan_current_utilization_rate)
 
 ## Future Improvements
 
-### Priority 1: Actual SP Rate Lookup
+### ~~Priority 1: Actual SP Rate Lookup~~ ✅ COMPLETED
 
-**Problem:** Using placeholder discount percentages (72%, 66%)
+**Problem:** ~~Using placeholder discount percentages (72%, 66%)~~
 
-**Solution:** Integrate with AWS Pricing API or hardcode SP rate tables
+**Solution:** ✅ Integrated with AWS DescribeSavingsPlanRates API with intelligent caching
 
-**Issue:** [#48](https://github.com/Nextdoor/lumina/issues/48)
+**Status:** IMPLEMENTED - See [Savings Plans Rate Caching](#3-savings-plans-rate-caching-tier-1-vs-tier-2-pricing) section above
 
-### Priority 2: RI Instance Size Flexibility
+### Priority 1: RI Instance Size Flexibility (now top priority)
 
 **Problem:** Exact instance type match only
 
