@@ -917,11 +917,8 @@ func TestFindMissingSpotPrices_ShouldNotRefreshFreshCachedPrices(t *testing.T) {
 		Log:      logr.Discard(),
 	}
 
-	// Test: Call findMissingSpotPrices with same instance types and AZs as cached
-	instanceTypes := []string{"m5.large", "c5.xlarge"}
-	availabilityZones := []string{"us-west-2a", "us-west-2b"}
-
-	missing := reconciler.findMissingSpotPrices(instanceTypes, availabilityZones)
+	// Test: Call findMissingSpotPrices (no parameters needed - it gets data from EC2Cache)
+	missing := reconciler.findMissingSpotPrices()
 
 	// Verify: Should return EMPTY list (no prices need refresh - they're fresh!)
 	// BUG: Currently returns non-empty list marking fresh prices for refresh

@@ -143,7 +143,7 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 		"unique_availability_zones", len(availabilityZones))
 
 	// Find missing spot prices (lazy-loading: check cache first)
-	missingCombinations := r.findMissingSpotPrices(instanceTypes, availabilityZones)
+	missingCombinations := r.findMissingSpotPrices()
 
 	// If all prices are cached, we're done (0 API calls!)
 	if len(missingCombinations) == 0 {
@@ -277,10 +277,7 @@ type SpotPriceCombination struct {
 // Returns:
 //   - []SpotPriceCombination: List of instance type + AZ combinations that need fetching
 //   - Empty slice if all prices are cached and fresh
-func (r *SpotPricingReconciler) findMissingSpotPrices(
-	instanceTypes []string,
-	availabilityZones []string,
-) []SpotPriceCombination {
+func (r *SpotPricingReconciler) findMissingSpotPrices() []SpotPriceCombination {
 	var missing []SpotPriceCombination
 
 	// Get all spot prices with full SpotPrice structs (includes FetchedAt timestamps)
@@ -411,29 +408,6 @@ func (r *SpotPricingReconciler) findMissingSpotPrices(
 	}
 
 	return missing
-}
-
-// getMetadataForInstanceType determines the account, region, and platform for a specific
-// instance type + AZ combination by looking at running instances in EC2Cache.
-// Returns (accountID, region, platform) for the first matching instance.
-//
-// The platform field is used to determine which ProductDescriptions to query from AWS:
-// - Platform "" or aws.PlatformLinux → aws.ProductDescriptionLinuxUnix
-// - Platform aws.PlatformWindows → aws.ProductDescriptionWindows
-//
-// Note: This assumes that within a given AZ, the same instance type will have the same
-// platform (which is true in practice - you can't have both Linux and Windows m5.xlarge
-// instances in the same AZ with different spot prices).
-func (r *SpotPricingReconciler) getMetadataForInstanceType(instanceType, az string) (string, string, string) {
-	instances := r.EC2Cache.GetAllInstances()
-	for _, inst := range instances {
-		if inst.InstanceType == instanceType && inst.AvailabilityZone == az {
-			return inst.AccountID, inst.Region, inst.Platform
-		}
-	}
-	// Fallback (should never happen if EC2Cache is populated correctly)
-	// Default to Linux since it's the most common platform (~99% of instances)
-	return r.Config.AWSAccounts[0].AccountID, r.Config.DefaultRegion, "linux"
 }
 
 // platformToProductDescription converts an EC2 Platform value to an AWS Spot Price ProductDescription.
