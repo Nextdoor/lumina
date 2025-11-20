@@ -578,14 +578,49 @@ func (r *SpotPricingReconciler) Run(ctx context.Context) error {
 	log := r.Log
 	log.Info("starting spot pricing reconciler (lazy-loading mode)")
 
-	// Run immediately on startup (BLOCKING)
-	log.Info("⏳ running initial spot pricing reconciliation (BLOCKING)")
-	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		// Initial spot pricing load failure is not fatal - we can still serve costs
-		// using on-demand pricing. Log the error but continue.
-		log.Error(err, "⚠️  initial spot pricing reconciliation failed - will use on-demand pricing")
-	} else {
-		log.Info("✅ initial spot pricing reconciliation completed successfully")
+	// Run initial reconciliation with retry logic (BLOCKING)
+	// Initial spot pricing load is REQUIRED - we cannot serve accurate costs without it.
+	// The CostReconciler waits for SpotPricingReadyChan before starting, so spot prices
+	// must be available before any cost calculations begin.
+	//
+	// Retry logic provides self-healing:
+	// - Transient AWS API errors will be retried automatically
+	// - Network issues will be retried with exponential backoff
+	// - System will eventually become healthy without manual intervention
+	log.Info("⏳ running initial spot pricing reconciliation (BLOCKING with retry)")
+
+	maxRetries := 10
+	retryDelay := 5 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
+			log.Error(err, "initial spot pricing reconciliation failed",
+				"attempt", attempt,
+				"max_retries", maxRetries,
+				"retry_delay", retryDelay)
+
+			// If this was the last attempt, return error
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to load initial spot pricing data after %d attempts: %w", maxRetries, err)
+			}
+
+			// Wait before retrying (with context cancellation support)
+			select {
+			case <-time.After(retryDelay):
+				// Exponential backoff: 5s, 10s, 20s, 40s, ...
+				retryDelay *= 2
+				if retryDelay > 60*time.Second {
+					retryDelay = 60 * time.Second // Cap at 60 seconds
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		} else {
+			// Success!
+			log.Info("✅ initial spot pricing reconciliation completed successfully",
+				"attempts", attempt)
+			break
+		}
 	}
 
 	// Parse reconciliation interval from config
