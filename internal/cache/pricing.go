@@ -17,7 +17,6 @@ limitations under the License.
 package cache
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -61,12 +60,7 @@ const (
 // This function is exported so the SP rates reconciler can build keys consistently
 // when constructing rate maps to add to the cache.
 func BuildSPRateKey(spArn, instanceType, region, tenancy, os string) string {
-	return strings.ToLower(fmt.Sprintf("%s%s%s%s%s%s%s%s%s",
-		spArn, spRateKeySeparator,
-		instanceType, spRateKeySeparator,
-		region, spRateKeySeparator,
-		tenancy, spRateKeySeparator,
-		os))
+	return BuildKey(spRateKeySeparator, spArn, instanceType, region, tenancy, os)
 }
 
 // parseSPRateKey splits a cache key into its components.
@@ -149,8 +143,7 @@ func (c *PricingCache) GetOnDemandPrice(region, instanceType, operatingSystem st
 	c.RLock() // From BaseCache
 	defer c.RUnlock()
 
-	// Normalize to lowercase for case-insensitive lookups
-	key := strings.ToLower(fmt.Sprintf("%s:%s:%s", region, instanceType, operatingSystem))
+	key := BuildKey(":", region, instanceType, operatingSystem)
 	price, exists := c.onDemandPrices[key]
 	return price, exists
 }
@@ -211,11 +204,10 @@ func (c *PricingCache) GetOnDemandPricesForInstances(
 
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
-		// Normalize to lowercase for case-insensitive lookups
-		key := strings.ToLower(fmt.Sprintf("%s:%s:%s", inst.Region, inst.InstanceType, operatingSystem))
+		key := BuildKey(":", inst.Region, inst.InstanceType, operatingSystem)
 		if price, exists := c.onDemandPrices[key]; exists {
 			// Return with simplified key for calculator
-			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
+			resultKey := BuildKey(":", inst.InstanceType, inst.Region)
 			result[resultKey] = price
 		}
 	}
@@ -564,8 +556,7 @@ func (c *PricingCache) GetSpotPrice(instanceType, availabilityZone string) (floa
 	c.RLock() // From BaseCache
 	defer c.RUnlock()
 
-	// Normalize to lowercase for case-insensitive lookups
-	key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, availabilityZone))
+	key := BuildKey(":", instanceType, availabilityZone)
 	spotPrice, exists := c.spotPrices[key]
 	if !exists {
 		return 0, false
@@ -637,7 +628,7 @@ func (c *PricingCache) DeleteSpotPrice(instanceType, availabilityZone string) bo
 	// Build normalized key (case-insensitive) from components
 	// Format: "instanceType:availabilityZone" all lowercase
 	// Example: "m5.xlarge:us-west-2a"
-	key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, availabilityZone))
+	key := BuildKey(":", instanceType, availabilityZone)
 
 	// Check if price exists before attempting deletion
 	if _, exists := c.spotPrices[key]; exists {
@@ -695,12 +686,11 @@ func (c *PricingCache) GetSpotPricesForInstances(instances []InstanceKey) map[st
 
 	result := make(map[string]float64, len(instances))
 	for _, inst := range instances {
-		// Normalize to lowercase for case-insensitive lookups
 		// Note: InstanceKey needs an AvailabilityZone field for spot pricing
-		key := strings.ToLower(fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region))
+		key := BuildKey(":", inst.InstanceType, inst.Region)
 		if spotPrice, exists := c.spotPrices[key]; exists {
 			// Return with key format expected by calculator
-			resultKey := fmt.Sprintf("%s:%s", inst.InstanceType, inst.Region)
+			resultKey := BuildKey(":", inst.InstanceType, inst.Region)
 			result[resultKey] = spotPrice.SpotPrice
 		}
 	}
