@@ -68,7 +68,7 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		// Empty Platform field from AWS API is treated as "linux" (the default)
 		platform := inst.Platform
 		if platform == "" {
-			platform = "linux"
+			platform = aws.PlatformLinux
 		}
 
 		m.EC2Instance.With(prometheus.Labels{

@@ -242,9 +242,9 @@ func (c *RealSPClient) DescribeSavingsPlanRates(
 //   - "host"      - For dedicated hosts
 func normalizeTenancyForSPFilter(ec2Tenancy string) string {
 	switch ec2Tenancy {
-	case "default":
-		return "shared"
-	case "dedicated", "host":
+	case TenancyDefault:
+		return TenancyShared
+	case TenancyDedicated, TenancyHost:
 		// Already lowercase, return as-is
 		return ec2Tenancy
 	default:
@@ -311,19 +311,19 @@ func normalizeProductDescription(input string) string {
 //   - "host"      → "host"
 func normalizeTenancyForSPRate(spTenancy string) string {
 	switch strings.ToLower(spTenancy) {
-	case "", "shared":
+	case "", TenancyShared:
 		// AWS uses "shared", EC2 uses "default"
-		return "default"
-	case "dedicated":
-		return "dedicated"
-	case "host":
-		return "host"
-	case "default":
+		return TenancyDefault
+	case TenancyDedicated:
+		return TenancyDedicated
+	case TenancyHost:
+		return TenancyHost
+	case TenancyDefault:
 		// Already normalized (passthrough for safety)
-		return "default"
+		return TenancyDefault
 	default:
 		// Unknown tenancy value - default to "default"
-		return "default"
+		return TenancyDefault
 	}
 }
 

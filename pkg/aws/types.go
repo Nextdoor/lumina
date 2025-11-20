@@ -37,6 +37,16 @@ const (
 	LifecycleSpot     = "spot"
 )
 
+// Tenancy constants for EC2 instance and Savings Plans tenancy types.
+// EC2 API uses "default", "dedicated", "host".
+// Savings Plans API uses "shared", "dedicated", "host".
+const (
+	TenancyDefault   = "default"   // EC2: Shared hardware (most common, ~99% of instances)
+	TenancyDedicated = "dedicated" // Both: Dedicated instance
+	TenancyHost      = "host"      // Both: Dedicated host
+	TenancyShared    = "shared"    // Savings Plans: Shared/default tenancy
+)
+
 // AccountConfig represents configuration for accessing an AWS account.
 // Supports both direct credentials and AssumeRole-based access.
 type AccountConfig struct {
