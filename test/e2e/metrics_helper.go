@@ -272,4 +272,3 @@ func (r *ResourceClient) GetEvents(ctx context.Context) (*corev1.EventList, erro
 func (r *ResourceClient) GetDeployment(ctx context.Context, name string) (*appsv1.Deployment, error) {
 	return r.clientset.AppsV1().Deployments(r.namespace).Get(ctx, name, metav1.GetOptions{})
 }
-
