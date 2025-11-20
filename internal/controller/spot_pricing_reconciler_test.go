@@ -99,12 +99,11 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_FirstRun(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (first run should fetch all prices)
@@ -175,12 +174,11 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_SteadyState(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (should do 0 API calls since all prices cached)
@@ -266,12 +264,11 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_NewInstanceType(t *testing.
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (should only fetch c5.xlarge price)
@@ -316,12 +313,11 @@ func TestSpotPricingReconciler_Reconcile_NoInstances(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation with no instances
@@ -354,12 +350,11 @@ func TestSpotPricingReconciler_Reconcile_WaitsForEC2Cache(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation in goroutine (will block on EC2ReadyChan)
@@ -415,12 +410,11 @@ func TestSpotPricingReconciler_Reconcile_CustomInterval(t *testing.T) {
 				SpotPricing: "30s", // Custom interval
 			},
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation
@@ -454,12 +448,11 @@ func TestSpotPricingReconciler_Reconcile_InvalidInterval(t *testing.T) {
 				SpotPricing: "invalid-duration",
 			},
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation with invalid interval
@@ -492,13 +485,12 @@ func TestSpotPricingReconciler_Reconcile_ReadyChanClosed(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
-		ReadyChan:           readyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
+		ReadyChan:    readyChan,
 	}
 
 	// Verify: ReadyChan is NOT closed yet
@@ -569,12 +561,11 @@ func TestSpotPricingReconciler_Reconcile_EC2ClientError(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (should handle EC2 client error gracefully)
@@ -629,12 +620,11 @@ func TestSpotPricingReconciler_Reconcile_SpotPriceAPIError(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (should handle API error gracefully)
@@ -714,12 +704,11 @@ func TestSpotPricingReconciler_Reconcile_CustomCacheExpiration(t *testing.T) {
 				SpotPriceCacheExpiration: "5m", // Custom: 5 minutes (less than 10 minutes)
 			},
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (should refresh because price is >5 minutes old)
@@ -800,12 +789,11 @@ func TestSpotPricingReconciler_Reconcile_InvalidCacheExpiration(t *testing.T) {
 				SpotPriceCacheExpiration: "invalid-duration", // INVALID
 			},
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation (should use default 1h and refresh the stale price)
@@ -839,12 +827,11 @@ func TestSpotPricingReconciler_Reconcile_ContextCancelled(t *testing.T) {
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Create a cancelled context
@@ -937,12 +924,11 @@ func TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion(t *testing.T
 			},
 			DefaultRegion: "us-west-2",
 		},
-		EC2Cache:            ec2Cache,
-		Cache:               pricingCache,
-		Metrics:             m,
-		Log:                 logr.Discard(),
-		ProductDescriptions: []string{"Linux/UNIX"},
-		EC2ReadyChan:        ec2ReadyChan,
+		EC2Cache:     ec2Cache,
+		Cache:        pricingCache,
+		Metrics:      m,
+		Log:          logr.Discard(),
+		EC2ReadyChan: ec2ReadyChan,
 	}
 
 	// Test: Run reconciliation

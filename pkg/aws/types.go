@@ -31,6 +31,15 @@ const (
 	PlatformWindows = "windows"
 )
 
+// ProductDescription constants for AWS spot pricing and Reserved Instance queries.
+// These are the values expected by AWS DescribeSpotPriceHistory and DescribeReservedInstances APIs.
+const (
+	ProductDescriptionLinuxUnix = "Linux/UNIX"
+	ProductDescriptionWindows   = "Windows"
+	ProductDescriptionSUSE      = "SUSE Linux"
+	ProductDescriptionRHEL      = "Red Hat Enterprise Linux"
+)
+
 // Lifecycle constants for EC2 instance types.
 const (
 	LifecycleOnDemand = "on-demand"

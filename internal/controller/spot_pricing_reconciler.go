@@ -74,11 +74,6 @@ type SpotPricingReconciler struct {
 	// Logger
 	Log logr.Logger
 
-	// ProductDescriptions to query (operating systems)
-	// Default: ["Linux/UNIX"]
-	// Options: ["Linux/UNIX", "Windows", "SUSE Linux", "Red Hat Enterprise Linux"]
-	ProductDescriptions []string
-
 	// EC2ReadyChan is used to wait for EC2 cache to be populated before
 	// starting reconciliation. This ensures we have instance data to determine
 	// which spot prices to fetch.
@@ -244,12 +239,13 @@ func (r *SpotPricingReconciler) getUniqueInstanceTypesAndAvailabilityZones() ([]
 }
 
 // SpotPriceCombination represents a missing spot price that needs to be fetched.
-// We track the account and region to efficiently group API queries.
+// We track the account, region, and platform to efficiently group API queries.
 type SpotPriceCombination struct {
 	InstanceType     string
 	AvailabilityZone string
 	AccountID        string
 	Region           string
+	Platform         string // Operating system platform (e.g., "linux", "windows")
 }
 
 // findMissingSpotPrices checks the cache for missing or stale spot prices.
@@ -338,14 +334,15 @@ func (r *SpotPricingReconciler) findMissingSpotPrices(
 			}
 
 			if needsRefresh {
-				// Determine which AWS account+region this AZ belongs to
-				// We need this to create the correct EC2 client for the API call
-				accountID, region := r.getAccountAndRegionForAZ(az)
+				// Determine which AWS account+region+platform this AZ+instance combo belongs to
+				// We need this to create the correct EC2 client and product descriptions for the API call
+				accountID, region, platform := r.getMetadataForInstanceType(instanceType, az)
 				missing = append(missing, SpotPriceCombination{
 					InstanceType:     instanceType,
 					AvailabilityZone: az,
 					AccountID:        accountID,
 					Region:           region,
+					Platform:         platform,
 				})
 			}
 		}
@@ -354,19 +351,61 @@ func (r *SpotPricingReconciler) findMissingSpotPrices(
 	return missing
 }
 
-// getAccountAndRegionForAZ determines which AWS account and region an availability zone belongs to.
-// Returns the first account that has instances in this AZ.
+// getMetadataForInstanceType determines the account, region, and platform for a specific
+// instance type + AZ combination by looking at running instances in EC2Cache.
+// Returns (accountID, region, platform) for the first matching instance.
 //
-// Note: This assumes AZs are uniquely named within an organization (which is true in practice).
-func (r *SpotPricingReconciler) getAccountAndRegionForAZ(az string) (string, string) {
+// The platform field is used to determine which ProductDescriptions to query from AWS:
+// - Platform "" or aws.PlatformLinux → aws.ProductDescriptionLinuxUnix
+// - Platform aws.PlatformWindows → aws.ProductDescriptionWindows
+//
+// Note: This assumes that within a given AZ, the same instance type will have the same
+// platform (which is true in practice - you can't have both Linux and Windows m5.xlarge
+// instances in the same AZ with different spot prices).
+func (r *SpotPricingReconciler) getMetadataForInstanceType(instanceType, az string) (string, string, string) {
 	instances := r.EC2Cache.GetAllInstances()
 	for _, inst := range instances {
-		if inst.AvailabilityZone == az {
-			return inst.AccountID, inst.Region
+		if inst.InstanceType == instanceType && inst.AvailabilityZone == az {
+			return inst.AccountID, inst.Region, inst.Platform
 		}
 	}
 	// Fallback (should never happen if EC2Cache is populated correctly)
-	return r.Config.AWSAccounts[0].AccountID, r.Config.DefaultRegion
+	// Default to Linux since it's the most common platform (~99% of instances)
+	return r.Config.AWSAccounts[0].AccountID, r.Config.DefaultRegion, "linux"
+}
+
+// platformToProductDescription converts an EC2 Platform value to an AWS Spot Price ProductDescription.
+// This mapping is used when querying AWS DescribeSpotPriceHistory API.
+//
+// EC2 Platform values (from aws.Instance.Platform):
+//   - "" (empty)  → aws.ProductDescriptionLinuxUnix (default for non-Windows instances)
+//   - "linux"     → aws.ProductDescriptionLinuxUnix
+//   - "windows"   → aws.ProductDescriptionWindows
+//
+// AWS ProductDescription values (for DescribeSpotPriceHistory):
+//   - aws.ProductDescriptionLinuxUnix - Most common (~99% of spot instances)
+//   - aws.ProductDescriptionWindows   - Windows-based instances
+//   - aws.ProductDescriptionSUSE      - SUSE-specific (rarely used, not supported here)
+//   - aws.ProductDescriptionRHEL      - RHEL-specific (rarely used, not supported here)
+//
+// Note: We only support Linux/UNIX and Windows as these cover >99% of use cases.
+// SUSE and RHEL instances still return spot prices under "Linux/UNIX" ProductDescription.
+func platformToProductDescription(platform string) string {
+	normalized := strings.ToLower(strings.TrimSpace(platform))
+
+	// Empty string or "linux" → aws.ProductDescriptionLinuxUnix
+	if normalized == "" || normalized == aws.PlatformLinux {
+		return aws.ProductDescriptionLinuxUnix
+	}
+
+	// "windows" → aws.ProductDescriptionWindows
+	if normalized == aws.PlatformWindows {
+		return aws.ProductDescriptionWindows
+	}
+
+	// Default to Linux/UNIX for any unrecognized values
+	// This is safe because AWS returns spot prices for RHEL/SUSE under "Linux/UNIX"
+	return aws.ProductDescriptionLinuxUnix
 }
 
 // fetchMissingSpotPrices queries AWS for missing spot prices.
@@ -413,7 +452,7 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 		go func(accountID, region string, combos []SpotPriceCombination) {
 			defer wg.Done()
 
-			// Extract unique instance types and product descriptions for this query
+			// Extract unique instance types from combinations
 			instanceTypeSet := make(map[string]bool)
 			for _, combo := range combos {
 				instanceTypeSet[combo.InstanceType] = true
@@ -423,10 +462,20 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 				instanceTypes = append(instanceTypes, it)
 			}
 
-			// Determine product descriptions
-			productDescriptions := r.ProductDescriptions
+			// Extract unique platforms and convert to ProductDescriptions for AWS API
+			// This allows us to query spot prices for the actual OS types running in the cluster,
+			// rather than querying for all possible OS types.
+			platformSet := make(map[string]bool)
+			for _, combo := range combos {
+				platformSet[combo.Platform] = true
+			}
+			productDescriptions := make([]string, 0, len(platformSet))
+			for platform := range platformSet {
+				productDescriptions = append(productDescriptions, platformToProductDescription(platform))
+			}
+			// Ensure at least one ProductDescription (default to Linux/UNIX if none found)
 			if len(productDescriptions) == 0 {
-				productDescriptions = []string{"Linux/UNIX"}
+				productDescriptions = []string{aws.ProductDescriptionLinuxUnix}
 			}
 
 			// Find account config
