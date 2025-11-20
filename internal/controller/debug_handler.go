@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nextdoor/lumina/internal/cache"
 )
@@ -93,6 +94,7 @@ func (h *DebugHandler) handleEC2(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	instances := h.EC2Cache.GetAllInstances()
+	lastUpdate := h.EC2Cache.GetLastUpdateTime()
 
 	// Group by region for easier inspection
 	byRegion := make(map[string][]interface{})
@@ -110,6 +112,8 @@ func (h *DebugHandler) handleEC2(w http.ResponseWriter, _ *http.Request) {
 
 	response := map[string]interface{}{
 		"total_count": len(instances),
+		"last_update": lastUpdate,
+		"age_seconds": time.Since(lastUpdate).Seconds(),
 		"by_region":   byRegion,
 	}
 
@@ -125,8 +129,11 @@ func (h *DebugHandler) handleRISP(w http.ResponseWriter, _ *http.Request) {
 
 	ris := h.RISPCache.GetAllReservedInstances()
 	sps := h.RISPCache.GetAllSavingsPlans()
+	stats := h.RISPCache.GetStats()
 
 	response := map[string]interface{}{
+		"last_update": stats.LastUpdate,
+		"age_seconds": time.Since(stats.LastUpdate).Seconds(),
 		"reserved_instances": map[string]interface{}{
 			"count": len(ris),
 			"items": ris,
@@ -148,9 +155,12 @@ func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, _ *http.Requ
 	}
 
 	prices := h.PricingCache.GetAllOnDemandPrices()
+	stats := h.PricingCache.GetStats()
 
 	response := map[string]interface{}{
 		"total_count": len(prices),
+		"last_update": stats.LastUpdated,
+		"age_seconds": time.Since(stats.LastUpdated).Seconds(),
 		"prices":      prices,
 	}
 
@@ -188,6 +198,7 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 
 	spArn := r.URL.Query().Get("sp")
 	allRates := h.PricingCache.GetAllSPRates()
+	stats := h.PricingCache.GetSPRateStats()
 
 	if spArn != "" {
 		// Filter rates by SP ARN
@@ -202,6 +213,8 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 		response := map[string]interface{}{
 			"sp_arn":      spArn,
 			"total_count": len(filteredRates),
+			"last_update": stats.LastUpdated,
+			"age_seconds": time.Since(stats.LastUpdated).Seconds(),
 			"rates":       filteredRates,
 		}
 		_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
@@ -237,6 +250,8 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"total_rates": len(allRates),
 		"sp_count":    len(bySpArn),
+		"last_update": stats.LastUpdated,
+		"age_seconds": time.Since(stats.LastUpdated).Seconds(),
 		"by_sp_arn":   bySpArn,
 		"key_format":  "spArn,instanceType,region,tenancy,os (comma-separated)",
 	}
