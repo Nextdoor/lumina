@@ -175,7 +175,7 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 		newCount := r.Cache.InsertSpotPrices(newPrices)
 		log.Info("updated spot pricing cache",
 			"total_prices_fetched", len(newPrices),
-			"newly_added", newCount,
+			"new_prices", newCount,
 			"refreshed", len(newPrices)-newCount,
 			"duration_seconds", time.Since(startTime).Seconds())
 	}
