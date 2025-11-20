@@ -154,7 +154,7 @@ var _ = Describe("Spot Pricing Reconciler", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve metrics")
 
 				// Verify data_freshness metric for spot-pricing exists
-				g.Expect(metricsOutput).To(MatchRegexp(`data_freshness\{.*data_type="spot-pricing"`),
+				g.Expect(metricsOutput).To(MatchRegexp(`lumina_data_freshness_seconds\{.*data_type="spot-pricing"`),
 					"data_freshness metric for spot-pricing should be present")
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
@@ -168,7 +168,7 @@ var _ = Describe("Spot Pricing Reconciler", Ordered, func() {
 			currentTime := time.Now().Unix()
 
 			for _, line := range lines {
-				if strings.Contains(line, "data_freshness") && strings.Contains(line, `data_type="spot-pricing"`) {
+				if strings.Contains(line, "lumina_data_freshness_seconds") && strings.Contains(line, `data_type="spot-pricing"`) {
 					parts := strings.Fields(line)
 					if len(parts) >= 2 {
 						var timestamp float64
@@ -192,7 +192,7 @@ var _ = Describe("Spot Pricing Reconciler", Ordered, func() {
 			Eventually(func(g Gomega) {
 				metricsOutput, err := getMetricsOutput()
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(metricsOutput).To(MatchRegexp(`data_last_success\{.*data_type="spot-pricing"`),
+				g.Expect(metricsOutput).To(MatchRegexp(`lumina_data_last_success\{.*data_type="spot-pricing"`),
 					"data_last_success metric for spot-pricing should be present")
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
@@ -205,7 +205,7 @@ var _ = Describe("Spot Pricing Reconciler", Ordered, func() {
 			foundSuccess := false
 
 			for _, line := range lines {
-				if strings.Contains(line, "data_last_success") && strings.Contains(line, `data_type="spot-pricing"`) {
+				if strings.Contains(line, "lumina_data_last_success") && strings.Contains(line, `data_type="spot-pricing"`) {
 					parts := strings.Fields(line)
 					if len(parts) >= 2 {
 						// Value should be 1 (success)

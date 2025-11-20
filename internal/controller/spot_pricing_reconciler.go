@@ -17,6 +17,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,6 +128,11 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 	// If no instances are running, we don't need any spot prices
 	if len(instanceTypes) == 0 {
 		log.V(1).Info("no instances found in EC2Cache, skipping spot pricing query")
+
+		// Record metrics even when no instances - reconciliation succeeded, no data to fetch
+		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
+		r.Metrics.DataFreshness.WithLabelValues("", "", "spot-pricing").Set(float64(time.Now().Unix()))
+
 		// Signal ready on first cycle even with no instances
 		r.readyOnce.Do(func() {
 			if r.ReadyChan != nil {
@@ -147,6 +153,11 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 	// If all prices are cached, we're done (0 API calls!)
 	if len(missingCombinations) == 0 {
 		log.V(1).Info("all spot prices are cached, no queries needed (0 API calls)")
+
+		// Record metrics even when all cached - reconciliation succeeded, cache is fresh
+		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
+		r.Metrics.DataFreshness.WithLabelValues("", "", "spot-pricing").Set(float64(time.Now().Unix()))
+
 		r.readyOnce.Do(func() {
 			if r.ReadyChan != nil {
 				close(r.ReadyChan)
@@ -164,11 +175,13 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 	// Group by account+region for efficient querying
 	newPrices, fetchErrors := r.fetchMissingSpotPrices(ctx, missingCombinations)
 
-	// Update cache with new prices
+	// Insert/update cache with new prices (merges with existing prices)
 	if len(newPrices) > 0 {
-		r.Cache.SetSpotPrices(newPrices)
+		newCount := r.Cache.InsertSpotPrices(newPrices)
 		log.Info("updated spot pricing cache",
-			"new_prices", len(newPrices),
+			"total_prices_fetched", len(newPrices),
+			"newly_added", newCount,
+			"refreshed", len(newPrices)-newCount,
 			"duration_seconds", time.Since(startTime).Seconds())
 	}
 
@@ -239,24 +252,94 @@ type SpotPriceCombination struct {
 	Region           string
 }
 
-// findMissingSpotPrices checks the cache for missing spot prices.
+// findMissingSpotPrices checks the cache for missing or stale spot prices.
 // Returns combinations that need to be fetched from AWS.
 //
-// This implements lazy-loading: we only fetch prices that aren't already cached.
+// This method implements the core lazy-loading + automatic refresh logic for spot prices:
+//
+//  1. LAZY-LOADING: Only checks prices for instance types that are actually running
+//     (determined by instanceTypes/availabilityZones from EC2Cache)
+//
+//  2. AUTOMATIC REFRESH: Checks FetchedAt timestamps to determine if cached prices are stale
+//     Staleness threshold comes from Config.Pricing.SpotPriceCacheExpiration (default: 1h)
+//
+// WHY STALENESS MATTERS:
+// AWS spot prices change hourly. If we used stale prices (e.g., from yesterday),
+// cost calculations would be inaccurate. By checking FetchedAt and refreshing stale
+// prices, we ensure cost metrics always reflect current spot market conditions.
+//
+// PERFORMANCE OPTIMIZATION:
+// In steady-state (no new instance types, prices not stale), this returns an empty list,
+// meaning 0 AWS API calls. This is why we can run reconciliation every 15 seconds -
+// most cycles complete instantly by checking local cache timestamps.
+//
+// Returns:
+//   - []SpotPriceCombination: List of instance type + AZ combinations that need fetching
+//   - Empty slice if all prices are cached and fresh
 func (r *SpotPricingReconciler) findMissingSpotPrices(
 	instanceTypes []string,
 	availabilityZones []string,
 ) []SpotPriceCombination {
 	var missing []SpotPriceCombination
 
-	// Check each combination of instance type + AZ
+	// Get all spot prices with full SpotPrice structs (includes FetchedAt timestamps)
+	// We need timestamps to determine staleness, not just the price values
+	allPricesWithTimestamps := r.Cache.GetAllSpotPricesWithTimestamps()
+
+	// Parse staleness threshold from config, with 1 hour default
+	// This is configurable because different users may have different accuracy requirements:
+	// - Tight budget → shorter expiration (more accurate, more API calls)
+	// - Loose budget → longer expiration (less accurate, fewer API calls)
+	staleThreshold := 1 * time.Hour // Default: matches AWS's hourly spot price updates
+	if r.Config.Pricing.SpotPriceCacheExpiration != "" {
+		if duration, err := time.ParseDuration(r.Config.Pricing.SpotPriceCacheExpiration); err == nil {
+			staleThreshold = duration
+		} else {
+			// Invalid duration in config (e.g., "foo" or "1zz") - log and use default
+			// We continue with default rather than failing to ensure reconciliation proceeds
+			r.Log.V(1).Info("invalid spot price cache expiration in config, using default",
+				"configured", r.Config.Pricing.SpotPriceCacheExpiration,
+				"default", "1h",
+				"error", err.Error())
+		}
+	}
+
+	// Check each combination of instance type + AZ against cache
+	// This is a cartesian product: if 10 instance types × 3 AZs = 30 combinations to check
 	for _, instanceType := range instanceTypes {
 		for _, az := range availabilityZones {
-			// Check if this price is already cached
-			_, exists := r.Cache.GetSpotPrice(instanceType, az)
+			// Build cache key (case-insensitive)
+			// Cache keys are lowercase: "m5.xlarge:us-west-2a"
+			key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, az))
+
+			// Check if price exists in cache and if it's stale
+			spotPrice, exists := allPricesWithTimestamps[key]
+			needsRefresh := false
+
 			if !exists {
-				// Determine which account+region this AZ belongs to
-				// We need this to route the API query correctly
+				// Price doesn't exist in cache - need to fetch from AWS
+				// This happens when:
+				// - First reconciliation (empty cache)
+				// - New instance type launched (lazy-loading)
+				needsRefresh = true
+			} else {
+				// Price exists - check if it's stale based on FetchedAt timestamp
+				// FetchedAt is when WE fetched it (not when AWS recorded it)
+				age := time.Since(spotPrice.FetchedAt)
+				if age > staleThreshold {
+					needsRefresh = true
+					// Log at V(2) because this is expected behavior (prices expire hourly)
+					r.Log.V(2).Info("spot price is stale, will refresh",
+						"instance_type", instanceType,
+						"az", az,
+						"age_hours", age.Hours(),
+						"threshold_hours", staleThreshold.Hours())
+				}
+			}
+
+			if needsRefresh {
+				// Determine which AWS account+region this AZ belongs to
+				// We need this to create the correct EC2 client for the API call
 				accountID, region := r.getAccountAndRegionForAZ(az)
 				missing = append(missing, SpotPriceCombination{
 					InstanceType:     instanceType,

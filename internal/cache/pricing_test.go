@@ -997,7 +997,7 @@ func TestNormalizeOS_EdgeCases(t *testing.T) {
 }
 
 // spotPriceMapFromFloats is a test helper that converts a map of instance:az -> price
-// into a map of instance:az -> aws.SpotPrice struct with current timestamp.
+// into a map of instance:az -> aws.SpotPrice struct with current timestamps.
 func spotPriceMapFromFloats(prices map[string]float64) map[string]aws.SpotPrice {
 	spotPrices := make(map[string]aws.SpotPrice, len(prices))
 	now := time.Now()
@@ -1016,7 +1016,8 @@ func spotPriceMapFromFloats(prices map[string]float64) map[string]aws.SpotPrice 
 			InstanceType:       instanceType,
 			AvailabilityZone:   az,
 			SpotPrice:          price,
-			Timestamp:          now,
+			Timestamp:          now, // When AWS recorded the price
+			FetchedAt:          now, // When we fetched it
 			ProductDescription: "Linux/UNIX",
 		}
 	}
@@ -1043,7 +1044,7 @@ func TestGetSetSpotPrice(t *testing.T) {
 		"c5.2xlarge:us-west-2b": 0.068,
 		"m5.xlarge:us-east-1a":  0.0521,
 	}
-	cache.SetSpotPrices(spotPriceMapFromFloats(priceMap))
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
 
 	// Verify cache is populated
 	if !cache.SpotIsPopulated() {
@@ -1086,7 +1087,7 @@ func TestGetAllSpotPrices(t *testing.T) {
 		"m5.xlarge:us-west-2a":  0.0537,
 		"c5.2xlarge:us-west-2b": 0.068,
 	}
-	cache.SetSpotPrices(spotPriceMapFromFloats(priceMap))
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
 
 	allPrices := cache.GetAllSpotPrices()
 	if len(allPrices) != 2 {
@@ -1110,7 +1111,7 @@ func TestSpotIsPopulated(t *testing.T) {
 	}
 
 	// Populate cache
-	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"m5.xlarge:us-west-2a": 0.0537,
 	}))
 
@@ -1134,7 +1135,7 @@ func TestSpotStats(t *testing.T) {
 	}
 
 	// Populate cache
-	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"m5.xlarge:us-west-2a":  0.0537,
 		"c5.2xlarge:us-west-2b": 0.068,
 		"m5.xlarge:us-east-1a":  0.0521,
@@ -1160,7 +1161,7 @@ func TestSpotPriceCaseInsensitive(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Set prices with mixed case
-	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"M5.Xlarge:US-WEST-2A": 0.0537,
 	}))
 
@@ -1183,12 +1184,12 @@ func TestSpotPriceCaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestSetSpotPrices_EmptyMap tests setting empty spot prices map.
-func TestSetSpotPrices_EmptyMap(t *testing.T) {
+// TestInsertSpotPrices_EmptyMap tests that inserting an empty map doesn't affect existing prices.
+func TestInsertSpotPrices_EmptyMap(t *testing.T) {
 	cache := NewPricingCache()
 
 	// Populate first
-	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
 		"m5.xlarge:us-west-2a": 0.0537,
 	}))
 
@@ -1196,17 +1197,21 @@ func TestSetSpotPrices_EmptyMap(t *testing.T) {
 		t.Error("cache should be populated")
 	}
 
-	// Set empty map
-	cache.SetSpotPrices(spotPriceMapFromFloats(map[string]float64{}))
+	// Insert empty map (should not clear cache - InsertSpotPrices merges, doesn't replace)
+	newCount := cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{}))
 
-	// Cache should no longer be populated
-	if cache.SpotIsPopulated() {
-		t.Error("cache should not be populated after setting empty map")
+	// Cache should still be populated with original price
+	if !cache.SpotIsPopulated() {
+		t.Error("cache should still be populated after inserting empty map")
+	}
+
+	if newCount != 0 {
+		t.Errorf("expected 0 new prices from empty insert, got %d", newCount)
 	}
 
 	stats := cache.GetSpotStats()
-	if stats.SpotPriceCount != 0 {
-		t.Errorf("expected 0 prices, got %d", stats.SpotPriceCount)
+	if stats.SpotPriceCount != 1 {
+		t.Errorf("expected 1 price (original), got %d", stats.SpotPriceCount)
 	}
 }
 
@@ -1226,13 +1231,130 @@ func TestSpotPriceNotification(t *testing.T) {
 	priceMap := map[string]float64{
 		"m5.xlarge:us-west-2a": 0.0537,
 	}
-	cache.SetSpotPrices(spotPriceMapFromFloats(priceMap))
+	cache.InsertSpotPrices(spotPriceMapFromFloats(priceMap))
 
 	// Wait for notification (with timeout)
 	select {
 	case <-notified:
 		// Success
 	case <-time.After(100 * time.Millisecond):
-		t.Error("expected notifier to be called after SetSpotPrices")
+		t.Error("expected notifier to be called after InsertSpotPrices")
+	}
+}
+
+// TestInsertSpotPrices_Merge tests that InsertSpotPrices merges with existing prices.
+func TestInsertSpotPrices_Merge(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Insert initial prices
+	initial := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+	}
+	newCount := cache.InsertSpotPrices(spotPriceMapFromFloats(initial))
+	if newCount != 2 {
+		t.Errorf("expected 2 new prices, got %d", newCount)
+	}
+
+	// Insert more prices (some new, some updates)
+	additional := map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0540, // Update existing
+		"r5.large:us-west-2a":  0.0300, // New
+	}
+	newCount = cache.InsertSpotPrices(spotPriceMapFromFloats(additional))
+	if newCount != 1 {
+		t.Errorf("expected 1 new price, got %d", newCount)
+	}
+
+	// Verify all 3 prices exist
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 3 {
+		t.Errorf("expected 3 total prices, got %d", stats.SpotPriceCount)
+	}
+
+	// Verify the updated price
+	price, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	if !exists {
+		t.Error("expected updated price to exist")
+	}
+	if price != 0.0540 {
+		t.Errorf("expected updated price 0.0540, got %.4f", price)
+	}
+
+	// Verify the original price that wasn't updated
+	price, exists = cache.GetSpotPrice("c5.2xlarge", "us-west-2b")
+	if !exists {
+		t.Error("expected original price to still exist")
+	}
+	if price != 0.068 {
+		t.Errorf("expected original price 0.068, got %.4f", price)
+	}
+}
+
+// TestDeleteSpotPrice tests removing spot prices from the cache.
+func TestDeleteSpotPrice(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Populate cache
+	prices := map[string]float64{
+		"m5.xlarge:us-west-2a":  0.0537,
+		"c5.2xlarge:us-west-2b": 0.068,
+		"r5.large:us-east-1a":   0.0300,
+	}
+	cache.InsertSpotPrices(spotPriceMapFromFloats(prices))
+
+	// Delete existing price
+	deleted := cache.DeleteSpotPrice("m5.xlarge", "us-west-2a")
+	if !deleted {
+		t.Error("expected delete to return true for existing price")
+	}
+
+	// Verify it's gone
+	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	if exists {
+		t.Error("expected price to be deleted")
+	}
+
+	// Verify other prices still exist
+	stats := cache.GetSpotStats()
+	if stats.SpotPriceCount != 2 {
+		t.Errorf("expected 2 remaining prices, got %d", stats.SpotPriceCount)
+	}
+
+	// Try to delete non-existent price
+	deleted = cache.DeleteSpotPrice("t3.micro", "us-west-1a")
+	if deleted {
+		t.Error("expected delete to return false for non-existent price")
+	}
+
+	// Delete all remaining prices
+	cache.DeleteSpotPrice("c5.2xlarge", "us-west-2b")
+	cache.DeleteSpotPrice("r5.large", "us-east-1a")
+
+	// Cache should no longer be populated
+	if cache.SpotIsPopulated() {
+		t.Error("cache should not be populated after deleting all prices")
+	}
+}
+
+// TestDeleteSpotPrice_CaseInsensitive tests case-insensitive deletion.
+func TestDeleteSpotPrice_CaseInsensitive(t *testing.T) {
+	cache := NewPricingCache()
+
+	// Insert with lowercase
+	cache.InsertSpotPrices(spotPriceMapFromFloats(map[string]float64{
+		"m5.xlarge:us-west-2a": 0.0537,
+	}))
+
+	// Delete with different casing
+	deleted := cache.DeleteSpotPrice("M5.XLARGE", "US-WEST-2A")
+	if !deleted {
+		t.Error("expected case-insensitive delete to work")
+	}
+
+	// Verify it's gone
+	_, exists := cache.GetSpotPrice("m5.xlarge", "us-west-2a")
+	if exists {
+		t.Error("expected price to be deleted")
 	}
 }

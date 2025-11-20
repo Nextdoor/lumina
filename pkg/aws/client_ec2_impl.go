@@ -225,6 +225,7 @@ func (c *RealEC2Client) DescribeSpotPriceHistory(
 			}
 
 			// Convert AWS SDK types to our types
+			fetchTime := time.Now() // Record when we fetched this data
 			for _, price := range output.SpotPriceHistory {
 				// Parse spot price string to float64
 				priceFloat, err := strconv.ParseFloat(aws.ToString(price.SpotPrice), 64)
@@ -237,7 +238,8 @@ func (c *RealEC2Client) DescribeSpotPriceHistory(
 					InstanceType:       string(price.InstanceType),
 					AvailabilityZone:   aws.ToString(price.AvailabilityZone),
 					SpotPrice:          priceFloat,
-					Timestamp:          aws.ToTime(price.Timestamp),
+					Timestamp:          aws.ToTime(price.Timestamp), // When AWS recorded the price
+					FetchedAt:          fetchTime,                   // When we retrieved it
 					ProductDescription: string(price.ProductDescription),
 				})
 			}

@@ -137,6 +137,20 @@ type PricingConfig struct {
 	//   - [] - Empty list defaults to ["Linux", "Windows"]
 	OperatingSystems []string `yaml:"operatingSystems,omitempty"`
 
+	// SpotPriceCacheExpiration is how long cached spot prices remain valid before being refreshed.
+	// Format: Go duration string (e.g., "1h", "30m", "2h")
+	// Default: 1h
+	// Recommended: 1h - AWS spot prices change hourly, so refreshing cached prices after 1 hour
+	// ensures we always have reasonably current data without excessive API calls.
+	//
+	// This works in conjunction with reconciliation.spotPricing:
+	//   - reconciliation.spotPricing: How often to CHECK for stale prices (default: 15s)
+	//   - spotPriceCacheExpiration: How old prices must be before considered stale (default: 1h)
+	//
+	// Example: With spotPriceCacheExpiration=1h and reconciliation.spotPricing=15s,
+	// the reconciler checks every 15 seconds for prices older than 1 hour and refreshes them.
+	SpotPriceCacheExpiration string `yaml:"spotPriceCacheExpiration,omitempty"`
+
 	// DefaultDiscounts specifies fallback discount multipliers to use when actual
 	// Savings Plan rates are not available from the DescribeSavingsPlanRates API.
 	// These are MULTIPLIERS representing what you PAY (not discount percentage).
@@ -272,6 +286,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("accountValidationInterval", "10m")
 	v.SetDefault("reconciliation.risp", "1h")
 	v.SetDefault("reconciliation.ec2", "5m")
+	v.SetDefault("reconciliation.spotPricing", "15s")
+	v.SetDefault("pricing.spotPriceCacheExpiration", "1h")
 	// Cost reconciliation is event-driven (no default interval needed)
 
 	// Set default Savings Plan rate multipliers (1-year, typical)
@@ -399,7 +415,19 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid Pricing reconciliation interval %q: %w", c.Reconciliation.Pricing, err)
 		}
 	}
+	if c.Reconciliation.SpotPricing != "" {
+		if _, err := time.ParseDuration(c.Reconciliation.SpotPricing); err != nil {
+			return fmt.Errorf("invalid SpotPricing reconciliation interval %q: %w", c.Reconciliation.SpotPricing, err)
+		}
+	}
 	// Cost reconciliation is event-driven (no interval validation needed)
+
+	// Validate spot price cache expiration
+	if c.Pricing.SpotPriceCacheExpiration != "" {
+		if _, err := time.ParseDuration(c.Pricing.SpotPriceCacheExpiration); err != nil {
+			return fmt.Errorf("invalid spot price cache expiration %q: %w", c.Pricing.SpotPriceCacheExpiration, err)
+		}
+	}
 
 	// Validate pricing configuration
 	if len(c.Pricing.OperatingSystems) > 0 {

@@ -157,6 +157,71 @@ curl "http://localhost:8080/debug/cache/pricing/sp?sp=arn:aws:savingsplans::1234
 
 ---
 
+### Spot Pricing Cache
+
+```bash
+GET /debug/cache/pricing/spot
+```
+
+Lists all spot prices currently in cache, showing real-time AWS spot market rates.
+
+**Response includes:**
+- Total spot prices cached
+- Spot prices grouped by availability zone
+  - Each price shows: instance type, spot price ($/hour), AWS timestamp, fetched timestamp
+- Cache age and populated status
+
+**Example:**
+```bash
+curl http://localhost:8080/debug/cache/pricing/spot | jq
+```
+
+**Response format:**
+```json
+{
+  "total_count": 150,
+  "stats": {
+    "is_populated": true,
+    "spot_price_count": 150,
+    "cache_last_updated": "2025-01-20T10:35:12Z",
+    "cache_age_seconds": 298.5
+  },
+  "prices": [
+    {
+      "key": "m5.large:us-west-2a",
+      "price": 0.034,
+      "age": 120.3
+    },
+    {
+      "key": "c5.xlarge:us-west-2b",
+      "price": 0.068,
+      "age": 89.7
+    }
+  ]
+}
+```
+
+**Fields explained:**
+- `key`: Cache key format "instanceType:availabilityZone"
+- `price`: Current spot price in $/hour
+- `age`: Age of this specific price in seconds (time since fetched from AWS)
+
+**Use cases:**
+- Verify spot price data is being collected
+- Check spot market rates for specific instance types
+- Debug spot instance cost calculations
+- Monitor spot price cache freshness
+- Compare on-demand vs spot pricing
+
+**Key concepts:**
+- **Lazy-loading**: Only fetches prices for instance types that are actually running
+- **Automatic refresh**: Stale prices (older than `spotPriceCacheExpiration` config) are automatically refreshed
+- **Per-AZ pricing**: Spot prices vary by availability zone, not just region
+- **FetchedAt timestamp**: Shows when Lumina retrieved the price from AWS (for staleness detection)
+- **AWS Timestamp**: Shows when AWS recorded the price change
+
+---
+
 ### Savings Plan Rate Lookup
 
 ```bash
@@ -221,7 +286,9 @@ Returns high-level statistics about all caches.
 - **Pricing cache**:
   - On-demand price count
   - SP rate count
+  - Spot price count
   - Cache age (hours since last update)
+  - Is populated status for each pricing type
 
 **Example:**
 ```bash
@@ -313,6 +380,43 @@ curl http://localhost:8080/debug/cache/stats | jq
    ```bash
    curl "http://localhost:8080/debug/cache/pricing/sp/lookup?instance_type=m5.xlarge&region=us-west-2&tenancy=default&sp=<arn>" | jq
    ```
+
+### Spot Pricing Missing or Stale
+
+**Problem**: Spot instances showing $0 cost or using outdated spot prices.
+
+**Debug steps:**
+1. Check if spot prices are cached:
+   ```bash
+   curl http://localhost:8080/debug/cache/stats | jq '.pricing.spot'
+   ```
+
+2. Verify spot price exists for specific instance type and AZ:
+   ```bash
+   curl http://localhost:8080/debug/cache/pricing/spot | jq '.prices[] | select(.key=="m5.large:us-west-2a")'
+   ```
+
+3. Check cache age and staleness:
+   ```bash
+   curl http://localhost:8080/debug/cache/pricing/spot | jq '.stats'
+   ```
+
+4. If prices are stale (age > `spotPriceCacheExpiration` config):
+   - Wait 15 seconds (default reconciliation interval)
+   - Reconciler should detect stale prices and refresh them automatically
+   - Check again to confirm refresh
+
+5. If prices still missing after 15 seconds:
+   - Check that instance type is in EC2 cache (lazy-loading only fetches prices for running instances):
+     ```bash
+     curl http://localhost:8080/debug/cache/ec2 | jq '.. | select(.instance_type? == "m5.large")'
+     ```
+
+**Expected behavior:**
+- Spot prices refresh automatically when older than `spotPriceCacheExpiration` (default: 1h)
+- Reconciler checks every `reconciliation.spotPricing` interval (default: 15s)
+- Only prices for running instance types are fetched (lazy-loading)
+- In steady-state, 0 AWS API calls (all prices cached and fresh)
 
 ---
 

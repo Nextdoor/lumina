@@ -178,18 +178,14 @@ func (h *DebugHandler) handlePricingSpot(w http.ResponseWriter, _ *http.Request)
 	pricesWithTimestamps := h.PricingCache.GetAllSpotPricesWithTimestamps()
 	stats := h.PricingCache.GetSpotStats()
 
-	// Convert to a more readable format for the debug endpoint
-	// Each price includes its individual timestamp
-	prices := make(map[string]interface{}, len(pricesWithTimestamps))
+	// Convert to simple list format showing cache staleness
+	prices := make([]map[string]interface{}, 0, len(pricesWithTimestamps))
 	for key, sp := range pricesWithTimestamps {
-		prices[key] = map[string]interface{}{
-			"price":               sp.SpotPrice,
-			"timestamp":           sp.Timestamp,
-			"age_seconds":         time.Since(sp.Timestamp).Seconds(),
-			"availability_zone":   sp.AvailabilityZone,
-			"instance_type":       sp.InstanceType,
-			"product_description": sp.ProductDescription,
-		}
+		prices = append(prices, map[string]interface{}{
+			"key":   key,
+			"price": sp.SpotPrice,
+			"age":   time.Since(sp.FetchedAt).Seconds(),
+		})
 	}
 
 	response := map[string]interface{}{

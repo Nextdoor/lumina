@@ -208,8 +208,12 @@ type SpotPrice struct {
 	// SpotPrice is the current hourly spot price in USD
 	SpotPrice float64
 
-	// Timestamp is when this price was observed
+	// Timestamp is when AWS recorded this price change (from AWS API)
 	Timestamp time.Time
+
+	// FetchedAt is when we retrieved this data from AWS
+	// This is used to determine cache staleness
+	FetchedAt time.Time
 
 	// ProductDescription is the OS type (e.g., "Linux/UNIX")
 	ProductDescription string

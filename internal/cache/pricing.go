@@ -573,28 +573,86 @@ func (c *PricingCache) GetSpotPrice(instanceType, availabilityZone string) (floa
 	return spotPrice.SpotPrice, true
 }
 
-// SetSpotPrices replaces all spot pricing data in the cache.
+// InsertSpotPrices adds or updates spot prices in the cache without removing existing prices.
 // This is typically called by the spot pricing reconciler after querying AWS spot price history.
 //
 // The input map should use keys in the format "instanceType:availabilityZone".
-// Example: "m5.xlarge:us-west-2a" → aws.SpotPrice{SpotPrice: 0.0537, Timestamp: ...}
+// Example: "m5.xlarge:us-west-2a" → aws.SpotPrice{SpotPrice: 0.0537, Timestamp: ..., FetchedAt: ...}
 // All keys are normalized to lowercase for case-insensitive lookups.
 //
-// Each SpotPrice struct includes its own timestamp indicating when that specific price was observed.
-func (c *PricingCache) SetSpotPrices(prices map[string]aws.SpotPrice) {
+// This method merges new prices with existing ones - it does not replace the entire cache.
+// To remove prices, use DeleteSpotPrice.
+//
+// Returns the number of prices that were newly added (not counting updates to existing prices).
+func (c *PricingCache) InsertSpotPrices(prices map[string]aws.SpotPrice) int {
 	c.Lock() // From BaseCache
-	// Normalize all keys to lowercase for consistent lookups
-	normalizedPrices := make(map[string]aws.SpotPrice, len(prices))
-	for key, price := range prices {
-		normalizedPrices[strings.ToLower(key)] = price
+
+	// Initialize cache if it doesn't exist yet
+	if c.spotPrices == nil {
+		c.spotPrices = make(map[string]aws.SpotPrice)
 	}
-	c.spotPrices = normalizedPrices
-	c.spotIsPopulated = len(prices) > 0
+
+	// Track how many are new vs updates
+	newCount := 0
+
+	// Insert/update each price
+	for key, price := range prices {
+		normalizedKey := strings.ToLower(key)
+		if _, exists := c.spotPrices[normalizedKey]; !exists {
+			newCount++
+		}
+		c.spotPrices[normalizedKey] = price
+	}
+
+	c.spotIsPopulated = len(c.spotPrices) > 0
 	c.spotLastUpdated = time.Now()
 	c.Unlock()
 
 	// Notify subscribers AFTER releasing the write lock to prevent deadlock
 	c.NotifyUpdate() // From BaseCache
+
+	return newCount
+}
+
+// DeleteSpotPrice removes a spot price from the cache by its key.
+// This is typically called when a spot price becomes permanently unavailable
+// (e.g., instance type retired, availability zone no longer exists).
+//
+// The method takes separate instanceType and availabilityZone parameters
+// and constructs the cache key internally in the format "instanceType:availabilityZone".
+// Example: DeleteSpotPrice("m5.xlarge", "us-west-2a") removes key "m5.xlarge:us-west-2a"
+//
+// Lookup is case-insensitive - DeleteSpotPrice("M5.XLARGE", "US-WEST-2A") will find
+// and delete a price stored as "m5.xlarge:us-west-2a".
+//
+// Returns:
+//   - true: Price was found and successfully deleted from cache
+//   - false: Price was not in cache (no-op)
+//
+// Thread-safety: This method uses write locks to prevent concurrent modification.
+func (c *PricingCache) DeleteSpotPrice(instanceType, availabilityZone string) bool {
+	c.Lock() // From BaseCache - exclusive write access
+	defer c.Unlock()
+
+	// Build normalized key (case-insensitive) from components
+	// Format: "instanceType:availabilityZone" all lowercase
+	// Example: "m5.xlarge:us-west-2a"
+	key := strings.ToLower(fmt.Sprintf("%s:%s", instanceType, availabilityZone))
+
+	// Check if price exists before attempting deletion
+	if _, exists := c.spotPrices[key]; exists {
+		// Remove from cache
+		delete(c.spotPrices, key)
+
+		// Update populated flag - cache is no longer populated if we deleted the last price
+		// This flag is used by SpotIsPopulated() to indicate if cache has any data
+		c.spotIsPopulated = len(c.spotPrices) > 0
+
+		return true
+	}
+
+	// Price didn't exist - nothing to delete
+	return false
 }
 
 // GetAllSpotPrices returns a copy of all spot prices (price values only, without timestamps).

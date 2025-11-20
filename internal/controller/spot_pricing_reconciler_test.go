@@ -145,7 +145,7 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_SteadyState(t *testing.T) {
 
 	// Setup: Create pricing cache PRE-POPULATED with spot prices
 	pricingCache := cache.NewPricingCache()
-	pricingCache.SetSpotPrices(map[string]aws.SpotPrice{
+	pricingCache.InsertSpotPrices(map[string]aws.SpotPrice{
 		"m5.large:us-west-2a": {
 			InstanceType:       "m5.large",
 			AvailabilityZone:   "us-west-2a",
@@ -221,7 +221,7 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_NewInstanceType(t *testing.
 
 	// Setup: Create pricing cache with ONLY m5.large price (c5.xlarge is missing)
 	pricingCache := cache.NewPricingCache()
-	pricingCache.SetSpotPrices(map[string]aws.SpotPrice{
+	pricingCache.InsertSpotPrices(map[string]aws.SpotPrice{
 		"m5.large:us-west-2a": {
 			InstanceType:       "m5.large",
 			AvailabilityZone:   "us-west-2a",
@@ -279,9 +279,14 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_NewInstanceType(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, 15*time.Second, result.RequeueAfter)
 
-	// Verify: Cache now has BOTH prices
+	// Verify: Cache now has BOTH prices (InsertSpotPrices merges, doesn't replace)
 	stats := pricingCache.GetSpotStats()
-	assert.Equal(t, 1, stats.SpotPriceCount, "should have 1 spot price (c5.xlarge added)")
+	assert.Equal(t, 2, stats.SpotPriceCount, "should have 2 spot prices (m5.large + c5.xlarge)")
+
+	// Verify: Original price still exists
+	price1, exists1 := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	require.True(t, exists1, "should have m5.large price")
+	assert.Equal(t, 0.034, price1)
 
 	// Verify: New price was added
 	price2, exists2 := pricingCache.GetSpotPrice("c5.xlarge", "us-west-2a")
@@ -640,6 +645,178 @@ func TestSpotPricingReconciler_Reconcile_SpotPriceAPIError(t *testing.T) {
 	// Verify: Cache is still empty (no prices fetched due to error)
 	stats := pricingCache.GetSpotStats()
 	assert.Equal(t, 0, stats.SpotPriceCount)
+}
+
+// TestSpotPricingReconciler_Reconcile_CustomCacheExpiration tests that custom cache expiration is used.
+func TestSpotPricingReconciler_Reconcile_CustomCacheExpiration(t *testing.T) {
+	// Setup: Create EC2Cache with running instance
+	ec2Cache := cache.NewEC2Cache()
+	ec2Cache.SetInstances("123456789012", "us-west-2", []aws.Instance{
+		{
+			InstanceID:       "i-001",
+			InstanceType:     "m5.large",
+			AvailabilityZone: "us-west-2a",
+			Region:           "us-west-2",
+			AccountID:        "123456789012",
+			State:            "running",
+		},
+	})
+
+	// Setup: Create pricing cache with spot price that's 10 minutes old
+	pricingCache := cache.NewPricingCache()
+	tenMinutesAgo := time.Now().Add(-10 * time.Minute)
+	pricingCache.InsertSpotPrices(map[string]aws.SpotPrice{
+		"m5.large:us-west-2a": {
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.034,
+			Timestamp:          tenMinutesAgo,
+			FetchedAt:          tenMinutesAgo, // 10 minutes old
+			ProductDescription: "Linux/UNIX",
+		},
+	})
+
+	// Setup: Create mock client with updated spot price
+	mockClient := aws.NewMockClient()
+	ctx := context.Background()
+	ec2Client, err := mockClient.EC2(ctx, aws.AccountConfig{
+		AccountID: "123456789012",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	mockEC2 := ec2Client.(*aws.MockEC2Client)
+	mockEC2.SpotPrices = []aws.SpotPrice{
+		{
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.040, // Price changed
+			Timestamp:          time.Now(),
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+	ec2ReadyChan := make(chan struct{})
+	close(ec2ReadyChan)
+
+	// Setup: Create reconciler with custom cache expiration (5 minutes)
+	reconciler := &SpotPricingReconciler{
+		AWSClient: mockClient,
+		Config: &config.Config{
+			AWSAccounts: []config.AWSAccount{
+				{
+					AccountID: "123456789012",
+					Name:      "test-account",
+				},
+			},
+			DefaultRegion: "us-west-2",
+			Pricing: config.PricingConfig{
+				SpotPriceCacheExpiration: "5m", // Custom: 5 minutes (less than 10 minutes)
+			},
+		},
+		EC2Cache:            ec2Cache,
+		Cache:               pricingCache,
+		Metrics:             m,
+		Log:                 logr.Discard(),
+		ProductDescriptions: []string{"Linux/UNIX"},
+		EC2ReadyChan:        ec2ReadyChan,
+	}
+
+	// Test: Run reconciliation (should refresh because price is >5 minutes old)
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+	require.NoError(t, err)
+	assert.Equal(t, 15*time.Second, result.RequeueAfter)
+
+	// Verify: Price was refreshed (updated to new value)
+	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	require.True(t, exists)
+	assert.Equal(t, 0.040, price, "price should be updated to new value")
+}
+
+// TestSpotPricingReconciler_Reconcile_InvalidCacheExpiration tests handling of invalid cache expiration.
+func TestSpotPricingReconciler_Reconcile_InvalidCacheExpiration(t *testing.T) {
+	// Setup: Create EC2Cache with running instance
+	ec2Cache := cache.NewEC2Cache()
+	ec2Cache.SetInstances("123456789012", "us-west-2", []aws.Instance{
+		{
+			InstanceID:       "i-001",
+			InstanceType:     "m5.large",
+			AvailabilityZone: "us-west-2a",
+			Region:           "us-west-2",
+			AccountID:        "123456789012",
+			State:            "running",
+		},
+	})
+
+	// Setup: Create pricing cache with spot price that's 90 minutes old
+	pricingCache := cache.NewPricingCache()
+	ninetyMinutesAgo := time.Now().Add(-90 * time.Minute)
+	pricingCache.InsertSpotPrices(map[string]aws.SpotPrice{
+		"m5.large:us-west-2a": {
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.034,
+			Timestamp:          ninetyMinutesAgo,
+			FetchedAt:          ninetyMinutesAgo, // 90 minutes old
+			ProductDescription: "Linux/UNIX",
+		},
+	})
+
+	// Setup: Create mock client
+	mockClient := aws.NewMockClient()
+	ctx := context.Background()
+	ec2Client, err := mockClient.EC2(ctx, aws.AccountConfig{
+		AccountID: "123456789012",
+		Region:    "us-west-2",
+	})
+	require.NoError(t, err)
+	mockEC2 := ec2Client.(*aws.MockEC2Client)
+	mockEC2.SpotPrices = []aws.SpotPrice{
+		{
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.040,
+			Timestamp:          time.Now(),
+			ProductDescription: "Linux/UNIX",
+		},
+	}
+
+	m := metrics.NewMetrics(prometheus.NewRegistry())
+	ec2ReadyChan := make(chan struct{})
+	close(ec2ReadyChan)
+
+	// Setup: Create reconciler with INVALID cache expiration
+	reconciler := &SpotPricingReconciler{
+		AWSClient: mockClient,
+		Config: &config.Config{
+			AWSAccounts: []config.AWSAccount{
+				{
+					AccountID: "123456789012",
+					Name:      "test-account",
+				},
+			},
+			DefaultRegion: "us-west-2",
+			Pricing: config.PricingConfig{
+				SpotPriceCacheExpiration: "invalid-duration", // INVALID
+			},
+		},
+		EC2Cache:            ec2Cache,
+		Cache:               pricingCache,
+		Metrics:             m,
+		Log:                 logr.Discard(),
+		ProductDescriptions: []string{"Linux/UNIX"},
+		EC2ReadyChan:        ec2ReadyChan,
+	}
+
+	// Test: Run reconciliation (should use default 1h and refresh the stale price)
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{})
+	require.NoError(t, err)
+	assert.Equal(t, 15*time.Second, result.RequeueAfter)
+
+	// Verify: Price was refreshed (because 90m > default 1h threshold)
+	price, exists := pricingCache.GetSpotPrice("m5.large", "us-west-2a")
+	require.True(t, exists)
+	assert.Equal(t, 0.040, price, "price should be updated despite invalid config")
 }
 
 // TestSpotPricingReconciler_Reconcile_ContextCancelled tests that reconciliation stops when context is cancelled.

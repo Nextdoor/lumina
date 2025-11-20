@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // MockClient is a mock implementation of the Client interface for testing.
@@ -279,6 +280,13 @@ func (m *MockEC2Client) DescribeSpotPriceHistory(
 			}
 		}
 		filtered = pdFiltered
+	}
+
+	// Set FetchedAt to current time for all returned prices
+	// This simulates the behavior of the real AWS client
+	fetchTime := time.Now()
+	for i := range filtered {
+		filtered[i].FetchedAt = fetchTime
 	}
 
 	return filtered, nil
