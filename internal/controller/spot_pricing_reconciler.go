@@ -50,7 +50,8 @@ import (
 // Spot pricing characteristics:
 //   - Changes frequently (hourly price updates from AWS)
 //   - Per availability zone (not just per region)
-//   - Requires EC2 API credentials per account
+//   - Same across all accounts in the same AZ (region-specific, not account-specific)
+//   - Requires EC2 API credentials to query, but we only query once per region
 //   - API call: DescribeSpotPriceHistory (EC2 API, not Pricing API)
 type SpotPricingReconciler struct {
 	// AWS client for making API calls
@@ -298,9 +299,9 @@ func (r *SpotPricingReconciler) fetchMissingSpotPrices(
 	// Group missing combinations by region only (spot prices are region-specific, not account-specific).
 	// We pick the first account we see for each region to make the API call.
 	type regionQuery struct {
-		accountID     string
-		region        string
-		combinations  []SpotPriceCombination
+		accountID    string
+		region       string
+		combinations []SpotPriceCombination
 	}
 	queries := make(map[string]*regionQuery) // key: region
 
