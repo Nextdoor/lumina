@@ -845,6 +845,100 @@ func TestSpotPricingReconciler_Reconcile_ContextCancelled(t *testing.T) {
 	assert.Equal(t, ctrl.Result{}, result)
 }
 
+// TestFindMissingSpotPrices_ShouldNotRefreshFreshCachedPrices tests the bug where fresh
+// cached spot prices are incorrectly marked for refresh. This reproduces the production
+// issue where 692 prices are continuously refetched every 15 seconds with "refreshed: 692"
+// despite being cached and fresh (age < 10 minutes).
+//
+// BUG: Currently this test FAILS because findMissingSpotPrices() incorrectly marks fresh
+// cached prices as needing refresh, causing unnecessary AWS API calls.
+func TestFindMissingSpotPrices_ShouldNotRefreshFreshCachedPrices(t *testing.T) {
+	// Setup: Create EC2Cache with running instances
+	ec2Cache := cache.NewEC2Cache()
+	ec2Cache.SetInstances("123456789012", "us-west-2", []aws.Instance{
+		{
+			InstanceID:       "i-001",
+			InstanceType:     "m5.large",
+			AvailabilityZone: "us-west-2a",
+			Region:           "us-west-2",
+			AccountID:        "123456789012",
+			Platform:         "linux",
+			State:            "running",
+		},
+		{
+			InstanceID:       "i-002",
+			InstanceType:     "c5.xlarge",
+			AvailabilityZone: "us-west-2b",
+			Region:           "us-west-2",
+			AccountID:        "123456789012",
+			Platform:         "linux",
+			State:            "running",
+		},
+	})
+
+	// Setup: Create pricing cache with fresh spot prices (1 minute old < 10 minute threshold)
+	pricingCache := cache.NewPricingCache()
+	oneMinuteAgo := time.Now().Add(-1 * time.Minute)
+	pricingCache.InsertSpotPrices(map[string]aws.SpotPrice{
+		"m5.large:us-west-2a:linux/unix": {
+			InstanceType:       "m5.large",
+			AvailabilityZone:   "us-west-2a",
+			SpotPrice:          0.034,
+			Timestamp:          oneMinuteAgo,
+			FetchedAt:          oneMinuteAgo, // Fresh: 1 minute old
+			ProductDescription: "Linux/UNIX",
+		},
+		"c5.xlarge:us-west-2b:linux/unix": {
+			InstanceType:       "c5.xlarge",
+			AvailabilityZone:   "us-west-2b",
+			SpotPrice:          0.068,
+			Timestamp:          oneMinuteAgo,
+			FetchedAt:          oneMinuteAgo, // Fresh: 1 minute old
+			ProductDescription: "Linux/UNIX",
+		},
+	})
+
+	// Setup: Create reconciler with 10-minute cache expiration (like production)
+	reconciler := &SpotPricingReconciler{
+		Config: &config.Config{
+			AWSAccounts: []config.AWSAccount{
+				{
+					AccountID: "123456789012",
+					Name:      "test-account",
+				},
+			},
+			DefaultRegion: "us-west-2",
+			Pricing: config.PricingConfig{
+				SpotPriceCacheExpiration: "10m", // Same as production
+			},
+		},
+		EC2Cache: ec2Cache,
+		Cache:    pricingCache,
+		Log:      logr.Discard(),
+	}
+
+	// Test: Call findMissingSpotPrices with same instance types and AZs as cached
+	instanceTypes := []string{"m5.large", "c5.xlarge"}
+	availabilityZones := []string{"us-west-2a", "us-west-2b"}
+
+	missing := reconciler.findMissingSpotPrices(instanceTypes, availabilityZones)
+
+	// Verify: Should return EMPTY list (no prices need refresh - they're fresh!)
+	// BUG: Currently returns non-empty list marking fresh prices for refresh
+	assert.Empty(t, missing,
+		"findMissingSpotPrices should return empty list for fresh cached prices (age=1m < threshold=10m), "+
+			"but returned %d combinations marked for refresh. This causes unnecessary AWS API calls "+
+			"every 15 seconds in production.", len(missing))
+
+	// Additional verification: Check that cached prices are actually fresh
+	allPrices := pricingCache.GetAllSpotPricesWithTimestamps()
+	for key, price := range allPrices {
+		age := time.Since(price.FetchedAt)
+		assert.Less(t, age, 10*time.Minute,
+			"cached price %s should be fresh (age=%v < 10m)", key, age)
+	}
+}
+
 // TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion tests that when multiple
 // accounts have instances in the same region, we only make ONE API call per region (not per account).
 // This is correct because spot prices are region-specific, not account-specific.
