@@ -286,8 +286,8 @@ var _ = Describe("Spot Pricing Reconciler", Ordered, func() {
 
 				// If spot prices were fetched, cache should be updated
 				if strings.Contains(output, "updated spot pricing cache") {
-					// Verify new_prices count is mentioned
-					g.Expect(output).To(MatchRegexp(`new_prices":\d+`),
+					// Verify new_prices count is mentioned (JSON has space after colon)
+					g.Expect(output).To(MatchRegexp(`new_prices":\s*\d+`),
 						"Cache update should include new_prices count")
 				}
 			}, 40*time.Second, 2*time.Second).Should(Succeed())
