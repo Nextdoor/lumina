@@ -81,6 +81,7 @@ func initializeReconcilers(
 	rispCache *cache.RISPCache,
 	ec2Cache *cache.EC2Cache,
 	pricingCache *cache.PricingCache,
+	nodeCache *cache.NodeCache,
 	luminaMetrics *metrics.Metrics,
 	costCalculator *cost.Calculator,
 ) *reconcilers {
@@ -161,6 +162,7 @@ func initializeReconcilers(
 			EC2Cache:             ec2Cache,
 			RISPCache:            rispCache,
 			PricingCache:         pricingCache,
+			NodeCache:            nodeCache,
 			Metrics:              luminaMetrics,
 			Log:                  ctrl.Log.WithName("cost-reconciler"),
 			PricingReadyChan:     pricingReadyCh,
@@ -245,7 +247,8 @@ func runStandalone(
 
 	// Initialize all reconcilers using the helper function
 	// This reduces code duplication between standalone and Kubernetes modes
-	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, luminaMetrics, costCalculator)
+	// Pass nil for nodeCache in standalone mode (no Kubernetes nodes to correlate)
+	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, nil, luminaMetrics, costCalculator)
 
 	// Start reconcilers in background goroutines
 	ctx := ctrl.SetupSignalHandler()
@@ -671,7 +674,9 @@ func main() {
 
 	// Initialize all reconcilers using the helper function
 	// This reduces code duplication between standalone and Kubernetes modes
-	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, luminaMetrics, costCalculator)
+	recs := initializeReconcilers(
+		awsClient, cfg, rispCache, ec2Cache, pricingCache, nodeCache, luminaMetrics, costCalculator,
+	)
 
 	// Start timer-based reconcilers as background goroutines
 	// These don't benefit from controller-runtime's event-driven machinery

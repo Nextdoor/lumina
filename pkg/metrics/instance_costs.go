@@ -21,6 +21,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// NodeCacheReader provides read-only access to the NodeCache for metrics emission.
+// This interface allows metrics to look up node names without coupling to the full cache.
+type NodeCacheReader interface {
+	// GetNodeName returns the Kubernetes node name for a given EC2 instance ID.
+	// Returns (nodeName, true) if found, ("", false) if not found.
+	GetNodeName(instanceID string) (string, bool)
+}
+
 // UpdateInstanceCostMetrics updates all cost-related metrics based on calculation results.
 // This function is called by the CostReconciler after each cost calculation cycle (every 5 minutes).
 //
@@ -35,17 +43,21 @@ import (
 //   - savings_plan_remaining_capacity: Unused SP capacity ($/hour)
 //   - savings_plan_utilization_percent: SP utilization percentage (0-100+)
 //
+// Phase 8 enhancement: If nodeCache is non-nil, adds node_name label to instance cost metrics.
+// This enables filtering costs by Kubernetes node, node pool, or other node attributes.
+//
 // These metrics enable:
 //   - Per-instance cost tracking and chargeback
 //   - Real-time Savings Plans utilization monitoring
 //   - Alerting on under/over-utilized SPs
 //   - Cost optimization opportunities identification
+//   - Node-level cost visibility (when nodeCache provided)
 //
 // Example usage:
 //
 //	result := calculator.Calculate(input)
-//	metrics.UpdateInstanceCostMetrics(result)
-func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult) {
+//	metrics.UpdateInstanceCostMetrics(result, nodeCache)
+func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeCache NodeCacheReader) {
 	// Reset all existing cost metrics to ensure terminated instances and expired SPs are removed.
 	// This is more reliable than trying to track which specific resources changed.
 	m.EC2InstanceHourlyCost.Reset()
@@ -58,6 +70,15 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult) {
 		// Normalize coverage type for metrics label
 		// Convert CoverageType constants to string representation
 		costType := string(ic.CoverageType)
+
+		// Look up Kubernetes node name for this instance (Phase 8)
+		// If nodeCache is nil or instance not found, use empty string
+		nodeName := ""
+		if nodeCache != nil {
+			if name, exists := nodeCache.GetNodeName(ic.InstanceID); exists {
+				nodeName = name
+			}
+		}
 
 		// Always export EffectiveCost - this represents what the instance actually pays.
 		//
@@ -79,6 +100,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult) {
 			"availability_zone": ic.AvailabilityZone,
 			"lifecycle":         ic.Lifecycle,
 			"pricing_accuracy":  string(ic.PricingAccuracy),
+			"node_name":         nodeName,
 		}).Set(ic.EffectiveCost)
 	}
 
