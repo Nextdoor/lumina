@@ -20,7 +20,6 @@
 package cache
 
 import (
-	"sync"
 	"time"
 
 	"github.com/nextdoor/lumina/pkg/aws"
@@ -29,8 +28,11 @@ import (
 // RISPCache stores Reserved Instances and Savings Plans data with thread-safe access.
 // Data is updated atomically on each refresh cycle. If a refresh fails, old data
 // is retained to allow graceful degradation.
+//
+// RISPCache embeds BaseCache to provide common infrastructure (thread-safety,
+// notifications, timestamps). This eliminates ~50 lines of boilerplate code.
 type RISPCache struct {
-	mu sync.RWMutex
+	BaseCache // Provides: Lock/RLock, RegisterUpdateNotifier, NotifyUpdate, MarkUpdated, GetLastUpdate, etc.
 
 	// Reserved Instances indexed by region then account ID
 	// Structure: map[region]map[accountID][]ReservedInstance
@@ -42,32 +44,25 @@ type RISPCache struct {
 	savingsPlans map[string][]aws.SavingsPlan
 
 	// Freshness tracking per account/region
+	// This is domain-specific (tracks per-account/region updates) vs BaseCache's global lastUpdate
 	freshness map[string]time.Time
-
-	// Last successful update time
-	lastUpdate time.Time
-
-	// notifiers are callbacks invoked after cache updates
-	// Separate mutex to prevent deadlock during notification
-	notifyMu  sync.RWMutex
-	notifiers []UpdateNotifier
 }
 
 // NewRISPCache creates a new empty RI/SP cache.
 func NewRISPCache() *RISPCache {
 	return &RISPCache{
+		BaseCache:         NewBaseCache(),
 		reservedInstances: make(map[string]map[string][]aws.ReservedInstance),
 		savingsPlans:      make(map[string][]aws.SavingsPlan),
 		freshness:         make(map[string]time.Time),
-		lastUpdate:        time.Time{}, // Zero time indicates never updated
 	}
 }
 
 // UpdateReservedInstances atomically replaces all RI data for a region/account.
 // This should be called after successfully querying AWS APIs.
 func (c *RISPCache) UpdateReservedInstances(region, accountID string, ris []aws.ReservedInstance) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock() // From BaseCache
+	defer c.Unlock()
 
 	// Initialize region map if needed
 	if c.reservedInstances[region] == nil {
@@ -78,61 +73,43 @@ func (c *RISPCache) UpdateReservedInstances(region, accountID string, ris []aws.
 	c.reservedInstances[region][accountID] = ris
 
 	// Update freshness
-	key := region + ":" + accountID + ":ri"
+	key := BuildKey(":", region, accountID, "ri")
 	c.freshness[key] = time.Now()
-	c.lastUpdate = time.Now()
+	c.MarkUpdated() // From BaseCache
 
 	// Notify subscribers after releasing the write lock
-	c.notifyUpdate()
+	c.NotifyUpdate() // From BaseCache
 }
 
 // UpdateSavingsPlans atomically replaces all SP data for an account.
 // This should be called after successfully querying AWS APIs.
 func (c *RISPCache) UpdateSavingsPlans(accountID string, sps []aws.SavingsPlan) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock() // From BaseCache
+	defer c.Unlock()
 
 	// Replace data for this account
 	c.savingsPlans[accountID] = sps
 
 	// Update freshness
-	key := accountID + ":sp"
+	key := BuildKey(":", accountID, "sp")
 	c.freshness[key] = time.Now()
-	c.lastUpdate = time.Now()
+	c.MarkUpdated() // From BaseCache
 
 	// Notify subscribers after releasing the write lock
-	c.notifyUpdate()
+	c.NotifyUpdate() // From BaseCache
 }
 
-// RegisterUpdateNotifier adds a callback to be invoked when cache data changes.
+// RegisterUpdateNotifier is inherited from BaseCache.
 // Multiple notifiers can be registered. Callbacks are invoked in separate goroutines
 // to prevent blocking cache operations.
 //
 // This is typically used to trigger cost recalculation when RI/SP data changes.
-func (c *RISPCache) RegisterUpdateNotifier(fn UpdateNotifier) {
-	c.notifyMu.Lock()
-	defer c.notifyMu.Unlock()
-	c.notifiers = append(c.notifiers, fn)
-}
-
-// notifyUpdate invokes all registered notifiers in separate goroutines.
-// This method should be called after cache modifications, outside of the main mutex lock.
-func (c *RISPCache) notifyUpdate() {
-	c.notifyMu.RLock()
-	defer c.notifyMu.RUnlock()
-
-	for _, fn := range c.notifiers {
-		// Run in goroutine to prevent blocking cache operations
-		// This means notifiers must be thread-safe
-		go fn()
-	}
-}
 
 // GetReservedInstances returns all RIs for a specific region/account.
 // Returns empty slice if no data exists (never returns nil).
 func (c *RISPCache) GetReservedInstances(region, accountID string) []aws.ReservedInstance {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	if regionMap, ok := c.reservedInstances[region]; ok {
 		if ris, ok := regionMap[accountID]; ok {
@@ -149,8 +126,8 @@ func (c *RISPCache) GetReservedInstances(region, accountID string) []aws.Reserve
 // GetAllReservedInstances returns all RIs across all regions and accounts.
 // Returns empty slice if no data exists.
 func (c *RISPCache) GetAllReservedInstances() []aws.ReservedInstance {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	var all []aws.ReservedInstance
 	for _, regionMap := range c.reservedInstances {
@@ -165,8 +142,8 @@ func (c *RISPCache) GetAllReservedInstances() []aws.ReservedInstance {
 // GetSavingsPlans returns all SPs for a specific account.
 // Returns empty slice if no data exists (never returns nil).
 func (c *RISPCache) GetSavingsPlans(accountID string) []aws.SavingsPlan {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	if sps, ok := c.savingsPlans[accountID]; ok {
 		// Return a copy to prevent external modification
@@ -181,8 +158,8 @@ func (c *RISPCache) GetSavingsPlans(accountID string) []aws.SavingsPlan {
 // GetAllSavingsPlans returns all SPs across all accounts.
 // Returns empty slice if no data exists.
 func (c *RISPCache) GetAllSavingsPlans() []aws.SavingsPlan {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	var all []aws.SavingsPlan
 	for _, sps := range c.savingsPlans {
@@ -194,9 +171,10 @@ func (c *RISPCache) GetAllSavingsPlans() []aws.SavingsPlan {
 
 // GetFreshness returns the last update time for a specific data type.
 // Returns zero time if never updated.
+// This is domain-specific freshness tracking (per-account/region) vs BaseCache's global timestamp.
 func (c *RISPCache) GetFreshness(key string) time.Time {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	if t, ok := c.freshness[key]; ok {
 		return t
@@ -205,19 +183,13 @@ func (c *RISPCache) GetFreshness(key string) time.Time {
 	return time.Time{}
 }
 
-// GetLastUpdate returns the timestamp of the last successful update.
-// Returns zero time if never updated.
-func (c *RISPCache) GetLastUpdate() time.Time {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.lastUpdate
-}
+// GetLastUpdate is inherited from BaseCache and returns the global last update timestamp.
+// For per-account/region freshness, use GetFreshness instead.
 
 // GetStats returns cache statistics for monitoring.
 func (c *RISPCache) GetStats() CacheStats {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock() // From BaseCache
+	defer c.RUnlock()
 
 	riCount := 0
 	for _, regionMap := range c.reservedInstances {
@@ -234,7 +206,7 @@ func (c *RISPCache) GetStats() CacheStats {
 	return CacheStats{
 		ReservedInstanceCount: riCount,
 		SavingsPlanCount:      spCount,
-		LastUpdate:            c.lastUpdate,
+		LastUpdate:            c.GetLastUpdate(), // From BaseCache
 		RegionCount:           len(c.reservedInstances),
 		AccountCount:          len(c.savingsPlans),
 	}
