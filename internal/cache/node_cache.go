@@ -19,7 +19,6 @@ package cache
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -29,8 +28,12 @@ import (
 // cost metrics to include node-level information.
 //
 // Thread-safety: All public methods use read/write locks for safe concurrent access.
+//
+// NodeCache embeds BaseCache to provide common infrastructure (thread-safety,
+// notifications, timestamps). This eliminates boilerplate code and enables
+// event-driven cost calculation when nodes are correlated.
 type NodeCache struct {
-	mu sync.RWMutex
+	BaseCache // Provides: Lock/RLock, RegisterUpdateNotifier, NotifyUpdate, MarkUpdated, GetLastUpdate, etc.
 
 	// instanceIDToNodeName maps EC2 instance ID → K8s node name
 	// Example: "i-abc123def456" → "ip-10-0-1-42.ec2.internal"
@@ -68,8 +71,8 @@ func (c *NodeCache) UpsertNode(node *corev1.Node) (instanceID string, err error)
 		return "", fmt.Errorf("failed to parse providerID for node %s: %w", node.Name, err)
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock()
+	defer c.Unlock()
 
 	// Store mapping: instance ID → node name
 	c.instanceIDToNodeName[instanceID] = node.Name
@@ -77,13 +80,17 @@ func (c *NodeCache) UpsertNode(node *corev1.Node) (instanceID string, err error)
 	// Store full node object
 	c.nodes[node.Name] = node.DeepCopy()
 
+	// Mark cache as updated and notify registered callbacks
+	c.MarkUpdated()
+	c.NotifyUpdate()
+
 	return instanceID, nil
 }
 
 // DeleteNode removes a node from the cache by name.
 func (c *NodeCache) DeleteNode(nodeName string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock()
+	defer c.Unlock()
 
 	// Find and remove instance ID → node name mapping
 	for instanceID, name := range c.instanceIDToNodeName {
@@ -95,13 +102,17 @@ func (c *NodeCache) DeleteNode(nodeName string) {
 
 	// Remove node object
 	delete(c.nodes, nodeName)
+
+	// Mark cache as updated and notify registered callbacks
+	c.MarkUpdated()
+	c.NotifyUpdate()
 }
 
 // GetNodeName returns the Kubernetes node name for a given EC2 instance ID.
 // Returns (nodeName, true) if found, ("", false) if not found.
 func (c *NodeCache) GetNodeName(instanceID string) (string, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock()
+	defer c.RUnlock()
 
 	nodeName, exists := c.instanceIDToNodeName[instanceID]
 	return nodeName, exists
@@ -110,8 +121,8 @@ func (c *NodeCache) GetNodeName(instanceID string) (string, bool) {
 // GetNode returns a copy of the node object by name.
 // Returns (node, true) if found, (nil, false) if not found.
 func (c *NodeCache) GetNode(nodeName string) (*corev1.Node, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock()
+	defer c.RUnlock()
 
 	node, exists := c.nodes[nodeName]
 	if !exists {
@@ -123,16 +134,16 @@ func (c *NodeCache) GetNode(nodeName string) (*corev1.Node, bool) {
 
 // GetNodeCount returns the number of nodes currently in the cache.
 func (c *NodeCache) GetNodeCount() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock()
+	defer c.RUnlock()
 
 	return len(c.nodes)
 }
 
 // GetCorrelatedInstanceCount returns the number of EC2 instances mapped to nodes.
 func (c *NodeCache) GetCorrelatedInstanceCount() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.RLock()
+	defer c.RUnlock()
 
 	return len(c.instanceIDToNodeName)
 }
@@ -140,8 +151,8 @@ func (c *NodeCache) GetCorrelatedInstanceCount() int {
 // Clear removes all nodes from the cache.
 // This is primarily useful for testing.
 func (c *NodeCache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Lock()
+	defer c.Unlock()
 
 	c.instanceIDToNodeName = make(map[string]string)
 	c.nodes = make(map[string]*corev1.Node)

@@ -740,6 +740,7 @@ func main() {
 	ec2Cache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	rispCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	nodeCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
 	if err := recs.Cost.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cost")

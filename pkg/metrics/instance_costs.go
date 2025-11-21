@@ -72,7 +72,12 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 		costType := string(ic.CoverageType)
 
 		// Look up Kubernetes node name for this instance (Phase 8)
-		// If nodeCache is nil or instance not found, use empty string
+		// If nodeCache is nil or instance not found, use empty string.
+		// Empty node_name indicates the instance is not correlated to a Kubernetes node,
+		// which can happen when:
+		//   - Running in standalone mode (no Kubernetes cluster)
+		//   - Instance is not part of the Kubernetes cluster
+		//   - Node correlation hasn't completed yet during startup
 		nodeName := ""
 		if nodeCache != nil {
 			if name, exists := nodeCache.GetNodeName(ic.InstanceID); exists {
@@ -91,6 +96,9 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 		//
 		// The difference represents on-demand spillover from partially covered instances
 		// and is real cost that should be visible in metrics.
+		//
+		// Note: Prometheus requires consistent label cardinality, so node_name must always
+		// be present even if empty. Use node_name!="" in PromQL to filter to correlated instances.
 		m.EC2InstanceHourlyCost.With(prometheus.Labels{
 			"instance_id":       ic.InstanceID,
 			"account_id":        ic.AccountID,

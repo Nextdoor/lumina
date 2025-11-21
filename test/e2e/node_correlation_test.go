@@ -20,19 +20,19 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/nextdoor/lumina/test/utils"
 )
 
 var _ = Describe("Node Correlation", Ordered, func() {
@@ -41,7 +41,6 @@ var _ = Describe("Node Correlation", Ordered, func() {
 		cancel          context.CancelFunc
 		testNodeNames   []string
 		testInstanceIDs []string
-		ec2Client       *ec2.Client
 		resourceClient  *ResourceClient
 		controllerPodName string
 	)
@@ -60,52 +59,45 @@ var _ = Describe("Node Correlation", Ordered, func() {
 		Expect(podList.Items).NotTo(BeEmpty())
 		controllerPodName = podList.Items[0].Name
 
-		By("creating AWS SDK client for LocalStack")
-		// Create AWS config pointing to LocalStack
-		cfg, err := awsconfig.LoadDefaultConfig(ctx,
-			awsconfig.WithRegion("us-west-2"),
-			awsconfig.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
-				func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-					// LocalStack endpoint inside the cluster
-					return aws.Endpoint{
-						URL:               "http://localstack.localstack.svc.cluster.local:4566",
-						HostnameImmutable: true,
-					}, nil
-				},
-			)),
-		)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create AWS config")
-
-		ec2Client = ec2.NewFromConfig(cfg)
-
-		By("fetching EC2 instance IDs from LocalStack using AWS SDK")
-		// Describe running instances
-		resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-			Filters: []types.Filter{
-				{
-					Name:   aws.String("instance-state-name"),
-					Values: []string{"running"},
-				},
-			},
-		})
+		By("fetching EC2 instance IDs from LocalStack using awslocal")
+		// Use kubectl exec to run awslocal command inside LocalStack pod
+		// This avoids DNS resolution issues from the test runner on the host
+		// Query us-east-1 where the seed script creates test instances
+		cmd := exec.Command("kubectl", "exec", "-n", "localstack",
+			"deployment/localstack", "--",
+			"awslocal", "ec2", "describe-instances",
+			"--region", "us-east-1",
+			"--filters", "Name=instance-state-name,Values=running",
+			"--query", "Reservations[].Instances[].[InstanceId,Placement.AvailabilityZone]",
+			"--output", "json")
+		output, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to describe EC2 instances")
+		By(fmt.Sprintf("awslocal returned: %s", output))
+
+		// Parse JSON output - format is [[instanceId, az], [instanceId, az], ...]
+		var instanceData [][]string
+		err = json.Unmarshal([]byte(output), &instanceData)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to parse EC2 instances JSON. Output was: %s", output))
 
 		// Extract instance IDs and create node names
 		testInstanceIDs = []string{}
 		testNodeNames = []string{}
 
-		for _, reservation := range resp.Reservations {
-			for _, instance := range reservation.Instances {
-				instanceID := aws.ToString(instance.InstanceId)
-				az := aws.ToString(instance.Placement.AvailabilityZone)
-
-				testInstanceIDs = append(testInstanceIDs, instanceID)
-
-				// Create node name that looks like real AWS nodes
-				nodeName := fmt.Sprintf("ip-10-0-1-%d.%s.compute.internal",
-					len(testNodeNames)+1, strings.TrimPrefix(az, "us-west-"))
-				testNodeNames = append(testNodeNames, nodeName)
+		for _, instanceInfo := range instanceData {
+			if len(instanceInfo) < 2 {
+				continue
 			}
+			instanceID := instanceInfo[0]
+			az := instanceInfo[1]
+
+			testInstanceIDs = append(testInstanceIDs, instanceID)
+
+			// Create node name that looks like real AWS nodes
+			// Extract region-specific suffix (e.g., "2a" from "us-east-1a")
+			azSuffix := az[len(az)-2:] // Last 2 chars (e.g., "1a")
+			nodeName := fmt.Sprintf("ip-10-0-1-%d.%s.compute.internal",
+				len(testNodeNames)+1, azSuffix)
+			testNodeNames = append(testNodeNames, nodeName)
 		}
 
 		Expect(testInstanceIDs).NotTo(BeEmpty(), "Should have at least one EC2 instance in LocalStack")
@@ -129,14 +121,14 @@ var _ = Describe("Node Correlation", Ordered, func() {
 						Name: testNodeNames[i],
 						Labels: map[string]string{
 							"node.kubernetes.io/instance-type": "m5.xlarge",
-							"topology.kubernetes.io/region":    "us-west-2",
-							"topology.kubernetes.io/zone":      "us-west-2a",
+							"topology.kubernetes.io/region":    "us-east-1",
+							"topology.kubernetes.io/zone":      "us-east-1a",
 							"lumina.io/test":                   "true",
 						},
 					},
 					Spec: corev1.NodeSpec{
 						// Link K8s node to EC2 instance via providerID
-						ProviderID: fmt.Sprintf("aws:///us-west-2a/%s", instanceID),
+						ProviderID: fmt.Sprintf("aws:///us-east-1a/%s", instanceID),
 					},
 					Status: corev1.NodeStatus{
 						Conditions: []corev1.NodeCondition{
@@ -185,24 +177,26 @@ var _ = Describe("Node Correlation", Ordered, func() {
 
 	Context("Cost Metrics with Node Names", func() {
 		It("should include node_name label in ec2_instance_hourly_cost metrics", func() {
-			By("waiting for cost reconciler to run")
-			time.Sleep(5 * time.Second)
-
-			By("fetching metrics")
-			metricsOutput, err := getMetricsOutput()
-			Expect(err).NotTo(HaveOccurred())
-
-			By("verifying metrics include node_name label")
-			// Check that at least one of our test nodes appears in metrics
-			foundCorrelated := false
-			for _, nodeName := range testNodeNames {
-				if strings.Contains(metricsOutput, fmt.Sprintf(`node_name="%s"`, nodeName)) {
-					foundCorrelated = true
-					break
+			By("waiting for cost metrics to include node_name labels")
+			// Poll for metrics with node_name labels - cost reconciler needs time to:
+			// 1. Be triggered by node creation events
+			// 2. Wait through 1-second debounce
+			// 3. Re-run cost calculation with updated NodeCache
+			// 4. Update Prometheus metrics
+			Eventually(func() bool {
+				metricsOutput, err := getMetricsOutput()
+				if err != nil {
+					return false
 				}
-			}
-			Expect(foundCorrelated).To(BeTrue(),
-				"Should find cost metric with correlated node_name")
+				// Check that at least one of our test nodes appears in metrics
+				for _, nodeName := range testNodeNames {
+					if strings.Contains(metricsOutput, fmt.Sprintf(`node_name="%s"`, nodeName)) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"Cost metrics should include node_name labels after nodes are created")
 		})
 
 		It("should have node_name for our test instances", func() {
