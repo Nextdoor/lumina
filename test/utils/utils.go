@@ -268,11 +268,26 @@ func GetLocalStackAWSConfig(ctx context.Context, region string) (aws.Config, err
 
 	// Configure AWS SDK to use the Kubernetes proxy as the HTTP client
 	// Use static test credentials to ensure we never accidentally call real AWS
+	//
+	// CRITICAL: We must use WithEndpointResolverWithOptions to route ALL AWS API calls
+	// through the Kubernetes proxy, regardless of the service or region. Without this,
+	// the SDK constructs service-specific URLs (like ec2.us-east-1.amazonaws.com) that
+	// the proxy cannot handle.
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(region),
 		awsconfig.WithHTTPClient(&http.Client{
 			Transport: proxyHTTPClient,
 		}),
+		awsconfig.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
+			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				// Route all AWS API calls through the Kubernetes API proxy to LocalStack.
+				// The proxy client will handle the actual routing, so we return a dummy
+				// endpoint that gets overridden by the custom HTTP client.
+				return aws.Endpoint{
+					URL:           "http://localstack.localstack.svc.cluster.local:4566",
+					SigningRegion: region,
+				}, nil
+			})),
 		awsconfig.WithCredentialsProvider(aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
 			return aws.Credentials{
 				AccessKeyID:     "test",
@@ -319,6 +334,12 @@ type kubeProxyRoundTripper struct {
 
 // RoundTrip proxies the HTTP request through the Kubernetes API to LocalStack.
 func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Log the original request for debugging
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Method=%s URL=%s Host=%s Path=%s\n",
+		req.Method, req.URL.String(), req.URL.Host, req.URL.Path)
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Query=%s\n", req.URL.RawQuery)
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Accept=%s\n", req.Header.Get("Accept"))
+
 	// Create a copy of the config and set required fields for the core v1 API
 	// This matches the pattern from metrics_helper.go
 	configCopy := *k.restConfig
@@ -333,6 +354,7 @@ func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	// Create REST client with the updated config
 	restClient, err := rest.RESTClientFor(&configCopy)
 	if err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Failed to create REST client: %v\n", err)
 		return nil, fmt.Errorf("failed to create REST client: %w", err)
 	}
 
@@ -340,10 +362,17 @@ func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	// Pattern: /api/v1/namespaces/{ns}/services/{name}:{port}/proxy{path}
 	proxyPath := fmt.Sprintf("/api/v1/namespaces/%s/services/%s:%s/proxy%s",
 		k.namespace, k.service, k.port, req.URL.Path)
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: ProxyPath=%s\n", proxyPath)
 
 	// Forward the request through the proxy
 	proxyReq := restClient.Verb(req.Method).
 		AbsPath(proxyPath)
+
+	// Force Accept header to request XML format from LocalStack.
+	// LocalStack returns XML-structure-as-JSON by default (with "item" wrappers),
+	// but AWS SDK v2 expects proper XML responses for EC2 Query protocol.
+	// Without this header, SDK cannot parse LocalStack's hybrid format.
+	proxyReq = proxyReq.SetHeader("Accept", "application/xml")
 
 	// Copy headers from the original request
 	for key, values := range req.Header {
@@ -359,16 +388,26 @@ func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		}
 	}
 
+	// Log request body status and headers
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Body is nil? %v\n", req.Body == nil)
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Content-Length=%d\n", req.ContentLength)
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Content-Type=%s\n", req.Header.Get("Content-Type"))
+
 	// Set request body if present
 	if req.Body != nil {
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Failed to read body: %v\n", err)
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}
 		_ = req.Body.Close() // Best effort close
+		_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: BodyLen=%d\n", len(bodyBytes))
 		if len(bodyBytes) > 0 {
+			_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Body=%s\n", string(bodyBytes))
 			proxyReq = proxyReq.Body(bodyBytes)
 		}
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: No request body to forward\n")
 	}
 
 	// Execute the request
@@ -380,7 +419,15 @@ func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 
 	body, err := result.Raw()
 	if err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Request failed: %v\n", err)
 		return nil, err
+	}
+
+	_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Response status=%d bodyLen=%d\n", statusCode, len(body))
+	// Always log response body for debugging
+	if len(body) > 0 {
+		maxLen := min(len(body), 2000)
+		_, _ = fmt.Fprintf(GinkgoWriter, "RoundTrip: Response body (first %d chars): %s\n", maxLen, string(body[:maxLen]))
 	}
 
 	// Build HTTP response
