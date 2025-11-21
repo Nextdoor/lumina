@@ -229,13 +229,24 @@ func InstallLocalStack() error {
 	return nil
 }
 
-// SeedLocalStack seeds test data into LocalStack using native AWS SDK calls through
-// the Kubernetes API proxy. This function should be called after InstallLocalStack()
-// and after LocalStack is ready.
+// GetLocalStackAWSConfig creates an AWS config that proxies HTTP requests through
+// the Kubernetes API server to LocalStack. This is the standard pattern for E2E tests
+// to interact with LocalStack using native AWS SDK calls.
 //
-// Uses the Kubernetes REST client to proxy AWS SDK HTTP requests to LocalStack's
-// localhost:4566, following the pattern from metrics_helper.go.
-func SeedLocalStack() error {
+// The returned config uses:
+//   - Static test credentials ("test"/"test") to prevent accidental real AWS calls
+//   - Custom HTTP transport that proxies through Kubernetes API
+//   - Configurable region (defaults to us-west-2 if not specified)
+//
+// Example usage:
+//
+//	cfg, err := utils.GetLocalStackAWSConfig(ctx, "us-east-1")
+//	ec2Client := ec2.NewFromConfig(cfg)
+func GetLocalStackAWSConfig(ctx context.Context, region string) (aws.Config, error) {
+	if region == "" {
+		region = "us-west-2"
+	}
+
 	// Load kubeconfig to get Kubernetes REST client
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
@@ -243,7 +254,7 @@ func SeedLocalStack() error {
 
 	restConfig, err := kubeConfig.ClientConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load kubeconfig: %w", err)
+		return aws.Config{}, fmt.Errorf("failed to load kubeconfig: %w", err)
 	}
 
 	// Create an HTTP client that proxies through the Kubernetes API to LocalStack
@@ -256,13 +267,36 @@ func SeedLocalStack() error {
 	}
 
 	// Configure AWS SDK to use the Kubernetes proxy as the HTTP client
-	// The kubeProxyRoundTripper handles all routing, so we just need a dummy base URL
-	ctx := context.Background()
+	// Use static test credentials to ensure we never accidentally call real AWS
+	//
+	// CRITICAL: We must use WithEndpointResolverWithOptions to route ALL AWS API calls
+	// through the Kubernetes proxy, regardless of the service or region. Without this,
+	// the SDK constructs service-specific URLs (like ec2.us-east-1.amazonaws.com) that
+	// the proxy cannot handle.
+	//
+	// Note: We intentionally use the deprecated WithEndpointResolverWithOptions API
+	// because it's the only way to globally override endpoint resolution for LocalStack
+	// testing without modifying each service client individually.
+	//
+	//nolint:staticcheck // Using deprecated API intentionally for LocalStack E2E testing
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRegion("us-west-2"),
+		awsconfig.WithRegion(region),
 		awsconfig.WithHTTPClient(&http.Client{
 			Transport: proxyHTTPClient,
 		}),
+		//nolint:staticcheck // Using deprecated API intentionally for LocalStack E2E testing
+		awsconfig.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
+			//nolint:staticcheck // Using deprecated API intentionally for LocalStack E2E testing
+			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				// Route all AWS API calls through the Kubernetes API proxy to LocalStack.
+				// The proxy client will handle the actual routing, so we return a dummy
+				// endpoint that gets overridden by the custom HTTP client.
+				//nolint:staticcheck // Using deprecated API intentionally for LocalStack E2E testing
+				return aws.Endpoint{
+					URL:           "http://localstack.localstack.svc.cluster.local:4566",
+					SigningRegion: region,
+				}, nil
+			})),
 		awsconfig.WithCredentialsProvider(aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
 			return aws.Credentials{
 				AccessKeyID:     "test",
@@ -271,7 +305,23 @@ func SeedLocalStack() error {
 		})),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// SeedLocalStack seeds test data into LocalStack using native AWS SDK calls through
+// the Kubernetes API proxy. This function should be called after InstallLocalStack()
+// and after LocalStack is ready.
+//
+// Uses GetLocalStackAWSConfig to create the AWS config with proper test credentials
+// and Kubernetes proxy routing.
+func SeedLocalStack() error {
+	ctx := context.Background()
+	cfg, err := GetLocalStackAWSConfig(ctx, "us-west-2")
+	if err != nil {
+		return fmt.Errorf("failed to create AWS config: %w", err)
 	}
 
 	// Call the seed package which makes native AWS SDK calls
@@ -318,6 +368,12 @@ func (k *kubeProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	// Forward the request through the proxy
 	proxyReq := restClient.Verb(req.Method).
 		AbsPath(proxyPath)
+
+	// Force Accept header to request XML format from LocalStack.
+	// LocalStack returns XML-structure-as-JSON by default (with "item" wrappers),
+	// but AWS SDK v2 expects proper XML responses for EC2 Query protocol.
+	// Without this header, SDK cannot parse LocalStack's hybrid format.
+	proxyReq = proxyReq.SetHeader("Accept", "application/xml")
 
 	// Copy headers from the original request
 	for key, values := range req.Header {

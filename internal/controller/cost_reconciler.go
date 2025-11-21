@@ -65,6 +65,10 @@ type CostReconciler struct {
 	// PricingCache provides on-demand and spot pricing data
 	PricingCache *cache.PricingCache
 
+	// NodeCache provides EC2 instance ID → K8s node name mappings
+	// Used to add node_name labels to cost metrics (Phase 8)
+	NodeCache *cache.NodeCache
+
 	// Metrics for emitting cost and utilization metrics
 	Metrics *metrics.Metrics
 
@@ -160,7 +164,8 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 
 	// Update Prometheus metrics with cost calculation results
 	// This emits ec2_instance_hourly_cost and savings_plan_* utilization metrics
-	r.Metrics.UpdateInstanceCostMetrics(result)
+	// Pass NodeCache to enable node_name labels (Phase 8)
+	r.Metrics.UpdateInstanceCostMetrics(result, r.NodeCache)
 	log.V(1).Info("updated cost metrics")
 
 	// Event-driven reconciliation: no requeue needed

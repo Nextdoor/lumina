@@ -81,6 +81,7 @@ func initializeReconcilers(
 	rispCache *cache.RISPCache,
 	ec2Cache *cache.EC2Cache,
 	pricingCache *cache.PricingCache,
+	nodeCache *cache.NodeCache,
 	luminaMetrics *metrics.Metrics,
 	costCalculator *cost.Calculator,
 ) *reconcilers {
@@ -161,6 +162,7 @@ func initializeReconcilers(
 			EC2Cache:             ec2Cache,
 			RISPCache:            rispCache,
 			PricingCache:         pricingCache,
+			NodeCache:            nodeCache,
 			Metrics:              luminaMetrics,
 			Log:                  ctrl.Log.WithName("cost-reconciler"),
 			PricingReadyChan:     pricingReadyCh,
@@ -245,7 +247,8 @@ func runStandalone(
 
 	// Initialize all reconcilers using the helper function
 	// This reduces code duplication between standalone and Kubernetes modes
-	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, luminaMetrics, costCalculator)
+	// Pass nil for nodeCache in standalone mode (no Kubernetes nodes to correlate)
+	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, nil, luminaMetrics, costCalculator)
 
 	// Start reconcilers in background goroutines
 	ctx := ctrl.SetupSignalHandler()
@@ -634,13 +637,19 @@ func main() {
 	}
 	setupLog.Info("created AWS client", "defaultAccount", defaultAccount.Name)
 
+	// Initialize Node cache for Phase 8 - K8s node correlation
+	nodeCache := cache.NewNodeCache()
+	setupLog.Info("initialized node cache")
+
 	if err := (&controller.NodeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		NodeCache: nodeCache,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		os.Exit(1)
 	}
+	setupLog.Info("registered node reconciler (event-driven)")
 
 	// Initialize RI/SP cache for Phase 2 data collection
 	rispCache := cache.NewRISPCache()
@@ -665,7 +674,9 @@ func main() {
 
 	// Initialize all reconcilers using the helper function
 	// This reduces code duplication between standalone and Kubernetes modes
-	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, luminaMetrics, costCalculator)
+	recs := initializeReconcilers(
+		awsClient, cfg, rispCache, ec2Cache, pricingCache, nodeCache, luminaMetrics, costCalculator,
+	)
 
 	// Start timer-based reconcilers as background goroutines
 	// These don't benefit from controller-runtime's event-driven machinery
@@ -729,6 +740,7 @@ func main() {
 	ec2Cache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	rispCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	nodeCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
 	if err := recs.Cost.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cost")
