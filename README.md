@@ -2,7 +2,7 @@
 
 > Illuminate Kubernetes costs with real-time AWS Savings Plans visibility
 
-Lumina is a Kubernetes controller that provides real-time cost visibility for EC2 instances and Fargate pods by tracking AWS Savings Plans, Reserved Instances, and spot pricing across your entire AWS organization.
+Lumina is a Kubernetes controller that provides real-time cost visibility for EC2 instances by tracking AWS Savings Plans, Reserved Instances, and spot pricing across your entire AWS organization.
 
 ## Overview
 
@@ -16,27 +16,32 @@ This enables cost-aware capacity management, chargeback, and cost optimization f
 
 ## Status
 
-**Active Development** - This project is in early development.
+**Beta** - Core functionality complete and tested. Fargate support planned.
 
-## Features (Planned)
+## Features
 
-- ✅ Kubernetes controller scaffold (Phase 1)
-- ✅ AWS account cross-account access (Phase 1)
-- ✅ Reserved Instance & Savings Plans discovery (Phase 2)
-- ⏳ EC2 instance cost calculation (Phase 4-7)
-- ⏳ Kubernetes Node correlation (Phase 8)
-- ⏳ Spot price tracking (Phase 9)
-- ⏳ Fargate support (Phase 10)
-- ⏳ Cost reconciliation (Phase 11-12)
+- ✅ Kubernetes controller with health probes and metrics endpoint
+- ✅ Multi-account AWS cross-account access via AssumeRole
+- ✅ Reserved Instance & Savings Plans discovery across all accounts/regions
+- ✅ Savings Plans rate calculation with automatic refresh
+- ✅ EC2 instance inventory and cost calculation
+- ✅ Kubernetes Node correlation (instance ID → node name mapping)
+- ✅ Spot price tracking with lazy-loading for running instances
+- ✅ Real-time cost metrics with Savings Plans utilization tracking
+- ⏳ Fargate support (planned)
+- ⏳ Cost trend analysis and forecasting (planned)
 
 ## Architecture
 
 Lumina runs as a Kubernetes controller in each cluster and:
 
 1. **Discovers** all AWS Savings Plans and Reserved Instances across your organization
-2. **Tracks** all EC2 instances and Fargate pods in real-time (5-minute refresh)
-3. **Calculates** effective costs per instance using AWS's Savings Plans allocation algorithm
-4. **Exposes** Prometheus metrics for monitoring and alerting
+2. **Tracks** all EC2 instances in real-time (5-minute refresh)
+3. **Correlates** EC2 instances with Kubernetes nodes via provider ID
+4. **Calculates** effective costs per instance using AWS's Savings Plans allocation algorithm
+5. **Exposes** Prometheus metrics for monitoring and alerting
+
+Note: Fargate support is planned but not yet implemented.
 
 > **📖 See [ALGORITHM.md](ALGORITHM.md) for detailed documentation of cost calculation algorithms, known limitations, and differences from AWS billing.**
 
@@ -120,11 +125,114 @@ make deploy IMG=lumina-controller:dev
 
 ## Configuration
 
-Lumina will require IAM permissions to assume roles in all AWS accounts. Configuration format TBD.
+Lumina is configured via a ConfigMap in the `lumina-system` namespace. See `config/manager/lumina-config.yaml` for the full example.
+
+### AWS Account Configuration
+
+```yaml
+accounts:
+  - name: production
+    accountId: "123456789012"
+    roleArn: arn:aws:iam::123456789012:role/LuminaReadOnly
+    regions:
+      - us-west-2
+      - us-east-1
+  - name: staging
+    accountId: "987654321098"
+    roleArn: arn:aws:iam::987654321098:role/LuminaReadOnly
+    regions:
+      - us-west-2
+```
+
+### IAM Permissions Required
+
+Lumina requires read-only access to:
+- `ec2:DescribeInstances`
+- `ec2:DescribeReservedInstances`
+- `ec2:DescribeSpotPriceHistory`
+- `savingsplans:DescribeSavingsPlans`
+- `savingsplans:DescribeSavingsPlansOfferingRates`
+- `pricing:GetProducts`
+
+See `config/iam/lumina-readonly-policy.json` for a sample IAM policy.
+
+### Reconciliation Intervals
+
+```yaml
+reconciliation:
+  pricing: 24h        # On-demand pricing (AWS Pricing API)
+  risp: 1h            # Reserved Instances & Savings Plans
+  ec2: 5m             # EC2 instance inventory
+  cost: event-driven  # Cost calculations (triggered by cache updates)
+  sp_rates: 15s       # Savings Plans rates
+  spot: 15s           # Spot pricing (lazy-loading)
+```
 
 ## Metrics
 
-Prometheus metrics will expose node costs and Savings Plans utilization. Metrics design TBD.
+Lumina exposes Prometheus metrics on port 8080 at `/metrics`. All metrics include comprehensive labels for filtering and aggregation.
+
+### Cost Metrics
+
+**`ec2_instance_hourly_cost`** - Estimated hourly cost per EC2 instance
+- Labels: `instance_id`, `instance_type`, `account_id`, `account_name`, `region`, `availability_zone`, `node_name`, `lifecycle` (on-demand/spot), `cost_category` (on_demand/reserved_instance/savings_plan/spot)
+- Value: Hourly cost in USD
+
+### Savings Plans Utilization Metrics
+
+**`savings_plan_current_utilization_rate`** - Current SP utilization in $/hour
+- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
+- Value: Current hourly commitment usage
+
+**`savings_plan_commitment_amount`** - Total SP hourly commitment in $/hour
+- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
+- Value: Hourly commitment amount
+
+**`savings_plan_remaining_capacity`** - Unused SP capacity in $/hour
+- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
+- Value: Remaining hourly capacity
+
+**`savings_plan_utilization_percent`** - SP utilization as a percentage (0-100)
+- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
+- Value: Utilization percentage
+
+### Inventory Metrics
+
+**`ec2_instance`** - EC2 instance inventory (gauge = 1 per instance)
+- Labels: `instance_id`, `instance_type`, `state`, `account_id`, `account_name`, `region`, `availability_zone`
+
+**`ec2_instance_count`** - Count of EC2 instances by state
+- Labels: `account_id`, `account_name`, `region`, `state`
+
+**`ec2_running_instance_count`** - Count of running EC2 instances
+- Labels: `account_id`, `account_name`, `region`
+
+### Data Freshness Metrics
+
+**`data_freshness_seconds`** - Age of cached data in seconds
+- Labels: `data_type` (pricing/reserved_instances/savings_plans/ec2_instances/sp_rates/spot_pricing), `account_id`, `account_name`, `region`
+
+**`data_last_success`** - Success status of last data collection (1 = success, 0 = failure)
+- Labels: `data_type`, `account_id`, `account_name`, `region`
+
+### Example PromQL Queries
+
+```promql
+# Total hourly cost across all instances
+sum(ec2_instance_hourly_cost)
+
+# Cost breakdown by account
+sum by (account_name) (ec2_instance_hourly_cost)
+
+# Savings Plans utilization by type
+sum by (sp_type) (savings_plan_utilization_percent) / count by (sp_type) (savings_plan_utilization_percent)
+
+# Running instance count by region
+sum by (region) (ec2_running_instance_count)
+
+# Cost per node (requires node_name label)
+ec2_instance_hourly_cost{node_name!=""}
+```
 
 ## Testing
 
