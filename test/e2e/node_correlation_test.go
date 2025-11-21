@@ -20,19 +20,19 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/nextdoor/lumina/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/nextdoor/lumina/test/utils"
 )
 
 var _ = Describe("Node Correlation", Ordered, func() {
@@ -59,48 +59,61 @@ var _ = Describe("Node Correlation", Ordered, func() {
 		Expect(podList.Items).NotTo(BeEmpty())
 		controllerPodName = podList.Items[0].Name
 
-		By("fetching EC2 instance IDs from LocalStack using awslocal")
-		// Use kubectl exec to run awslocal command inside LocalStack pod
-		// This avoids DNS resolution issues from the test runner on the host
-		// Query us-east-1 where the seed script creates test instances
-		cmd := exec.Command("kubectl", "exec", "-n", "localstack",
-			"deployment/localstack", "--",
-			"awslocal", "ec2", "describe-instances",
-			"--region", "us-east-1",
-			"--filters", "Name=instance-state-name,Values=running",
-			"--query", "Reservations[].Instances[].[InstanceId,Placement.AvailabilityZone]",
-			"--output", "json")
-		output, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to describe EC2 instances")
-		By(fmt.Sprintf("awslocal returned: %s", output))
+		By("fetching EC2 instance IDs from LocalStack using AWS SDK")
+		// Create AWS config using shared utility function
+		// Uses us-east-1 region to match where test instances are created
+		awsCfg, err := utils.GetLocalStackAWSConfig(ctx, "us-east-1")
+		Expect(err).NotTo(HaveOccurred(), "Failed to create AWS config")
 
-		// Parse JSON output - format is [[instanceId, az], [instanceId, az], ...]
-		var instanceData [][]string
-		err = json.Unmarshal([]byte(output), &instanceData)
-		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to parse EC2 instances JSON. Output was: %s", output))
+		// Create EC2 client
+		ec2Client := ec2.NewFromConfig(awsCfg)
 
-		// Extract instance IDs and create node names
-		testInstanceIDs = []string{}
-		testNodeNames = []string{}
-
-		for _, instanceInfo := range instanceData {
-			if len(instanceInfo) < 2 {
-				continue
-			}
-			instanceID := instanceInfo[0]
-			az := instanceInfo[1]
-
-			testInstanceIDs = append(testInstanceIDs, instanceID)
-
-			// Create node name that looks like real AWS nodes
-			// Extract region-specific suffix (e.g., "2a" from "us-east-1a")
-			azSuffix := az[len(az)-2:] // Last 2 chars (e.g., "1a")
-			nodeName := fmt.Sprintf("ip-10-0-1-%d.%s.compute.internal",
-				len(testNodeNames)+1, azSuffix)
-			testNodeNames = append(testNodeNames, nodeName)
+		// Query running instances from the same region where seed script creates them
+		describeInput := &ec2.DescribeInstancesInput{
+			Filters: []types.Filter{
+				{
+					Name:   aws.String("instance-state-name"),
+					Values: []string{"running"},
+				},
+			},
 		}
 
-		Expect(testInstanceIDs).NotTo(BeEmpty(), "Should have at least one EC2 instance in LocalStack")
+		// Use Eventually to handle timing - LocalStack may need a brief delay
+		// after seeding before instances are available via DescribeInstances API
+		Eventually(func() int {
+			describeOutput, err := ec2Client.DescribeInstances(ctx, describeInput)
+			if err != nil {
+				return 0
+			}
+
+			// Extract instance IDs and create node names
+			testInstanceIDs = []string{}
+			testNodeNames = []string{}
+
+			for _, reservation := range describeOutput.Reservations {
+				for _, instance := range reservation.Instances {
+					if instance.InstanceId == nil || instance.Placement == nil || instance.Placement.AvailabilityZone == nil {
+						continue
+					}
+
+					instanceID := *instance.InstanceId
+					az := *instance.Placement.AvailabilityZone
+
+					testInstanceIDs = append(testInstanceIDs, instanceID)
+
+					// Create node name that looks like real AWS nodes
+					// Extract region-specific suffix (e.g., "2a" from "us-east-1a")
+					azSuffix := az[len(az)-2:] // Last 2 chars (e.g., "1a")
+					nodeName := fmt.Sprintf("ip-10-0-1-%d.%s.compute.internal",
+						len(testNodeNames)+1, azSuffix)
+					testNodeNames = append(testNodeNames, nodeName)
+				}
+			}
+
+			return len(testInstanceIDs)
+		}, 30*time.Second, 1*time.Second).Should(BeNumerically(">", 0),
+			"Should have at least one EC2 instance in LocalStack")
+
 		By(fmt.Sprintf("found %d EC2 instances to correlate", len(testInstanceIDs)))
 	})
 
