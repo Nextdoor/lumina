@@ -165,7 +165,7 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	// Update Prometheus metrics with cost calculation results
 	// This emits ec2_instance_hourly_cost and savings_plan_* utilization metrics
 	// Pass NodeCache to enable node_name labels (Phase 8)
-	r.Metrics.UpdateInstanceCostMetrics(result, r.NodeCache)
+	r.Metrics.UpdateInstanceCostMetrics(result, r.NodeCache, r.EC2Cache)
 	log.V(1).Info("updated cost metrics")
 
 	// Event-driven reconciliation: no requeue needed

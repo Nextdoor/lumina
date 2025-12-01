@@ -21,17 +21,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nextdoor/lumina/pkg/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// newTestConfig creates a test configuration with default values for testing.
+func newTestConfig() *config.Config {
+	return &config.Config{
+		// Use default values for everything
+		AWSAccounts: []config.AWSAccount{
+			{
+				AccountID:     "123456789012",
+				Name:          "Test",
+				AssumeRoleARN: "arn:aws:iam::123456789012:role/test",
+			},
+		},
+	}
+}
+
 // TestNewMetrics verifies that NewMetrics creates all expected metrics
 // and registers them with the provided registry.
 func TestNewMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	cfg := newTestConfig()
+	m := NewMetrics(reg, cfg)
 
 	// Verify all metrics were created
 	assert.NotNil(t, m.ControllerRunning)
@@ -91,18 +107,19 @@ func TestNewMetrics(t *testing.T) {
 // metrics twice with the same registry panics (expected Prometheus behavior).
 func TestNewMetrics_DoubleRegistration(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	_ = NewMetrics(reg)
+	cfg := newTestConfig()
+	_ = NewMetrics(reg, cfg)
 
 	// Attempting to register again should panic
 	assert.Panics(t, func() {
-		_ = NewMetrics(reg)
+		_ = NewMetrics(reg, cfg)
 	}, "double registration should panic")
 }
 
 // TestControllerRunningMetric verifies the controller running gauge works.
 func TestControllerRunningMetric(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Initially the gauge is not set (default is 0)
 	value := testutil.ToFloat64(m.ControllerRunning)
@@ -126,7 +143,7 @@ func TestControllerRunningMetric(t *testing.T) {
 // TestRecordAccountValidation_Success verifies successful validation recording.
 func TestRecordAccountValidation_Success(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	accountID := "329239342014"
 	accountName := "Production"
@@ -164,7 +181,7 @@ func TestRecordAccountValidation_Success(t *testing.T) {
 // TestRecordAccountValidation_Failure verifies failed validation recording.
 func TestRecordAccountValidation_Failure(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	accountID := "364942603424"
 	accountName := "Engineering"
@@ -197,7 +214,7 @@ func TestRecordAccountValidation_Failure(t *testing.T) {
 // TestRecordAccountValidation_MultipleAccounts verifies tracking multiple accounts.
 func TestRecordAccountValidation_MultipleAccounts(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Record validations for multiple accounts
 	accounts := []struct {
@@ -235,7 +252,7 @@ func TestRecordAccountValidation_MultipleAccounts(t *testing.T) {
 // success properly updates the last success timestamp after a previous failure.
 func TestRecordAccountValidation_SuccessAfterFailure(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	accountID := "123456789012"
 	accountName := "Test"
@@ -278,7 +295,7 @@ func TestRecordAccountValidation_SuccessAfterFailure(t *testing.T) {
 // TestAccountValidationDuration_Buckets verifies histogram buckets are correct.
 func TestAccountValidationDuration_Buckets(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	accountID := "999999999999"
 	accountName := "BucketTest"
@@ -328,7 +345,7 @@ func TestAccountValidationDuration_Buckets(t *testing.T) {
 // TestDeleteAccountMetrics verifies metric cleanup when accounts are removed.
 func TestDeleteAccountMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	accountID := "555555555555"
 	accountName := "ToBeDeleted"
@@ -362,7 +379,7 @@ func TestDeleteAccountMetrics(t *testing.T) {
 // TestDeleteAccountMetrics_NonExistent verifies deleting non-existent metrics doesn't panic.
 func TestDeleteAccountMetrics_NonExistent(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Delete metrics for an account that was never recorded
 	assert.NotPanics(t, func() {
@@ -375,7 +392,7 @@ func TestDeleteAccountMetrics_NonExistent(t *testing.T) {
 // The metric is automatically updated every second by a background goroutine.
 func TestDataFreshnessMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Verify the metrics are created
 	assert.NotNil(t, m.DataFreshness)
@@ -419,7 +436,8 @@ func TestDataFreshnessMetrics(t *testing.T) {
 // TestMetricNaming verifies all metrics follow Prometheus naming conventions.
 func TestMetricNaming(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	_ = NewMetrics(reg) // Register metrics for inspection
+	cfg := newTestConfig()
+	_ = NewMetrics(reg, cfg) // Register metrics for inspection
 
 	metricFamilies, err := reg.Gather()
 	require.NoError(t, err)

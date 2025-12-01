@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/cost"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -27,6 +28,14 @@ type NodeCacheReader interface {
 	// GetNodeName returns the Kubernetes node name for a given EC2 instance ID.
 	// Returns (nodeName, true) if found, ("", false) if not found.
 	GetNodeName(instanceID string) (string, bool)
+}
+
+// EC2CacheReader provides read-only access to the EC2Cache for metrics emission.
+// This interface allows metrics to look up EC2 instance data without coupling to the full cache.
+type EC2CacheReader interface {
+	// GetInstance returns the EC2 instance data for a given instance ID.
+	// Returns (instance pointer, true) if found, (nil, false) if not found.
+	GetInstance(instanceID string) (*aws.Instance, bool)
 }
 
 // UpdateInstanceCostMetrics updates all cost-related metrics based on calculation results.
@@ -43,8 +52,12 @@ type NodeCacheReader interface {
 //   - savings_plan_remaining_capacity: Unused SP capacity ($/hour)
 //   - savings_plan_utilization_percent: SP utilization percentage (0-100+)
 //
-// Phase 8 enhancement: If nodeCache is non-nil, adds node_name label to instance cost metrics.
-// This enables filtering costs by Kubernetes node, node pool, or other node attributes.
+// Multi-cluster enhancements:
+//   - If config.Metrics.DisableInstanceMetrics is true, skips emitting instance metrics entirely
+//   - Adds cluster_name label extracted from kubernetes.io/cluster/* EC2 tags
+//   - Adds host_name label from EC2 PrivateDNSName
+//   - Implements fallback node_name resolution: K8s correlation -> EC2 Name tag -> empty
+//   - Uses configurable label names from config.Metrics.Labels
 //
 // These metrics enable:
 //   - Per-instance cost tracking and chargeback
@@ -52,12 +65,17 @@ type NodeCacheReader interface {
 //   - Alerting on under/over-utilized SPs
 //   - Cost optimization opportunities identification
 //   - Node-level cost visibility (when nodeCache provided)
+//   - Multi-cluster deployments without metric duplication
 //
 // Example usage:
 //
 //	result := calculator.Calculate(input)
-//	metrics.UpdateInstanceCostMetrics(result, nodeCache)
-func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeCache NodeCacheReader) {
+//	metrics.UpdateInstanceCostMetrics(result, nodeCache, ec2Cache)
+func (m *Metrics) UpdateInstanceCostMetrics(
+	result cost.CalculationResult,
+	nodeCache NodeCacheReader,
+	ec2Cache EC2CacheReader,
+) {
 	// Reset all existing cost metrics to ensure terminated instances and expired SPs are removed.
 	// This is more reliable than trying to track which specific resources changed.
 	m.EC2InstanceHourlyCost.Reset()
@@ -65,52 +83,80 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 	m.SavingsPlanRemainingCapacity.Reset()
 	m.SavingsPlanUtilizationPercent.Reset()
 
-	// Set instance cost metrics
-	for _, ic := range result.InstanceCosts {
-		// Normalize coverage type for metrics label
-		// Convert CoverageType constants to string representation
-		costType := string(ic.CoverageType)
+	// Skip instance metrics if disabled (multi-cluster deployment mode)
+	if !m.config.Metrics.DisableInstanceMetrics {
+		// Set instance cost metrics
+		for _, ic := range result.InstanceCosts {
+			// Normalize coverage type for metrics label
+			// Convert CoverageType constants to string representation
+			costType := string(ic.CoverageType)
 
-		// Look up Kubernetes node name for this instance (Phase 8)
-		// If nodeCache is nil or instance not found, use empty string.
-		// Empty node_name indicates the instance is not correlated to a Kubernetes node,
-		// which can happen when:
-		//   - Running in standalone mode (no Kubernetes cluster)
-		//   - Instance is not part of the Kubernetes cluster
-		//   - Node correlation hasn't completed yet during startup
-		nodeName := ""
-		if nodeCache != nil {
-			if name, exists := nodeCache.GetNodeName(ic.InstanceID); exists {
-				nodeName = name
+			// Look up EC2 instance data for cluster_name, host_name, and fallback node_name
+			var instance *aws.Instance
+			var instanceFound bool
+			if ec2Cache != nil {
+				instance, instanceFound = ec2Cache.GetInstance(ic.InstanceID)
 			}
-		}
 
-		// Always export EffectiveCost - this represents what the instance actually pays.
-		//
-		// For SP-covered instances with partial coverage:
-		//   EffectiveCost = SP contribution + on-demand spillover
-		//
-		// This means:
-		//   sum(ec2_instance_hourly_cost{cost_type="compute_savings_plan"}) >=
-		//   sum(savings_plan_current_utilization_rate)
-		//
-		// The difference represents on-demand spillover from partially covered instances
-		// and is real cost that should be visible in metrics.
-		//
-		// Note: Prometheus requires consistent label cardinality, so node_name must always
-		// be present even if empty. Use node_name!="" in PromQL to filter to correlated instances.
-		m.EC2InstanceHourlyCost.With(prometheus.Labels{
-			"instance_id":       ic.InstanceID,
-			"account_id":        ic.AccountID,
-			"account_name":      ic.AccountName,
-			"region":            ic.Region,
-			"instance_type":     ic.InstanceType,
-			"cost_type":         costType,
-			"availability_zone": ic.AvailabilityZone,
-			"lifecycle":         ic.Lifecycle,
-			"pricing_accuracy":  string(ic.PricingAccuracy),
-			"node_name":         nodeName,
-		}).Set(ic.EffectiveCost)
+			// Extract cluster_name from kubernetes.io/cluster/* EC2 tag
+			clusterName := ""
+			if instanceFound && instance != nil {
+				clusterName = instance.GetClusterName()
+			}
+
+			// Extract host_name from EC2 PrivateDNSName
+			hostName := ""
+			if instanceFound && instance != nil {
+				hostName = instance.PrivateDNSName
+			}
+
+			// Resolve node_name with fallback logic:
+			// 1. Try Kubernetes correlation via NodeCache
+			// 2. If cluster_name exists, try EC2 Name tag as fallback
+			// 3. Otherwise use empty string
+			nodeName := ""
+			if nodeCache != nil {
+				if name, exists := nodeCache.GetNodeName(ic.InstanceID); exists {
+					nodeName = name
+				}
+			}
+			// Fallback: Use EC2 Name tag if instance is in a cluster but not correlated
+			if nodeName == "" && clusterName != "" && instanceFound && instance != nil {
+				tagKey := m.config.GetNodeNameTagKey()
+				if nameTag, exists := instance.Tags[tagKey]; exists {
+					nodeName = nameTag
+				}
+			}
+
+			// Always export EffectiveCost - this represents what the instance actually pays.
+			//
+			// For SP-covered instances with partial coverage:
+			//   EffectiveCost = SP contribution + on-demand spillover
+			//
+			// This means:
+			//   sum(ec2_instance_hourly_cost{cost_type="compute_savings_plan"}) >=
+			//   sum(savings_plan_current_utilization_rate)
+			//
+			// The difference represents on-demand spillover from partially covered instances
+			// and is real cost that should be visible in metrics.
+			//
+			// Note: Prometheus requires consistent label cardinality, so all labels must always
+			// be present even if empty. Use label!="" in PromQL to filter to populated values.
+			m.EC2InstanceHourlyCost.With(prometheus.Labels{
+				"instance_id":                  ic.InstanceID,
+				m.config.GetAccountIDLabel():   ic.AccountID,
+				m.config.GetAccountNameLabel(): ic.AccountName,
+				m.config.GetRegionLabel():      ic.Region,
+				"instance_type":                ic.InstanceType,
+				"cost_type":                    costType,
+				"availability_zone":            ic.AvailabilityZone,
+				"lifecycle":                    ic.Lifecycle,
+				"pricing_accuracy":             string(ic.PricingAccuracy),
+				m.config.GetNodeNameLabel():    nodeName,
+				m.config.GetClusterNameLabel(): clusterName,
+				m.config.GetHostNameLabel():    hostName,
+			}).Set(ic.EffectiveCost)
+		}
 	}
 
 	// Set Savings Plan utilization metrics

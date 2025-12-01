@@ -21,6 +21,7 @@
 package aws
 
 import (
+	"strings"
 	"time"
 )
 
@@ -130,6 +131,23 @@ type Instance struct {
 
 	// SpotInstanceRequestID is the spot instance request ID if this is a spot instance
 	SpotInstanceRequestID string
+}
+
+// GetClusterName extracts the Kubernetes cluster name from EC2 tags.
+// EKS automatically adds tags like "kubernetes.io/cluster/prod-us-west-2": "owned"
+// to EC2 instances that are part of a Kubernetes cluster.
+// This function parses the cluster name from the tag key.
+// Returns empty string if no cluster tag is found.
+func (i *Instance) GetClusterName() string {
+	const clusterTagPrefix = "kubernetes.io/cluster/"
+	for tagKey := range i.Tags {
+		if strings.HasPrefix(tagKey, clusterTagPrefix) {
+			// Extract cluster name from tag key
+			// e.g., "kubernetes.io/cluster/prod-us-west-2" -> "prod-us-west-2"
+			return strings.TrimPrefix(tagKey, clusterTagPrefix)
+		}
+	}
+	return ""
 }
 
 // ReservedInstance represents an EC2 Reserved Instance.

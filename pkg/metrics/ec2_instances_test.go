@@ -31,7 +31,7 @@ import (
 func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 	// Create test registry and metrics
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create test instances
 	instances := []aws.Instance{
@@ -115,7 +115,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 // are included in metrics.
 func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	instances := []aws.Instance{
 		{
@@ -185,7 +185,7 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 // reset on each update, removing old instances.
 func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// First update with 2 instances
 	initialInstances := []aws.Instance{
@@ -271,7 +271,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 // multiple accounts and regions.
 func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	instances := []aws.Instance{
 		{
@@ -335,7 +335,7 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 // TestUpdateEC2InstanceMetrics_EmptyInput tests behavior with empty instance list.
 func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// First add some instances
 	instances := []aws.Instance{
@@ -396,7 +396,7 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 // family extraction logic with various instance type formats.
 func TestUpdateEC2InstanceMetrics_InstanceFamilyExtraction(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	testCases := []struct {
 		instanceType     string
@@ -445,7 +445,7 @@ func TestUpdateEC2InstanceMetrics_InstanceFamilyExtraction(t *testing.T) {
 // malformed instance types (edge case).
 func TestUpdateEC2InstanceMetrics_MalformedInstanceType(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	instances := []aws.Instance{
 		{

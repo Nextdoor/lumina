@@ -83,7 +83,7 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_FirstRun(t *testing.T) {
 
 	// Setup: Create pricing cache and EC2ReadyChan
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan) // Signal EC2Cache is ready
 
@@ -158,7 +158,7 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_SteadyState(t *testing.T) {
 	mockClient := aws.NewMockClient()
 	mockClient.EC2Error = assert.AnError // This would cause failure if EC2 client is created
 
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -248,7 +248,7 @@ func TestSpotPricingReconciler_Reconcile_LazyLoading_NewInstanceType(t *testing.
 		},
 	}
 
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -298,7 +298,7 @@ func TestSpotPricingReconciler_Reconcile_NoInstances(t *testing.T) {
 
 	mockClient := aws.NewMockClient()
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -336,7 +336,7 @@ func TestSpotPricingReconciler_Reconcile_WaitsForEC2Cache(t *testing.T) {
 	ec2Cache := cache.NewEC2Cache()
 	mockClient := aws.NewMockClient()
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{}) // NOT closed yet
 
 	reconciler := &SpotPricingReconciler{
@@ -392,7 +392,7 @@ func TestSpotPricingReconciler_Reconcile_CustomInterval(t *testing.T) {
 	ec2Cache := cache.NewEC2Cache()
 	mockClient := aws.NewMockClient()
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -430,7 +430,7 @@ func TestSpotPricingReconciler_Reconcile_InvalidInterval(t *testing.T) {
 	ec2Cache := cache.NewEC2Cache()
 	mockClient := aws.NewMockClient()
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -469,7 +469,7 @@ func TestSpotPricingReconciler_Reconcile_ReadyChanClosed(t *testing.T) {
 	ec2Cache := cache.NewEC2Cache()
 	mockClient := aws.NewMockClient()
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 	readyChan := make(chan struct{})
@@ -546,7 +546,7 @@ func TestSpotPricingReconciler_Reconcile_EC2ClientError(t *testing.T) {
 	mockClient.EC2Error = assert.AnError
 
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -605,7 +605,7 @@ func TestSpotPricingReconciler_Reconcile_SpotPriceAPIError(t *testing.T) {
 	mockEC2.DescribeSpotPriceHistoryError = assert.AnError
 
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -685,7 +685,7 @@ func TestSpotPricingReconciler_Reconcile_CustomCacheExpiration(t *testing.T) {
 		},
 	}
 
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -770,7 +770,7 @@ func TestSpotPricingReconciler_Reconcile_InvalidCacheExpiration(t *testing.T) {
 		},
 	}
 
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 
@@ -812,7 +812,7 @@ func TestSpotPricingReconciler_Reconcile_ContextCancelled(t *testing.T) {
 	ec2Cache := cache.NewEC2Cache()
 	mockClient := aws.NewMockClient()
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	// Don't close ec2ReadyChan - reconciler will block waiting
 
@@ -995,7 +995,7 @@ func TestSpotPricingReconciler_Reconcile_MultipleAccountsSameRegion(t *testing.T
 	}
 
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 	ec2ReadyChan := make(chan struct{})
 	close(ec2ReadyChan)
 

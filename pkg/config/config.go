@@ -88,6 +88,9 @@ type Config struct {
 	// Pricing contains settings for AWS pricing data collection.
 	Pricing PricingConfig `yaml:"pricing,omitempty"`
 
+	// Metrics contains settings for metrics collection and emission.
+	Metrics MetricsConfig `yaml:"metrics,omitempty"`
+
 	// TestData contains mock data for E2E testing.
 	// When present, the RISP reconciler will use this data instead of making AWS API calls.
 	// This allows testing without requiring a fully functional AWS environment.
@@ -198,6 +201,66 @@ type SavingsPlanDiscounts struct {
 	// For 3-year: use 0.50 (~50% discount)
 	// Formula: effectiveCost = onDemandPrice * compute
 	Compute float64 `yaml:"compute,omitempty"`
+}
+
+// MetricsConfig contains settings for metrics collection and emission.
+type MetricsConfig struct {
+	// DisableInstanceMetrics controls whether instance-level metrics are emitted.
+	// When true, ALL metrics with instance_id label will be skipped.
+	// This is useful in multi-cluster deployments where only a "management" cluster
+	// should emit instance metrics to prevent duplication.
+	// Default: false (metrics are emitted)
+	DisableInstanceMetrics bool `yaml:"disableInstanceMetrics,omitempty"`
+
+	// Labels configures the label names used in metrics.
+	// Allows customizing label names to match organizational conventions.
+	Labels MetricLabelsConfig `yaml:"labels,omitempty"`
+
+	// NodeNameSource configures how node_name label is populated as a fallback
+	// when Kubernetes correlation is not available.
+	NodeNameSource NodeNameSourceConfig `yaml:"nodeNameSource,omitempty"`
+}
+
+// MetricLabelsConfig allows customizing metric label names.
+// This enables matching organizational conventions and avoiding conflicts
+// with externally-added labels (e.g., from Prometheus relabeling).
+type MetricLabelsConfig struct {
+	// ClusterName is the label name for Kubernetes cluster identification.
+	// Default: "cluster_name"
+	// Extracted from kubernetes.io/cluster/<name> EC2 tag.
+	ClusterName string `yaml:"clusterName,omitempty"`
+
+	// AccountName is the label name for AWS account human-readable name.
+	// Default: "account_name"
+	AccountName string `yaml:"accountName,omitempty"`
+
+	// AccountID is the label name for AWS account ID.
+	// Default: "account_id"
+	AccountID string `yaml:"accountId,omitempty"`
+
+	// Region is the label name for AWS region.
+	// Default: "region"
+	Region string `yaml:"region,omitempty"`
+
+	// NodeName is the label name for Kubernetes node name.
+	// Default: "node_name"
+	NodeName string `yaml:"nodeName,omitempty"`
+
+	// HostName is the label name for EC2 private DNS name.
+	// Default: "host_name"
+	HostName string `yaml:"hostName,omitempty"`
+}
+
+// NodeNameSourceConfig configures how the node_name label is populated
+// as a fallback when Kubernetes correlation is not available.
+type NodeNameSourceConfig struct {
+	// TagKey specifies which EC2 tag to use as fallback for node_name.
+	// This is used when:
+	//   1. The instance has a cluster_name (is part of a K8s cluster)
+	//   2. Kubernetes NodeCache correlation is not available
+	// Default: "Name"
+	// Common alternatives: "kubernetes.io/node-name", custom tags
+	TagKey string `yaml:"tagKey,omitempty"`
 }
 
 // TestData contains mock data for E2E testing.
@@ -318,6 +381,16 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("pricing.defaultDiscounts.ec2Instance", 0.72) // ~28% OFF → pay 72%
 	v.SetDefault("pricing.defaultDiscounts.compute", 0.72)     // ~28% OFF → pay 72%
 
+	// Set default metric label names
+	v.SetDefault("metrics.disableInstanceMetrics", false)
+	v.SetDefault("metrics.labels.clusterName", "cluster_name")
+	v.SetDefault("metrics.labels.accountName", "account_name")
+	v.SetDefault("metrics.labels.accountId", "account_id")
+	v.SetDefault("metrics.labels.region", "region")
+	v.SetDefault("metrics.labels.nodeName", "node_name")
+	v.SetDefault("metrics.labels.hostName", "host_name")
+	v.SetDefault("metrics.nodeNameSource.tagKey", "Name")
+
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
 	// Viper's automatic mapping doesn't handle camelCase to SCREAMING_SNAKE_CASE well
@@ -329,6 +402,14 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv("accountValidationInterval", "LUMINA_ACCOUNT_VALIDATION_INTERVAL")
 	_ = v.BindEnv("reconciliation.risp", "LUMINA_RECONCILIATION_RISP")
 	_ = v.BindEnv("reconciliation.ec2", "LUMINA_RECONCILIATION_EC2")
+	_ = v.BindEnv("metrics.disableInstanceMetrics", "LUMINA_METRICS_DISABLE_INSTANCE_METRICS")
+	_ = v.BindEnv("metrics.labels.clusterName", "LUMINA_METRICS_LABELS_CLUSTER_NAME")
+	_ = v.BindEnv("metrics.labels.accountName", "LUMINA_METRICS_LABELS_ACCOUNT_NAME")
+	_ = v.BindEnv("metrics.labels.accountId", "LUMINA_METRICS_LABELS_ACCOUNT_ID")
+	_ = v.BindEnv("metrics.labels.region", "LUMINA_METRICS_LABELS_REGION")
+	_ = v.BindEnv("metrics.labels.nodeName", "LUMINA_METRICS_LABELS_NODE_NAME")
+	_ = v.BindEnv("metrics.labels.hostName", "LUMINA_METRICS_LABELS_HOST_NAME")
+	_ = v.BindEnv("metrics.nodeNameSource.tagKey", "LUMINA_METRICS_NODE_NAME_SOURCE_TAG_KEY")
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
@@ -592,4 +673,67 @@ func (c *Config) GetOperatingSystems() []string {
 		return c.Pricing.OperatingSystems
 	}
 	return []string{OSLinux, OSWindows}
+}
+
+// GetClusterNameLabel returns the configured label name for cluster_name.
+// Returns "cluster_name" if not configured.
+func (c *Config) GetClusterNameLabel() string {
+	if c.Metrics.Labels.ClusterName != "" {
+		return c.Metrics.Labels.ClusterName
+	}
+	return "cluster_name"
+}
+
+// GetAccountNameLabel returns the configured label name for account_name.
+// Returns "account_name" if not configured.
+func (c *Config) GetAccountNameLabel() string {
+	if c.Metrics.Labels.AccountName != "" {
+		return c.Metrics.Labels.AccountName
+	}
+	return "account_name"
+}
+
+// GetAccountIDLabel returns the configured label name for account_id.
+// Returns "account_id" if not configured.
+func (c *Config) GetAccountIDLabel() string {
+	if c.Metrics.Labels.AccountID != "" {
+		return c.Metrics.Labels.AccountID
+	}
+	return "account_id"
+}
+
+// GetRegionLabel returns the configured label name for region.
+// Returns "region" if not configured.
+func (c *Config) GetRegionLabel() string {
+	if c.Metrics.Labels.Region != "" {
+		return c.Metrics.Labels.Region
+	}
+	return "region"
+}
+
+// GetNodeNameLabel returns the configured label name for node_name.
+// Returns "node_name" if not configured.
+func (c *Config) GetNodeNameLabel() string {
+	if c.Metrics.Labels.NodeName != "" {
+		return c.Metrics.Labels.NodeName
+	}
+	return "node_name"
+}
+
+// GetHostNameLabel returns the configured label name for host_name.
+// Returns "host_name" if not configured.
+func (c *Config) GetHostNameLabel() string {
+	if c.Metrics.Labels.HostName != "" {
+		return c.Metrics.Labels.HostName
+	}
+	return "host_name"
+}
+
+// GetNodeNameTagKey returns the configured EC2 tag key to use for node_name fallback.
+// Returns "Name" if not configured.
+func (c *Config) GetNodeNameTagKey() string {
+	if c.Metrics.NodeNameSource.TagKey != "" {
+		return c.Metrics.NodeNameSource.TagKey
+	}
+	return "Name"
 }

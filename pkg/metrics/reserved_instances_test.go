@@ -30,7 +30,7 @@ import (
 func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create test RIs
 	ris := []aws.ReservedInstance{
@@ -114,7 +114,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 func TestUpdateReservedInstanceMetrics_EmptyList(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// First, add some RIs
 	ris := []aws.ReservedInstance{
@@ -160,7 +160,7 @@ func TestUpdateReservedInstanceMetrics_EmptyList(t *testing.T) {
 func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create RIs with different states
 	ris := []aws.ReservedInstance{
@@ -231,7 +231,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create RIs across multiple accounts
 	ris := []aws.ReservedInstance{
@@ -296,7 +296,7 @@ func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create regional and zonal RIs
 	ris := []aws.ReservedInstance{
@@ -355,7 +355,7 @@ func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 	// Test that updating with a new set of RIs removes old ones
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// First update with two RIs
 	ris1 := []aws.ReservedInstance{
@@ -457,7 +457,7 @@ func TestUpdateReservedInstanceMetrics_MalformedKeyHandling(t *testing.T) {
 	// In practice, the key format should always be correct, but we test
 	// the defensive check for completeness.
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create RI with proper data
 	ris := []aws.ReservedInstance{
@@ -541,7 +541,7 @@ func TestExtractInstanceFamily(t *testing.T) {
 func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 	// Simulate a real-world scenario with mixed RIs across accounts and regions
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 	ris := []aws.ReservedInstance{

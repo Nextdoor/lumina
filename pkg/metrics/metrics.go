@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nextdoor/lumina/pkg/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -30,6 +31,9 @@ import (
 // These metrics provide observability into controller health, AWS account
 // validation status, and data collection freshness.
 type Metrics struct {
+	// config holds the Lumina configuration for accessing label names and settings
+	config *config.Config
+
 	// lastUpdateTimes tracks when each data type was last updated.
 	// Key format: "account_id:account_name:region:data_type" (e.g., "123456789012:Production:us-west-2:ec2_instances")
 	// This is used by the background goroutine to calculate age for DataFreshness metrics.
@@ -133,13 +137,18 @@ type Metrics struct {
 // registry. The registry is typically the controller-runtime metrics registry
 // (ctrlmetrics.Registry) which exposes metrics via the /metrics endpoint.
 //
+// The config parameter is used to determine:
+//   - Custom metric label names (e.g., cluster_name, account_name)
+//   - Whether instance metrics should be disabled
+//
 // Example usage:
 //
 //	import ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-//	metrics := metrics.NewMetrics(ctrlmetrics.Registry)
+//	metrics := metrics.NewMetrics(ctrlmetrics.Registry, cfg)
 //	metrics.ControllerRunning.Set(1)
-func NewMetrics(reg prometheus.Registerer) *Metrics {
+func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 	m := &Metrics{
+		config:          cfg,
 		lastUpdateTimes: make(map[string]time.Time),
 		stopCh:          make(chan struct{}),
 
@@ -212,8 +221,18 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "ec2_instance_hourly_cost",
 			Help: "Effective hourly cost for an EC2 instance after applying all discounts (USD/hour)",
 		}, []string{
-			"instance_id", "account_id", "account_name", "region", "instance_type",
-			"cost_type", "availability_zone", "lifecycle", "pricing_accuracy", "node_name",
+			"instance_id",
+			cfg.GetAccountIDLabel(),
+			cfg.GetAccountNameLabel(),
+			cfg.GetRegionLabel(),
+			"instance_type",
+			"cost_type",
+			"availability_zone",
+			"lifecycle",
+			"pricing_accuracy",
+			cfg.GetNodeNameLabel(),
+			cfg.GetClusterNameLabel(),
+			cfg.GetHostNameLabel(),
 		}),
 
 		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{

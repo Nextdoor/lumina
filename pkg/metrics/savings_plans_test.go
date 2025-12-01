@@ -30,7 +30,7 @@ import (
 func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -106,7 +106,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_EmptyList(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -156,7 +156,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EmptyList(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -242,7 +242,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_EC2InstanceVsCompute(t *testing.T) {
 	// Test that EC2 Instance and Compute SPs have different label patterns
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -300,7 +300,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EC2InstanceVsCompute(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_MultipleAccounts(t *testing.T) {
 	// Test SPs across multiple accounts
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -356,7 +356,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MultipleAccounts(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 	// Test that updating with a new set of SPs removes old ones
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -450,7 +450,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_RemainingHoursCalculation(t *testing.T) {
 	// Test remaining hours calculation for various scenarios
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 
@@ -572,7 +572,7 @@ func TestCalculateRemainingHours(t *testing.T) {
 func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 	// Simulate a real-world scenario with mixed SPs across accounts
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	now := time.Now()
 	sps := []aws.SavingsPlan{
