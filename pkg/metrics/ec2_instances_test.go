@@ -41,6 +41,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -52,6 +53,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			AvailabilityZone: "us-west-2b",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -63,6 +65,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -77,6 +80,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 	for _, inst := range instances {
 		value := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
 			"account_id":        inst.AccountID,
+			"account_name":      inst.AccountName,
 			"region":            inst.Region,
 			"instance_type":     inst.InstanceType,
 			"availability_zone": inst.AvailabilityZone,
@@ -91,6 +95,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 	// m5 family should have 2 instances
 	m5Count := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	}))
@@ -99,6 +104,7 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 	// c5 family should have 1 instance
 	c5Count := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "c5",
 	}))
@@ -118,6 +124,7 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -129,6 +136,7 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "stopped",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -140,6 +148,7 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "terminated",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -152,6 +161,7 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 	// Only running instance should have a metric
 	runningValue := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
 		"account_id":        "123456789012",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -164,6 +174,7 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 	// Verify counts only include running instance
 	familyCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	}))
@@ -184,6 +195,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -195,6 +207,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 			AvailabilityZone: "us-west-2b",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -207,6 +220,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 	// Verify initial family count
 	initialCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	}))
@@ -220,6 +234,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 			AvailabilityZone: "us-west-2b",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -232,6 +247,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 	// Verify updated family count (should be 1, not 2)
 	updatedCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	}))
@@ -240,6 +256,7 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 	// Verify i-001 metric no longer exists (should be 0 after reset)
 	i001Value := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
 		"account_id":        "123456789012",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -263,6 +280,7 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "111111111111",
+			AccountName:      "account-1",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -274,6 +292,7 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 			AvailabilityZone: "us-east-1a",
 			Region:           "us-east-1",
 			AccountID:        "111111111111",
+			AccountName:      "account-1",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -285,6 +304,7 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "222222222222",
+			AccountName:      "account-2",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -297,6 +317,7 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 	// Verify family counts are separated by account+region
 	m5Account1West := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "account-1",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	}))
@@ -304,6 +325,7 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 
 	m5Account1East := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "account-1",
 		"region":          "us-east-1",
 		"instance_family": "m5",
 	}))
@@ -323,6 +345,7 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -334,6 +357,7 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 	// Verify instance exists
 	initialValue := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
 		"account_id":        "123456789012",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -349,6 +373,7 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 	// Verify all metrics are reset to 0
 	emptyValue := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
 		"account_id":        "123456789012",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -360,6 +385,7 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 
 	emptyCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	}))
@@ -393,6 +419,7 @@ func TestUpdateEC2InstanceMetrics_InstanceFamilyExtraction(t *testing.T) {
 			AvailabilityZone: tc.availabilityZone,
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -406,6 +433,7 @@ func TestUpdateEC2InstanceMetrics_InstanceFamilyExtraction(t *testing.T) {
 	for _, tc := range testCases {
 		familyCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 			"account_id":      "123456789012",
+			"account_name":    "test-account",
 			"region":          "us-west-2",
 			"instance_family": tc.expectedFamily,
 		}))
@@ -426,6 +454,7 @@ func TestUpdateEC2InstanceMetrics_MalformedInstanceType(t *testing.T) {
 			AvailabilityZone: "us-west-2a",
 			Region:           "us-west-2",
 			AccountID:        "123456789012",
+			AccountName:      "test-account",
 			State:            "running",
 			LaunchTime:       time.Now(),
 			Tenancy:          "default",
@@ -439,6 +468,7 @@ func TestUpdateEC2InstanceMetrics_MalformedInstanceType(t *testing.T) {
 	// Verify metric exists with malformed family
 	familyCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
 		"account_id":      "123456789012",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "malformed",
 	}))

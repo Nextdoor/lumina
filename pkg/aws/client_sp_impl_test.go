@@ -52,7 +52,7 @@ func TestNewRealSPClient(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, "")
+	client, err := NewRealSPClient(ctx, "123456789012", "test-account", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestNewRealSPClientWithEndpoint(t *testing.T) {
 	}
 
 	endpoint := testLocalStackEndpoint
-	client, err := NewRealSPClient(ctx, "123456789012", "us-east-1", creds, endpoint)
+	client, err := NewRealSPClient(ctx, "123456789012", "test-account", "us-east-1", creds, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestRealSPClientDescribeSavingsPlans(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, testLocalStackEndpointSP)
+	client, err := NewRealSPClient(ctx, "123456789012", "test-account", testRegion, creds, testLocalStackEndpointSP)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRealSPClientGetSavingsPlanByARN(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealSPClient(ctx, "123456789012", testRegion, creds, testLocalStackEndpointSP)
+	client, err := NewRealSPClient(ctx, "123456789012", "test-account", testRegion, creds, testLocalStackEndpointSP)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestConvertSavingsPlan(t *testing.T) {
 			End:             &end,
 		}
 
-		result := convertSavingsPlan(awsSP, "123456789012")
+		result := convertSavingsPlan(awsSP, "123456789012", "test-account")
 
 		if result.SavingsPlanARN != "arn:aws:savingsplans::123456789012:savingsplan/sp-compute" {
 			t.Errorf("expected SavingsPlanARN sp-compute, got %s", result.SavingsPlanARN)
@@ -226,7 +226,7 @@ func TestConvertSavingsPlan(t *testing.T) {
 			Ec2InstanceFamily: aws.String("m5"),
 		}
 
-		result := convertSavingsPlan(awsSP, "987654321")
+		result := convertSavingsPlan(awsSP, "987654321", "another-account")
 
 		if result.SavingsPlanType != "EC2Instance" {
 			t.Errorf("expected SavingsPlanType EC2Instance, got %s", result.SavingsPlanType)
@@ -258,7 +258,7 @@ func TestConvertSavingsPlan(t *testing.T) {
 			End:             nil,
 		}
 
-		result := convertSavingsPlan(awsSP, "111111111111")
+		result := convertSavingsPlan(awsSP, "111111111111", "third-account")
 
 		if result.SavingsPlanARN != "" {
 			t.Errorf("expected empty SavingsPlanARN, got %s", result.SavingsPlanARN)
@@ -288,7 +288,7 @@ func TestConvertSavingsPlan(t *testing.T) {
 			End:             &invalidTime,
 		}
 
-		result := convertSavingsPlan(awsSP, "123456789012")
+		result := convertSavingsPlan(awsSP, "123456789012", "test-account")
 
 		// Should result in zero times when parsing fails
 		if !result.Start.IsZero() {
@@ -309,7 +309,7 @@ func TestConvertSavingsPlan(t *testing.T) {
 			Commitment:      &invalidCommitment,
 		}
 
-		result := convertSavingsPlan(awsSP, "123456789012")
+		result := convertSavingsPlan(awsSP, "123456789012", "test-account")
 
 		// Should result in 0.0 commitment when parsing fails
 		if result.Commitment != 0.0 {

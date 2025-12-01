@@ -47,7 +47,7 @@ func (m *Metrics) UpdateReservedInstanceMetrics(ris []aws.ReservedInstance) {
 	m.ReservedInstanceCount.Reset()
 
 	// Track instance family counts for aggregation
-	// Key format: "accountID:region:family"
+	// Key format: "accountID:accountName:region:family"
 	familyCounts := make(map[string]int32)
 
 	// Process each Reserved Instance
@@ -60,6 +60,7 @@ func (m *Metrics) UpdateReservedInstanceMetrics(ris []aws.ReservedInstance) {
 		// Set per-instance metric (always 1 when RI exists)
 		m.ReservedInstance.With(prometheus.Labels{
 			"account_id":        ri.AccountID,
+			"account_name":      ri.AccountName,
 			"region":            ri.Region,
 			"instance_type":     ri.InstanceType,
 			"availability_zone": ri.AvailabilityZone,
@@ -70,17 +71,21 @@ func (m *Metrics) UpdateReservedInstanceMetrics(ris []aws.ReservedInstance) {
 		family := extractInstanceFamily(ri.InstanceType)
 
 		// Aggregate counts by family
-		key := ri.AccountID + ":" + ri.Region + ":" + family
+		key := ri.AccountID + ":" + ri.AccountName + ":" + ri.Region + ":" + family
 		familyCounts[key] += ri.InstanceCount
 	}
 
 	// Set aggregated family counts
 	for key, count := range familyCounts {
 		parts := strings.Split(key, ":")
+		if len(parts) != 4 {
+			continue // Skip malformed keys
+		}
 		m.ReservedInstanceCount.With(prometheus.Labels{
 			"account_id":      parts[0],
-			"region":          parts[1],
-			"instance_family": parts[2],
+			"account_name":    parts[1],
+			"region":          parts[2],
+			"instance_family": parts[3],
 		}).Set(float64(count))
 	}
 }

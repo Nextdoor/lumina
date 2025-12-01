@@ -51,7 +51,12 @@ func TestNewMetrics(t *testing.T) {
 	m.AccountValidationLastSuccess.With(labels).Set(0)
 	m.AccountValidationDuration.With(labels).Observe(0.1)
 
-	dataLabels := prometheus.Labels{"account_id": "test", "region": "us-west-2", "data_type": "test"}
+	dataLabels := prometheus.Labels{
+		"account_id":   "test",
+		"account_name": "Test",
+		"region":       "us-west-2",
+		"data_type":    "test",
+	}
 	m.DataFreshness.With(dataLabels).Set(0)
 	m.DataLastSuccess.With(dataLabels).Set(0)
 
@@ -378,20 +383,22 @@ func TestDataFreshnessMetrics(t *testing.T) {
 
 	// Test MarkDataUpdated and verify freshness is calculated
 	accountID := "123456789012"
+	accountName := "test-account"
 	region := "us-west-2"
 	dataType := "ec2_instances"
 
 	// Mark data as updated
-	m.MarkDataUpdated(accountID, region, dataType)
+	m.MarkDataUpdated(accountID, accountName, region, dataType)
 
 	// Wait a small amount for the background goroutine to update the metric
 	time.Sleep(1200 * time.Millisecond)
 
 	// DataFreshness should now show age in seconds (should be ~1 second)
 	labels := prometheus.Labels{
-		"account_id": accountID,
-		"region":     region,
-		"data_type":  dataType,
+		"account_id":   accountID,
+		"account_name": accountName,
+		"region":       region,
+		"data_type":    dataType,
 	}
 	freshnessMetric, err := m.DataFreshness.GetMetricWith(labels)
 	require.NoError(t, err)

@@ -82,6 +82,7 @@ func (m *Metrics) UpdateSavingsPlansInventoryMetrics(sps []aws.SavingsPlan) {
 		m.SavingsPlanCommitment.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
 			"account_id":       sp.AccountID,
+			"account_name":     sp.AccountName,
 			"type":             spType,
 			"region":           region,
 			"instance_family":  instanceFamily,
@@ -94,6 +95,7 @@ func (m *Metrics) UpdateSavingsPlansInventoryMetrics(sps []aws.SavingsPlan) {
 		m.SavingsPlanRemainingHours.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
 			"account_id":       sp.AccountID,
+			"account_name":     sp.AccountName,
 			"type":             spType,
 		}).Set(remainingHours)
 	}

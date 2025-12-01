@@ -29,9 +29,10 @@ import (
 // RealEC2Client is a production implementation of EC2Client that makes
 // real API calls to AWS EC2 using the AWS SDK v2.
 type RealEC2Client struct {
-	client    *ec2.Client
-	region    string
-	accountID string
+	client      *ec2.Client
+	region      string
+	accountID   string
+	accountName string
 }
 
 // NewRealEC2Client creates a new EC2 client with the specified credential provider.
@@ -40,6 +41,7 @@ type RealEC2Client struct {
 func NewRealEC2Client(
 	ctx context.Context,
 	accountID string,
+	accountName string,
 	region string,
 	credsProvider aws.CredentialsProvider,
 	endpointURL string,
@@ -67,9 +69,10 @@ func NewRealEC2Client(
 	client := ec2.NewFromConfig(cfg, ec2Opts...)
 
 	return &RealEC2Client{
-		client:    client,
-		region:    region,
-		accountID: accountID,
+		client:      client,
+		region:      region,
+		accountID:   accountID,
+		accountName: accountName,
 	}, nil
 }
 
@@ -111,7 +114,7 @@ func (c *RealEC2Client) DescribeInstances(ctx context.Context, regions []string)
 			// Convert AWS SDK types to our types
 			for _, reservation := range output.Reservations {
 				for _, instance := range reservation.Instances {
-					allInstances = append(allInstances, convertInstance(instance, region, c.accountID))
+					allInstances = append(allInstances, convertInstance(instance, region, c.accountID, c.accountName))
 				}
 			}
 		}
@@ -158,7 +161,7 @@ func (c *RealEC2Client) DescribeReservedInstances(ctx context.Context, regions [
 
 		// Convert AWS SDK types to our types
 		for _, ri := range output.ReservedInstances {
-			allRIs = append(allRIs, convertReservedInstance(ri, region, c.accountID))
+			allRIs = append(allRIs, convertReservedInstance(ri, region, c.accountID, c.accountName))
 		}
 	}
 
@@ -281,7 +284,7 @@ func (c *RealEC2Client) GetInstanceByID(_ context.Context, _ string, _ string) (
 }
 
 // convertInstance converts an AWS SDK Instance to our type.
-func convertInstance(inst types.Instance, region, accountID string) Instance {
+func convertInstance(inst types.Instance, region, accountID, accountName string) Instance {
 	// Extract launch time
 	var launchTime time.Time
 	if inst.LaunchTime != nil {
@@ -323,6 +326,7 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 		State:                 string(inst.State.Name),
 		LaunchTime:            launchTime,
 		AccountID:             accountID,
+		AccountName:           accountName,
 		Tags:                  tags,
 		PrivateDNSName:        aws.ToString(inst.PrivateDnsName),
 		PrivateIPAddress:      aws.ToString(inst.PrivateIpAddress),
@@ -333,7 +337,10 @@ func convertInstance(inst types.Instance, region, accountID string) Instance {
 }
 
 // convertReservedInstance converts an AWS SDK ReservedInstance to our type.
-func convertReservedInstance(ri types.ReservedInstances, region, accountID string) ReservedInstance {
+func convertReservedInstance(
+	ri types.ReservedInstances,
+	region, accountID, accountName string,
+) ReservedInstance {
 	var start, end time.Time
 	if ri.Start != nil {
 		start = *ri.Start
@@ -355,5 +362,6 @@ func convertReservedInstance(ri types.ReservedInstances, region, accountID strin
 		OfferingType:       string(ri.OfferingType),
 		Platform:           string(ri.ProductDescription),
 		AccountID:          accountID,
+		AccountName:        accountName,
 	}
 }

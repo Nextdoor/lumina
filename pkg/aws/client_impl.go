@@ -111,7 +111,10 @@ func (c *RealClient) EC2(ctx context.Context, accountConfig AccountConfig) (EC2C
 	creds := c.getCredentials(accountConfig)
 
 	// Create EC2 client with assumed credentials
-	client, err := NewRealEC2Client(ctx, accountConfig.AccountID, accountConfig.Region, creds, c.endpointURL)
+	client, err := NewRealEC2Client(
+		ctx, accountConfig.AccountID, accountConfig.Name,
+		accountConfig.Region, creds, c.endpointURL,
+	)
 	if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
 		return nil, err
 	}
@@ -140,7 +143,10 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 	creds := c.getCredentials(accountConfig)
 
 	// Create Savings Plans client with assumed credentials
-	client, err := NewRealSPClient(ctx, accountConfig.AccountID, accountConfig.Region, creds, c.endpointURL)
+	client, err := NewRealSPClient(
+		ctx, accountConfig.AccountID, accountConfig.Name,
+		accountConfig.Region, creds, c.endpointURL,
+	)
 	if err != nil { // coverage:ignore - AWS SDK config errors are difficult to trigger in unit tests
 		return nil, err
 	}

@@ -39,6 +39,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 				InstanceType:     "m5.xlarge",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15, // Covered by RI
 				CoverageType:     cost.CoverageReservedInstance,
@@ -49,6 +50,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 				InstanceType:     "c5.2xlarge",
 				Region:           "us-east-1",
 				AccountID:        "222222222222",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-east-1b",
 				EffectiveCost:    0.10, // Covered by SP
 				CoverageType:     cost.CoverageComputeSavingsPlan,
@@ -60,6 +62,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 				InstanceType:     "t3.medium",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2b",
 				EffectiveCost:    0.0416, // On-demand
 				CoverageType:     cost.CoverageOnDemand,
@@ -70,6 +73,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 			"arn:aws:savingsplans::111111111111:savingsplan/abc": {
 				SavingsPlanARN:         "arn:aws:savingsplans::111111111111:savingsplan/abc",
 				AccountID:              "111111111111",
+				AccountName:            "test-account",
 				Type:                   "EC2Instance",
 				HourlyCommitment:       100.00,
 				CurrentUtilizationRate: 75.00,
@@ -79,6 +83,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 			"arn:aws:savingsplans::222222222222:savingsplan/def": {
 				SavingsPlanARN:         "arn:aws:savingsplans::222222222222:savingsplan/def",
 				AccountID:              "222222222222",
+				AccountName:            "test-account",
 				Type:                   "Compute",
 				HourlyCommitment:       200.00,
 				CurrentUtilizationRate: 250.00, // Over-utilized!
@@ -96,6 +101,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-abc123",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"cost_type":         "reserved_instance",
@@ -106,6 +112,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 0.10, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-def456",
 		"account_id":        "222222222222",
+		"account_name":      "test-account",
 		"region":            "us-east-1",
 		"instance_type":     "c5.2xlarge",
 		"cost_type":         "compute_savings_plan",
@@ -116,6 +123,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 0.0416, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ghi789",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "t3.medium",
 		"cost_type":         "on_demand",
@@ -127,18 +135,21 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 75.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	})))
 
 	assert.Equal(t, 25.00, testutil.ToFloat64(m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	})))
 
 	assert.Equal(t, 75.0, testutil.ToFloat64(m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	})))
 
@@ -146,18 +157,21 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 250.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222222222222:savingsplan/def",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 
 	assert.Equal(t, -50.00, testutil.ToFloat64(m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222222222222:savingsplan/def",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 
 	assert.Equal(t, 125.0, testutil.ToFloat64(m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222222222222:savingsplan/def",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 }
@@ -196,6 +210,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 				InstanceType:     "m5.xlarge",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15,
 				CoverageType:     cost.CoverageOnDemand,
@@ -206,6 +221,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 				InstanceType:     "c5.2xlarge",
 				Region:           "us-east-1",
 				AccountID:        "222222222222",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-east-1b",
 				EffectiveCost:    0.34,
 				CoverageType:     cost.CoverageOnDemand,
@@ -222,6 +238,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-abc123",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"cost_type":         "on_demand",
@@ -237,6 +254,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 				InstanceType:     "m5.xlarge",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15,
 				CoverageType:     cost.CoverageOnDemand,
@@ -253,6 +271,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-abc123",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"cost_type":         "on_demand",
@@ -265,6 +284,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 	assert.Equal(t, 0.0, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-def456",
 		"account_id":        "222222222222",
+		"account_name":      "test-account",
 		"region":            "us-east-1",
 		"instance_type":     "c5.2xlarge",
 		"cost_type":         "on_demand",
@@ -286,6 +306,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				InstanceType:     "m5.xlarge",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2a",
 				EffectiveCost:    0.15,
 				CoverageType:     cost.CoverageReservedInstance,
@@ -296,6 +317,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				InstanceType:        "m5.2xlarge",
 				Region:              "us-west-2",
 				AccountID:           "111111111111",
+				AccountName:         "test-account",
 				AvailabilityZone:    "us-west-2a",
 				EffectiveCost:       0.25,
 				SavingsPlanCoverage: 0.25, // SP commitment consumed
@@ -307,6 +329,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				InstanceType:     "c5.2xlarge",
 				Region:           "us-east-1",
 				AccountID:        "222222222222",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-east-1b",
 				EffectiveCost:    0.34,
 				CoverageType:     cost.CoverageComputeSavingsPlan,
@@ -318,6 +341,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				InstanceType:     "c5.xlarge",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2b",
 				EffectiveCost:    0.05,
 				CoverageType:     cost.CoverageSpot,
@@ -328,6 +352,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 				InstanceType:     "t3.medium",
 				Region:           "us-west-2",
 				AccountID:        "111111111111",
+				AccountName:      "test-account",
 				AvailabilityZone: "us-west-2c",
 				EffectiveCost:    0.0416,
 				CoverageType:     cost.CoverageOnDemand,
@@ -345,6 +370,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ri",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"cost_type":         "reserved_instance",
@@ -355,6 +381,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	assert.Equal(t, 0.25, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ec2sp",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.2xlarge",
 		"cost_type":         "ec2_instance_savings_plan",
@@ -365,6 +392,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	assert.Equal(t, 0.34, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-computesp",
 		"account_id":        "222222222222",
+		"account_name":      "test-account",
 		"region":            "us-east-1",
 		"instance_type":     "c5.2xlarge",
 		"cost_type":         "compute_savings_plan",
@@ -375,6 +403,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	assert.Equal(t, 0.05, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-spot",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "c5.xlarge",
 		"cost_type":         "spot",
@@ -385,6 +414,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	assert.Equal(t, 0.0416, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-od",
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "t3.medium",
 		"cost_type":         "on_demand",
@@ -405,6 +435,7 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 			"arn:aws:savingsplans::111:savingsplan/under": {
 				SavingsPlanARN:         "arn:aws:savingsplans::111:savingsplan/under",
 				AccountID:              "111111111111",
+				AccountName:            "test-account",
 				Type:                   "EC2Instance",
 				HourlyCommitment:       100.00,
 				CurrentUtilizationRate: 50.00, // 50% utilization
@@ -414,6 +445,7 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 			"arn:aws:savingsplans::222:savingsplan/full": {
 				SavingsPlanARN:         "arn:aws:savingsplans::222:savingsplan/full",
 				AccountID:              "222222222222",
+				AccountName:            "test-account",
 				Type:                   "Compute",
 				HourlyCommitment:       200.00,
 				CurrentUtilizationRate: 200.00, // 100% utilization
@@ -423,6 +455,7 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 			"arn:aws:savingsplans::333:savingsplan/over": {
 				SavingsPlanARN:         "arn:aws:savingsplans::333:savingsplan/over",
 				AccountID:              "333333333333",
+				AccountName:            "test-account",
 				Type:                   "Compute",
 				HourlyCommitment:       150.00,
 				CurrentUtilizationRate: 180.00, // 120% utilization (over-committed)
@@ -440,16 +473,19 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 	assert.Equal(t, 50.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111:savingsplan/under",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	})))
 	assert.Equal(t, 50.00, testutil.ToFloat64(m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111:savingsplan/under",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	})))
 	assert.Equal(t, 50.0, testutil.ToFloat64(m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111:savingsplan/under",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	})))
 
@@ -457,16 +493,19 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 	assert.Equal(t, 200.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222:savingsplan/full",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 	assert.Equal(t, 0.00, testutil.ToFloat64(m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222:savingsplan/full",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 	assert.Equal(t, 100.0, testutil.ToFloat64(m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222:savingsplan/full",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 
@@ -474,16 +513,19 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 	assert.Equal(t, 180.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::333:savingsplan/over",
 		"account_id":       "333333333333",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 	assert.Equal(t, -30.00, testutil.ToFloat64(m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::333:savingsplan/over",
 		"account_id":       "333333333333",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 	assert.Equal(t, 120.0, testutil.ToFloat64(m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::333:savingsplan/over",
 		"account_id":       "333333333333",
+		"account_name":     "test-account",
 		"type":             "compute",
 	})))
 }

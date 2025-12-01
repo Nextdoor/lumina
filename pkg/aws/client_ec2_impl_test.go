@@ -54,7 +54,7 @@ func TestNewRealEC2Client(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "test-account", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestNewRealEC2ClientWithEndpoint(t *testing.T) {
 	}
 
 	endpoint := testLocalStackEndpoint
-	client, err := NewRealEC2Client(ctx, "123456789012", "us-east-1", creds, endpoint)
+	client, err := NewRealEC2Client(ctx, "123456789012", "test-account", "us-east-1", creds, endpoint)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestRealEC2ClientDescribeInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, testLocalStackEndpoint)
+	client, err := NewRealEC2Client(ctx, "123456789012", "test-account", testRegion, creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRealEC2ClientDescribeReservedInstances(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, testLocalStackEndpoint)
+	client, err := NewRealEC2Client(ctx, "123456789012", "test-account", testRegion, creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestRealEC2ClientDescribeSpotPriceHistory(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, testLocalStackEndpoint)
+	client, err := NewRealEC2Client(ctx, "123456789012", "test-account", testRegion, creds, testLocalStackEndpoint)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestRealEC2ClientGetInstanceByID(t *testing.T) {
 		},
 	}
 
-	client, err := NewRealEC2Client(ctx, "123456789012", testRegion, creds, "")
+	client, err := NewRealEC2Client(ctx, "123456789012", "test-account", testRegion, creds, "")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestConvertReservedInstance(t *testing.T) {
 			ProductDescription:  types.RIProductDescriptionLinuxUnix,
 		}
 
-		result := convertReservedInstance(awsRI, testRegion, "123456789012")
+		result := convertReservedInstance(awsRI, testRegion, "123456789012", "test-account")
 
 		if result.ReservedInstanceID != "ri-12345678" {
 			t.Errorf("expected ReservedInstanceID ri-12345678, got %s", result.ReservedInstanceID)
@@ -309,7 +309,7 @@ func TestConvertReservedInstance(t *testing.T) {
 			State:               types.ReservedInstanceStateActive,
 		}
 
-		result := convertReservedInstance(awsRI, "us-east-1", "987654321098")
+		result := convertReservedInstance(awsRI, "us-east-1", "987654321098", "another-account")
 
 		if result.ReservedInstanceID != "" {
 			t.Errorf("expected empty ReservedInstanceID, got %s", result.ReservedInstanceID)
@@ -361,7 +361,7 @@ func TestConvertInstance(t *testing.T) {
 			},
 		}
 
-		result := convertInstance(awsInst, testRegion, "123456789012")
+		result := convertInstance(awsInst, testRegion, "123456789012", "test-account")
 
 		if result.InstanceID != "i-abc123def456" {
 			t.Errorf("expected InstanceID i-abc123def456, got %s", result.InstanceID)
@@ -425,7 +425,7 @@ func TestConvertInstance(t *testing.T) {
 			},
 		}
 
-		result := convertInstance(awsInst, "us-east-1", "987654321098")
+		result := convertInstance(awsInst, "us-east-1", "987654321098", "test-account")
 
 		if result.Lifecycle != "spot" {
 			t.Errorf("expected Lifecycle spot, got %s", result.Lifecycle)
@@ -449,7 +449,7 @@ func TestConvertInstance(t *testing.T) {
 			},
 		}
 
-		result := convertInstance(awsInst, testRegion, "123456789012")
+		result := convertInstance(awsInst, testRegion, "123456789012", "test-account")
 
 		if result.Platform != "windows" {
 			t.Errorf("expected Platform windows, got %s", result.Platform)
@@ -469,7 +469,7 @@ func TestConvertInstance(t *testing.T) {
 			},
 		}
 
-		result := convertInstance(awsInst, "us-east-1", "123456789012")
+		result := convertInstance(awsInst, "us-east-1", "123456789012", "test-account")
 
 		if result.InstanceID != "" {
 			t.Errorf("expected empty InstanceID, got %s", result.InstanceID)
@@ -514,7 +514,7 @@ func TestConvertInstance(t *testing.T) {
 			},
 		}
 
-		result := convertInstance(awsInst, testRegion, "123456789012")
+		result := convertInstance(awsInst, testRegion, "123456789012", "test-account")
 
 		// Should only have 2 valid tags
 		if len(result.Tags) != 2 {

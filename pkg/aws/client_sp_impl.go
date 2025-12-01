@@ -35,9 +35,10 @@ const (
 // RealSPClient is a production implementation of SavingsPlansClient that makes
 // real API calls to AWS Savings Plans using the AWS SDK v2.
 type RealSPClient struct {
-	client    *savingsplans.Client
-	region    string
-	accountID string
+	client      *savingsplans.Client
+	region      string
+	accountID   string
+	accountName string
 }
 
 // NewRealSPClient creates a new Savings Plans client with the specified credential provider.
@@ -46,6 +47,7 @@ type RealSPClient struct {
 func NewRealSPClient(
 	ctx context.Context,
 	accountID string,
+	accountName string,
 	region string,
 	credsProvider aws.CredentialsProvider,
 	endpointURL string,
@@ -73,9 +75,10 @@ func NewRealSPClient(
 	client := savingsplans.NewFromConfig(cfg, spOpts...)
 
 	return &RealSPClient{
-		client:    client,
-		region:    region,
-		accountID: accountID,
+		client:      client,
+		region:      region,
+		accountID:   accountID,
+		accountName: accountName,
 	}, nil
 }
 
@@ -105,7 +108,7 @@ func (c *RealSPClient) DescribeSavingsPlans(ctx context.Context) ([]SavingsPlan,
 
 		// Convert AWS SDK types to our types
 		for _, sp := range output.SavingsPlans {
-			allSPs = append(allSPs, convertSavingsPlan(sp, c.accountID))
+			allSPs = append(allSPs, convertSavingsPlan(sp, c.accountID, c.accountName))
 		}
 
 		// Check for more pages
@@ -134,7 +137,7 @@ func (c *RealSPClient) GetSavingsPlanByARN(ctx context.Context, arn string) (*Sa
 		return nil, nil // Not found
 	}
 
-	sp := convertSavingsPlan(output.SavingsPlans[0], c.accountID)
+	sp := convertSavingsPlan(output.SavingsPlans[0], c.accountID, c.accountName)
 	return &sp, nil
 }
 
@@ -397,7 +400,7 @@ func convertSavingsPlanRate(rate types.SavingsPlanRate, savingsPlanId string) *S
 }
 
 // convertSavingsPlan converts an AWS SDK SavingsPlan to our type.
-func convertSavingsPlan(sp types.SavingsPlan, accountID string) SavingsPlan {
+func convertSavingsPlan(sp types.SavingsPlan, accountID, accountName string) SavingsPlan {
 	// Parse start and end times (strings in RFC3339 format)
 	var start, end time.Time
 	if sp.Start != nil {
@@ -448,6 +451,7 @@ func convertSavingsPlan(sp types.SavingsPlan, accountID string) SavingsPlan {
 		Start:             start,
 		End:               end,
 		AccountID:         accountID,
+		AccountName:       accountName,
 		EC2InstanceFamily: instanceFamily, // Legacy field for compatibility
 	}
 }

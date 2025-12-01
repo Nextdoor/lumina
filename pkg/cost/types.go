@@ -107,6 +107,9 @@ type InstanceCost struct {
 	// AccountID is the AWS account ID
 	AccountID string
 
+	// AccountName is the friendly name of the AWS account
+	AccountName string
+
 	// AvailabilityZone is the AZ where the instance is running (e.g., "us-west-2a")
 	AvailabilityZone string
 
@@ -171,6 +174,9 @@ type SavingsPlanUtilization struct {
 
 	// AccountID is the AWS account that owns this Savings Plan
 	AccountID string
+
+	// AccountName is the friendly name of the AWS account
+	AccountName string
 
 	// Type is the Savings Plan type: "ec2_instance" or "compute"
 	Type string

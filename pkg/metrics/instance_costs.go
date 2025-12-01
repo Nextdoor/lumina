@@ -102,6 +102,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 		m.EC2InstanceHourlyCost.With(prometheus.Labels{
 			"instance_id":       ic.InstanceID,
 			"account_id":        ic.AccountID,
+			"account_name":      ic.AccountName,
 			"region":            ic.Region,
 			"instance_type":     ic.InstanceType,
 			"cost_type":         costType,
@@ -123,6 +124,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 		m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
 			"account_id":       sp.AccountID,
+			"account_name":     sp.AccountName,
 			"type":             spType,
 		}).Set(sp.CurrentUtilizationRate)
 
@@ -131,6 +133,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 		m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
 			"account_id":       sp.AccountID,
+			"account_name":     sp.AccountName,
 			"type":             spType,
 		}).Set(sp.RemainingCapacity)
 
@@ -139,6 +142,7 @@ func (m *Metrics) UpdateInstanceCostMetrics(result cost.CalculationResult, nodeC
 		m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
 			"savings_plan_arn": sp.SavingsPlanARN,
 			"account_id":       sp.AccountID,
+			"account_name":     sp.AccountName,
 			"type":             spType,
 		}).Set(sp.UtilizationPercent)
 	}

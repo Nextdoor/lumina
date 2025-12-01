@@ -46,6 +46,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::222222222222:savingsplan/def456",
@@ -57,6 +58,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 			Start:           now.Add(-100 * 24 * time.Hour),
 			End:             now.Add(265 * 24 * time.Hour),
 			AccountID:       "222222222222",
+			AccountName:     "test-account",
 		},
 	}
 
@@ -67,6 +69,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 150.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc123",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -76,6 +79,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 	assert.Equal(t, 300.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222222222222:savingsplan/def456",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 		"region":           "all",
 		"instance_family":  "all",
@@ -85,6 +89,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 	ec2Remaining := testutil.ToFloat64(m.SavingsPlanRemainingHours.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc123",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	}))
 	assert.InDelta(t, 365*24, ec2Remaining, 1.0) // Within 1 hour tolerance
@@ -92,6 +97,7 @@ func TestUpdateSavingsPlansInventoryMetrics_BasicFunctionality(t *testing.T) {
 	computeRemaining := testutil.ToFloat64(m.SavingsPlanRemainingHours.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222222222222:savingsplan/def456",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "compute",
 	}))
 	assert.InDelta(t, 265*24, computeRemaining, 1.0) // Within 1 hour tolerance
@@ -116,6 +122,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EmptyList(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 	}
 	m.UpdateSavingsPlansInventoryMetrics(sps)
@@ -124,6 +131,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EmptyList(t *testing.T) {
 	assert.Equal(t, 150.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc123",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -136,6 +144,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EmptyList(t *testing.T) {
 	count, err := m.SavingsPlanCommitment.GetMetricWith(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/abc123",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -163,6 +172,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::111111111111:savingsplan/retired",
@@ -174,6 +184,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 			Start:           now.Add(-730 * 24 * time.Hour),
 			End:             now.Add(-30 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::111111111111:savingsplan/payment-failed",
@@ -185,6 +196,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 			Start:           now.Add(-100 * 24 * time.Hour),
 			End:             now.Add(265 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 	}
 
@@ -195,6 +207,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 	assert.Equal(t, 150.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/active",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -204,6 +217,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 	retiredMetric, err := m.SavingsPlanCommitment.GetMetricWith(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/retired",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "c5",
@@ -215,6 +229,7 @@ func TestUpdateSavingsPlansInventoryMetrics_InactiveSPsSkipped(t *testing.T) {
 	failedMetric, err := m.SavingsPlanCommitment.GetMetricWith(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/payment-failed",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "compute",
 		"region":           "all",
 		"instance_family":  "all",
@@ -242,6 +257,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EC2InstanceVsCompute(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::111111111111:savingsplan/compute",
@@ -253,6 +269,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EC2InstanceVsCompute(t *testing.T) {
 			Start:           now.Add(-100 * 24 * time.Hour),
 			End:             now.Add(265 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 	}
 
@@ -262,6 +279,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EC2InstanceVsCompute(t *testing.T) {
 	assert.Equal(t, 150.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/ec2",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -271,6 +289,7 @@ func TestUpdateSavingsPlansInventoryMetrics_EC2InstanceVsCompute(t *testing.T) {
 	assert.Equal(t, 300.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/compute",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "compute",
 		"region":           "all",
 		"instance_family":  "all",
@@ -296,6 +315,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MultipleAccounts(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::222222222222:savingsplan/sp2",
@@ -307,6 +327,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MultipleAccounts(t *testing.T) {
 			Start:           now.Add(-200 * 24 * time.Hour),
 			End:             now.Add(165 * 24 * time.Hour),
 			AccountID:       "222222222222",
+			AccountName:     "test-account",
 		},
 	}
 
@@ -316,6 +337,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MultipleAccounts(t *testing.T) {
 	assert.Equal(t, 100.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/sp1",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -324,6 +346,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MultipleAccounts(t *testing.T) {
 	assert.Equal(t, 200.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::222222222222:savingsplan/sp2",
 		"account_id":       "222222222222",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -349,6 +372,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::111111111111:savingsplan/sp2",
@@ -360,6 +384,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 			Start:           now.Add(-100 * 24 * time.Hour),
 			End:             now.Add(265 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 	}
 	m.UpdateSavingsPlansInventoryMetrics(sps1)
@@ -368,6 +393,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 	assert.Equal(t, 100.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/sp1",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -375,6 +401,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 	assert.Equal(t, 200.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/sp2",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "compute",
 		"region":           "all",
 		"instance_family":  "all",
@@ -392,6 +419,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 	}
 	m.UpdateSavingsPlansInventoryMetrics(sps2)
@@ -400,6 +428,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 	assert.Equal(t, 100.00, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/sp1",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -409,6 +438,7 @@ func TestUpdateSavingsPlansInventoryMetrics_MetricCleanup(t *testing.T) {
 	sp2Metric, err := m.SavingsPlanCommitment.GetMetricWith(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/sp2",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "compute",
 		"region":           "all",
 		"instance_family":  "all",
@@ -435,6 +465,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RemainingHoursCalculation(t *testing
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(24 * time.Hour), // 1 day remaining
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 		{
 			SavingsPlanARN:  "arn:aws:savingsplans::111111111111:savingsplan/long-term",
@@ -446,6 +477,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RemainingHoursCalculation(t *testing
 			Start:           now.Add(-30 * 24 * time.Hour),
 			End:             now.Add(335 * 24 * time.Hour), // ~11 months remaining
 			AccountID:       "111111111111",
+			AccountName:     "test-account",
 		},
 	}
 
@@ -455,6 +487,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RemainingHoursCalculation(t *testing
 	expiringRemaining := testutil.ToFloat64(m.SavingsPlanRemainingHours.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/expiring-soon",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	}))
 	assert.InDelta(t, 24.0, expiringRemaining, 0.1)
@@ -463,6 +496,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RemainingHoursCalculation(t *testing
 	longTermRemaining := testutil.ToFloat64(m.SavingsPlanRemainingHours.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::111111111111:savingsplan/long-term",
 		"account_id":       "111111111111",
+		"account_name":     "test-account",
 		"type":             "compute",
 	}))
 	assert.InDelta(t, 335*24.0, longTermRemaining, 1.0)
@@ -553,6 +587,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 			Start:           now.Add(-365 * 24 * time.Hour),
 			End:             now.Add(365 * 24 * time.Hour),
 			AccountID:       "329239342014",
+			AccountName:     "test-account",
 		},
 		// Production account - Compute SP (global)
 		{
@@ -565,6 +600,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 			Start:           now.Add(-200 * 24 * time.Hour),
 			End:             now.Add(165 * 24 * time.Hour),
 			AccountID:       "329239342014",
+			AccountName:     "test-account",
 		},
 		// Staging account - EC2 Instance SP for c5 family
 		{
@@ -577,6 +613,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 			Start:           now.Add(-100 * 24 * time.Hour),
 			End:             now.Add(265 * 24 * time.Hour),
 			AccountID:       "364942603424",
+			AccountName:     "test-account",
 		},
 		// Expired SP (should be skipped)
 		{
@@ -589,6 +626,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 			Start:           now.Add(-730 * 24 * time.Hour),
 			End:             now.Add(-30 * 24 * time.Hour),
 			AccountID:       "329239342014",
+			AccountName:     "test-account",
 		},
 	}
 
@@ -598,6 +636,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 	assert.Equal(t, 150.50, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::329239342014:savingsplan/prod-ec2-m5",
 		"account_id":       "329239342014",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "m5",
@@ -607,6 +646,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 	assert.Equal(t, 500.75, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::329239342014:savingsplan/prod-compute",
 		"account_id":       "329239342014",
+		"account_name":     "test-account",
 		"type":             "compute",
 		"region":           "all",
 		"instance_family":  "all",
@@ -616,6 +656,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 	assert.Equal(t, 75.25, testutil.ToFloat64(m.SavingsPlanCommitment.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::364942603424:savingsplan/staging-ec2-c5",
 		"account_id":       "364942603424",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-east-1",
 		"instance_family":  "c5",
@@ -625,6 +666,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 	prodRemaining := testutil.ToFloat64(m.SavingsPlanRemainingHours.With(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::329239342014:savingsplan/prod-ec2-m5",
 		"account_id":       "329239342014",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 	}))
 	assert.InDelta(t, 365*24, prodRemaining, 1.0)
@@ -633,6 +675,7 @@ func TestUpdateSavingsPlansInventoryMetrics_RealWorldScenario(t *testing.T) {
 	expiredMetric, err := m.SavingsPlanCommitment.GetMetricWith(prometheus.Labels{
 		"savings_plan_arn": "arn:aws:savingsplans::329239342014:savingsplan/expired",
 		"account_id":       "329239342014",
+		"account_name":     "test-account",
 		"type":             "ec2_instance",
 		"region":           "us-west-2",
 		"instance_family":  "r5",

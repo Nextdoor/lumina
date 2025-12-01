@@ -125,8 +125,8 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 		log.V(1).Info("no instances found in EC2Cache, skipping spot pricing query")
 
 		// Record metrics even when no instances - reconciliation succeeded, no data to fetch
-		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
-		r.Metrics.MarkDataUpdated("", "", "spot-pricing")
+		r.Metrics.DataLastSuccess.WithLabelValues("", "", "", "spot-pricing").Set(1)
+		r.Metrics.MarkDataUpdated("", "", "", "spot-pricing")
 
 		// Signal ready on first cycle even with no instances
 		r.readyOnce.Do(func() {
@@ -150,8 +150,8 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 		log.V(1).Info("all spot prices are cached, no queries needed (0 API calls)")
 
 		// Record metrics even when all cached - reconciliation succeeded, cache is fresh
-		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
-		r.Metrics.MarkDataUpdated("", "", "spot-pricing")
+		r.Metrics.DataLastSuccess.WithLabelValues("", "", "", "spot-pricing").Set(1)
+		r.Metrics.MarkDataUpdated("", "", "", "spot-pricing")
 
 		r.readyOnce.Do(func() {
 			if r.ReadyChan != nil {
@@ -182,14 +182,14 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 
 	// Record metrics
 	if len(fetchErrors) == 0 {
-		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
+		r.Metrics.DataLastSuccess.WithLabelValues("", "", "", "spot-pricing").Set(1)
 	} else {
-		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(0)
+		r.Metrics.DataLastSuccess.WithLabelValues("", "", "", "spot-pricing").Set(0)
 		log.Info("reconciliation cycle completed with errors",
 			"error_count", len(fetchErrors),
 			"new_prices", len(newPrices))
 	}
-	r.Metrics.MarkDataUpdated("", "", "spot-pricing")
+	r.Metrics.MarkDataUpdated("", "", "", "spot-pricing")
 
 	// Signal that initial reconciliation is complete (thread-safe, only once)
 	r.readyOnce.Do(func() {

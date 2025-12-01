@@ -227,6 +227,7 @@ func (r *RISPReconciler) reconcileReservedInstances(
 			// Record failure in metrics
 			r.Metrics.DataLastSuccess.WithLabelValues(
 				account.AccountID,
+				account.Name,
 				region,
 				"reserved_instances",
 			).Set(0)
@@ -252,12 +253,13 @@ func (r *RISPReconciler) reconcileReservedInstances(
 		// Record success in metrics
 		r.Metrics.DataLastSuccess.WithLabelValues(
 			account.AccountID,
+			account.Name,
 			region,
 			"reserved_instances",
 		).Set(1)
 
 		// Mark that reserved_instances data was updated for this account+region
-		r.Metrics.MarkDataUpdated(account.AccountID, region, "reserved_instances")
+		r.Metrics.MarkDataUpdated(account.AccountID, account.Name, region, "reserved_instances")
 
 		log.V(1).Info("updated reserved instances",
 			"region", region,
@@ -289,7 +291,7 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 		testSPs, hasTestData := r.Config.TestData.SavingsPlans[account.AccountID]
 		if hasTestData {
 			log.Info("using test data for savings plans", "count", len(testSPs))
-			sps = convertTestSavingsPlans(testSPs, account.AccountID)
+			sps = convertTestSavingsPlans(testSPs, account.AccountID, account.Name)
 		} else {
 			// No test data for this account, return empty list
 			log.Info("no test data configured for this account, using empty list")
@@ -315,6 +317,7 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 			// Record failure in metrics
 			r.Metrics.DataLastSuccess.WithLabelValues(
 				account.AccountID,
+				account.Name,
 				"", // SPs are not regional
 				"savings_plans",
 			).Set(0)
@@ -332,12 +335,13 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 	// Record success in metrics
 	r.Metrics.DataLastSuccess.WithLabelValues(
 		account.AccountID,
+		account.Name,
 		"", // SPs are not regional
 		"savings_plans",
 	).Set(1)
 
 	// Mark that savings_plans data was updated for this account (SPs are not regional)
-	r.Metrics.MarkDataUpdated(account.AccountID, "", "savings_plans")
+	r.Metrics.MarkDataUpdated(account.AccountID, account.Name, "", "savings_plans")
 
 	log.V(1).Info("updated savings plans",
 		"count", len(sps),
@@ -358,7 +362,10 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 }
 
 // convertTestSavingsPlans converts test configuration SPs to aws.SavingsPlan format.
-func convertTestSavingsPlans(testSPs []config.TestSavingsPlan, accountID string) []aws.SavingsPlan {
+func convertTestSavingsPlans(
+	testSPs []config.TestSavingsPlan,
+	accountID, accountName string,
+) []aws.SavingsPlan {
 	result := make([]aws.SavingsPlan, 0, len(testSPs))
 
 	for _, testSP := range testSPs {
@@ -385,6 +392,7 @@ func convertTestSavingsPlans(testSPs []config.TestSavingsPlan, accountID string)
 			Start:           start,
 			End:             end,
 			AccountID:       accountID,
+			AccountName:     accountName,
 		}
 		result = append(result, sp)
 	}

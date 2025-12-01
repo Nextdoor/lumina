@@ -223,6 +223,7 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 		// Record failure in metrics
 		r.Metrics.DataLastSuccess.WithLabelValues(
 			account.AccountID,
+			account.Name,
 			region,
 			"ec2_instances",
 		).Set(0)
@@ -240,6 +241,7 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 		// Record failure in metrics
 		r.Metrics.DataLastSuccess.WithLabelValues(
 			account.AccountID,
+			account.Name,
 			region,
 			"ec2_instances",
 		).Set(0)
@@ -255,12 +257,13 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 	// Record success in metrics
 	r.Metrics.DataLastSuccess.WithLabelValues(
 		account.AccountID,
+		account.Name,
 		region,
 		"ec2_instances",
 	).Set(1)
 
 	// Mark that ec2_instances data was updated for this account+region
-	r.Metrics.MarkDataUpdated(account.AccountID, region, "ec2_instances")
+	r.Metrics.MarkDataUpdated(account.AccountID, account.Name, region, "ec2_instances")
 
 	// Log summary with instance count breakdown by state
 	stateCount := make(map[string]int)

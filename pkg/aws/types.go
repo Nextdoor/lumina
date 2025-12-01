@@ -109,6 +109,9 @@ type Instance struct {
 	// AccountID is the AWS account that owns this instance
 	AccountID string
 
+	// AccountName is the friendly name of the AWS account
+	AccountName string
+
 	// Tags are the EC2 instance tags
 	Tags map[string]string
 
@@ -166,6 +169,9 @@ type ReservedInstance struct {
 
 	// AccountID is the AWS account that owns this RI
 	AccountID string
+
+	// AccountName is the friendly name of the AWS account
+	AccountName string
 }
 
 // SavingsPlan represents an AWS Savings Plan.
@@ -200,6 +206,9 @@ type SavingsPlan struct {
 
 	// AccountID is the AWS account that owns this SP
 	AccountID string
+
+	// AccountName is the friendly name of the AWS account
+	AccountName string
 
 	// EC2InstanceFamily is the specific instance family for EC2 Instance SPs
 	// (legacy field for compatibility)

@@ -38,14 +38,14 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **`lumina_data_freshness_seconds`** (gauge)
 - Age of cached data in seconds since last successful update (auto-updated every second)
-- Labels: `account_id`, `region`, `data_type`
+- Labels: `account_id`, `account_name`, `region`, `data_type`
 - Values: Age in seconds (e.g., 60 = data is 60 seconds old)
 - Data types: `ec2_instances`, `reserved_instances`, `savings_plans`, `pricing`, `sp_rates`, `spot_pricing`
 - Use: Direct alerting on stale data (e.g., `lumina_data_freshness_seconds > 600` alerts if data is older than 10 minutes)
 
 **`lumina_data_last_success`** (gauge)
 - Last data collection success indicator
-- Labels: `account_id`, `region`, `data_type`
+- Labels: `account_id`, `account_name`, `region`, `data_type`
 - Values: 1 = success, 0 = failed
 - Use: Alert on collection failures
 
@@ -53,13 +53,13 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **`ec2_reserved_instance`** (gauge)
 - Indicates presence of a Reserved Instance
-- Labels: `account_id`, `region`, `instance_type`, `availability_zone`
+- Labels: `account_id`, `account_name`, `region`, `instance_type`, `availability_zone`
 - Value: 1 = RI exists, metric absent = RI does not exist
 - Use: Track RI inventory, identify specific RIs
 
 **`ec2_reserved_instance_count`** (gauge)
 - Count of Reserved Instances by instance family
-- Labels: `account_id`, `region`, `instance_family`
+- Labels: `account_id`, `account_name`, `region`, `instance_family`
 - Value: Number of RIs in this family
 - Use: High-level RI inventory view, capacity planning
 
@@ -67,13 +67,13 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **`savings_plan_hourly_commitment`** (gauge)
 - Fixed hourly commitment amount ($/hour) for a Savings Plan
-- Labels: `savings_plan_arn`, `account_id`, `type`, `region`, `instance_family`
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`, `region`, `instance_family`
 - Value: Commitment amount in dollars per hour
 - Use: Track SP inventory, identify commitments
 
 **`savings_plan_remaining_hours`** (gauge)
 - Number of hours remaining until Savings Plan expires
-- Labels: `savings_plan_arn`, `account_id`, `type`
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 - Value: Hours until expiration
 - Use: Alert on upcoming expirations for renewal planning
 
@@ -86,21 +86,21 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **`savings_plan_current_utilization_rate`** (gauge)
 - Current hourly rate ($/hour) being consumed by instances covered by this Savings Plan
-- Labels: `savings_plan_arn`, `account_id`, `type`
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 - Value: Current utilization in dollars per hour
 - Use: Monitor real-time SP usage
 
 **`savings_plan_remaining_capacity`** (gauge)
 - Unused capacity in $/hour for a Savings Plan
 - Calculated as: HourlyCommitment - CurrentUtilizationRate
-- Labels: `savings_plan_arn`, `account_id`, `type`
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 - Value: Remaining capacity (negative if over-utilized)
 - Use: Alert on under-utilization (wasted money) or over-utilization (spillover to on-demand)
 
 **`savings_plan_utilization_percent`** (gauge)
 - Utilization percentage of a Savings Plan
 - Calculated as: (CurrentUtilizationRate / HourlyCommitment) * 100
-- Labels: `savings_plan_arn`, `account_id`, `type`
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 - Value: Utilization percentage (can exceed 100%)
 - Use: Dashboard visualization, alerting on utilization thresholds
 
@@ -108,13 +108,13 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **`ec2_instance`** (gauge)
 - Indicates presence of a running EC2 instance
-- Labels: `account_id`, `region`, `instance_type`, `availability_zone`, `instance_id`, `tenancy`, `platform`
+- Labels: `account_id`, `account_name`, `region`, `instance_type`, `availability_zone`, `instance_id`, `tenancy`, `platform`
 - Value: 1 = instance exists and is running, metric absent = instance stopped or terminated
 - Use: Track specific instance inventory, monitor fleet composition
 
 **`ec2_instance_count`** (gauge)
 - Count of running instances by instance family
-- Labels: `account_id`, `region`, `instance_family`
+- Labels: `account_id`, `account_name`, `region`, `instance_family`
 - Value: Number of running instances in this family
 - Use: High-level capacity planning, aggregate fleet view
 
@@ -127,7 +127,7 @@ This package provides operational metrics that enable monitoring and alerting fo
 
 **`ec2_instance_hourly_cost`** (gauge)
 - Effective hourly cost for each EC2 instance after applying all discounts
-- Labels: `instance_id`, `account_id`, `region`, `instance_type`, `cost_type`, `availability_zone`, `lifecycle`, `pricing_accuracy`, `node_name`
+- Labels: `instance_id`, `account_id`, `account_name`, `region`, `instance_type`, `cost_type`, `availability_zone`, `lifecycle`, `pricing_accuracy`, `node_name`
 - Value: Hourly cost in USD
 - Use: Per-instance cost tracking, chargeback, cost optimization
 
