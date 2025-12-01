@@ -418,6 +418,10 @@ func TestPricingReconciler_Reconcile_Metrics(t *testing.T) {
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{})
 	require.NoError(t, err)
 
+	// Wait for background goroutine to update the freshness metric
+	// The metric is updated every second, so wait slightly more than 1 second
+	time.Sleep(1200 * time.Millisecond)
+
 	// Gather metrics
 	metricFamilies, err := registry.Gather()
 	require.NoError(t, err)
@@ -455,11 +459,12 @@ func TestPricingReconciler_Reconcile_Metrics(t *testing.T) {
 				}
 				if dataType == "pricing" {
 					foundFreshness = true
-					// DataFreshness now stores Unix timestamps, so verify it's a reasonable timestamp
-					assert.Greater(t, *metric.Gauge.Value, float64(1700000000),
-						"data_freshness should be a Unix timestamp (> 2023-11-14)")
-					assert.Less(t, *metric.Gauge.Value, float64(2000000000),
-						"data_freshness should be a Unix timestamp (< 2033-05-18)")
+					// DataFreshness now stores age in seconds (auto-updated every second)
+					// We waited ~1.2 seconds, so age should be approximately 1-2 seconds
+					assert.GreaterOrEqual(t, *metric.Gauge.Value, float64(1.0),
+						"data_freshness should be at least 1 second (we waited 1.2s)")
+					assert.Less(t, *metric.Gauge.Value, float64(2.0),
+						"data_freshness should be less than 2 seconds")
 				}
 			}
 		}

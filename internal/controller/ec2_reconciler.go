@@ -259,12 +259,8 @@ func (r *EC2Reconciler) reconcileAccountRegion(
 		"ec2_instances",
 	).Set(1)
 
-	// Record the Unix timestamp of this successful collection
-	r.Metrics.DataFreshness.WithLabelValues(
-		account.AccountID,
-		region,
-		"ec2_instances",
-	).Set(float64(time.Now().Unix()))
+	// Mark that ec2_instances data was updated for this account+region
+	r.Metrics.MarkDataUpdated(account.AccountID, region, "ec2_instances")
 
 	// Log summary with instance count breakdown by state
 	stateCount := make(map[string]int)

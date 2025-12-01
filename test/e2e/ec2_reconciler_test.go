@@ -155,45 +155,6 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 			Expect(foundNonZeroCount).To(BeTrue(), "ec2_instance_count should have at least one non-zero value")
 		})
 
-		It("should expose ec2_running_instance_count metric", func() {
-			By("verifying ec2_running_instance_count metric exists")
-			Eventually(func(g Gomega) {
-				metricsOutput, err := getMetricsOutput()
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(metricsOutput).To(ContainSubstring("ec2_running_instance_count{"),
-					"ec2_running_instance_count metric should be present")
-			}, 20*time.Second, 2*time.Second).Should(Succeed())
-
-			By("verifying ec2_running_instance_count metric has correct labels")
-			metricsOutput, err := getMetricsOutput()
-			Expect(err).NotTo(HaveOccurred())
-
-			// The metric should have labels: account_id, region
-			Expect(metricsOutput).To(MatchRegexp(`ec2_running_instance_count\{.*account_id="[^"]+"`),
-				"ec2_running_instance_count should have account_id label")
-			Expect(metricsOutput).To(MatchRegexp(`ec2_running_instance_count\{.*region="[^"]+"`),
-				"ec2_running_instance_count should have region label")
-
-			By("verifying ec2_running_instance_count has non-zero values")
-			// Extract the metric values - they should be greater than 0 if instances exist
-			lines := strings.Split(metricsOutput, "\n")
-			foundNonZeroCount := false
-			for _, line := range lines {
-				if strings.HasPrefix(line, "ec2_running_instance_count{") {
-					// Extract the value (after the space)
-					parts := strings.Fields(line)
-					if len(parts) >= 2 {
-						value := parts[1]
-						if value != "0" && value != "0.0" {
-							foundNonZeroCount = true
-							break
-						}
-					}
-				}
-			}
-			Expect(foundNonZeroCount).To(BeTrue(), "ec2_running_instance_count should have at least one non-zero value")
-		})
-
 		It("should log EC2 metrics update in controller", func() {
 			By("checking for metrics update log message")
 			Eventually(func(g Gomega) {
@@ -226,17 +187,6 @@ var _ = Describe("EC2 Reconciler", Ordered, func() {
 				"Should have help text for ec2_instance_count")
 			Expect(metricsOutput).To(MatchRegexp(`(?i)# HELP ec2_instance_count.*count.*instance.*family`),
 				"Help text should mention count by instance family")
-		})
-
-		It("should have correct help text for ec2_running_instance_count", func() {
-			metricsOutput, err := getMetricsOutput()
-			Expect(err).NotTo(HaveOccurred())
-
-			// Verify help text for ec2_running_instance_count
-			Expect(metricsOutput).To(ContainSubstring("# HELP ec2_running_instance_count"),
-				"Should have help text for ec2_running_instance_count")
-			Expect(metricsOutput).To(MatchRegexp(`(?i)# HELP ec2_running_instance_count.*total.*count.*running`),
-				"Help text should mention total count of running instances")
 		})
 	})
 

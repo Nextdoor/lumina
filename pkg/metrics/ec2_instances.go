@@ -29,10 +29,9 @@ import (
 //  2. Sets new values for all currently running instances
 //  3. Terminated/stopped instances are automatically removed by the reset
 //
-// The function handles three types of metrics:
+// The function handles two types of metrics:
 //   - ec2_instance: Per-instance presence indicator (always 1 when instance exists)
 //   - ec2_instance_count: Aggregated count by instance family
-//   - ec2_running_instance_count: Total running instances by account+region
 //
 // Only running instances are included in metrics. Stopped instances don't incur
 // compute charges (only EBS charges), and terminated instances are being cleaned up.
@@ -46,13 +45,10 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 	// This is more reliable than trying to track which specific instances changed state.
 	m.EC2Instance.Reset()
 	m.EC2InstanceCount.Reset()
-	m.EC2RunningInstanceCount.Reset()
 
 	// Track counts for aggregation
 	// familyCounts: account -> region -> family -> count
 	familyCounts := make(map[string]map[string]map[string]int)
-	// regionCounts: account -> region -> count
-	regionCounts := make(map[string]map[string]int)
 
 	// Process each instance
 	for _, inst := range instances {
@@ -93,11 +89,6 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 			familyCounts[inst.AccountID][inst.Region] = make(map[string]int)
 		}
 		familyCounts[inst.AccountID][inst.Region][family]++
-
-		if regionCounts[inst.AccountID] == nil {
-			regionCounts[inst.AccountID] = make(map[string]int)
-		}
-		regionCounts[inst.AccountID][inst.Region]++
 	}
 
 	// Set aggregated family counts
@@ -110,16 +101,6 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 					"instance_family": family,
 				}).Set(float64(count))
 			}
-		}
-	}
-
-	// Set region counts
-	for accountID, regions := range regionCounts {
-		for region, count := range regions {
-			m.EC2RunningInstanceCount.With(prometheus.Labels{
-				"account_id": accountID,
-				"region":     region,
-			}).Set(float64(count))
 		}
 	}
 }

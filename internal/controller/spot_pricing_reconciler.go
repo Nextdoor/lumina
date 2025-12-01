@@ -126,7 +126,7 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 
 		// Record metrics even when no instances - reconciliation succeeded, no data to fetch
 		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
-		r.Metrics.DataFreshness.WithLabelValues("", "", "spot-pricing").Set(float64(time.Now().Unix()))
+		r.Metrics.MarkDataUpdated("", "", "spot-pricing")
 
 		// Signal ready on first cycle even with no instances
 		r.readyOnce.Do(func() {
@@ -151,7 +151,7 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 
 		// Record metrics even when all cached - reconciliation succeeded, cache is fresh
 		r.Metrics.DataLastSuccess.WithLabelValues("", "", "spot-pricing").Set(1)
-		r.Metrics.DataFreshness.WithLabelValues("", "", "spot-pricing").Set(float64(time.Now().Unix()))
+		r.Metrics.MarkDataUpdated("", "", "spot-pricing")
 
 		r.readyOnce.Do(func() {
 			if r.ReadyChan != nil {
@@ -189,7 +189,7 @@ func (r *SpotPricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (
 			"error_count", len(fetchErrors),
 			"new_prices", len(newPrices))
 	}
-	r.Metrics.DataFreshness.WithLabelValues("", "", "spot-pricing").Set(float64(time.Now().Unix()))
+	r.Metrics.MarkDataUpdated("", "", "spot-pricing")
 
 	// Signal that initial reconciliation is complete (thread-safe, only once)
 	r.readyOnce.Do(func() {

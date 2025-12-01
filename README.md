@@ -169,69 +169,24 @@ reconciliation:
 
 ## Metrics
 
-Lumina exposes Prometheus metrics on port 8080 at `/metrics`. All metrics include comprehensive labels for filtering and aggregation.
+Lumina exposes Prometheus metrics on port 8080 at `/metrics` endpoint.
 
-### Cost Metrics
+**Key Metrics:**
+- `ec2_instance_hourly_cost` - Per-instance cost with Savings Plans/RI discounts applied
+- `savings_plan_utilization_percent` - Real-time SP utilization tracking
+- `ec2_instance` / `ec2_instance_count` - Instance inventory metrics
+- `lumina_data_freshness_seconds` - Data freshness monitoring
 
-**`ec2_instance_hourly_cost`** - Estimated hourly cost per EC2 instance
-- Labels: `instance_id`, `instance_type`, `account_id`, `account_name`, `region`, `availability_zone`, `node_name`, `lifecycle` (on-demand/spot), `cost_category` (on_demand/reserved_instance/savings_plan/spot)
-- Value: Hourly cost in USD
-
-### Savings Plans Utilization Metrics
-
-**`savings_plan_current_utilization_rate`** - Current SP utilization in $/hour
-- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
-- Value: Current hourly commitment usage
-
-**`savings_plan_commitment_amount`** - Total SP hourly commitment in $/hour
-- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
-- Value: Hourly commitment amount
-
-**`savings_plan_remaining_capacity`** - Unused SP capacity in $/hour
-- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
-- Value: Remaining hourly capacity
-
-**`savings_plan_utilization_percent`** - SP utilization as a percentage (0-100)
-- Labels: `sp_arn`, `sp_type`, `account_id`, `account_name`
-- Value: Utilization percentage
-
-### Inventory Metrics
-
-**`ec2_instance`** - EC2 instance inventory (gauge = 1 per instance)
-- Labels: `instance_id`, `instance_type`, `state`, `account_id`, `account_name`, `region`, `availability_zone`
-
-**`ec2_instance_count`** - Count of EC2 instances by state
-- Labels: `account_id`, `account_name`, `region`, `state`
-
-**`ec2_running_instance_count`** - Count of running EC2 instances
-- Labels: `account_id`, `account_name`, `region`
-
-### Data Freshness Metrics
-
-**`data_freshness_seconds`** - Age of cached data in seconds
-- Labels: `data_type` (pricing/reserved_instances/savings_plans/ec2_instances/sp_rates/spot_pricing), `account_id`, `account_name`, `region`
-
-**`data_last_success`** - Success status of last data collection (1 = success, 0 = failure)
-- Labels: `data_type`, `account_id`, `account_name`, `region`
-
-### Example PromQL Queries
-
+**Quick Example:**
 ```promql
 # Total hourly cost across all instances
 sum(ec2_instance_hourly_cost)
 
-# Cost breakdown by account
-sum by (account_name) (ec2_instance_hourly_cost)
-
-# Savings Plans utilization by type
-sum by (sp_type) (savings_plan_utilization_percent) / count by (sp_type) (savings_plan_utilization_percent)
-
-# Running instance count by region
-sum by (region) (ec2_running_instance_count)
-
-# Cost per node (requires node_name label)
-ec2_instance_hourly_cost{node_name!=""}
+# Cost per Kubernetes node
+sum by (node_name) (ec2_instance_hourly_cost{node_name!=""})
 ```
+
+> **📊 See [pkg/metrics/README.md](pkg/metrics/README.md) for complete metrics reference, all labels, and example queries.**
 
 ## Testing
 
@@ -314,9 +269,16 @@ make deploy IMG=lumina:dev
 
 ## Documentation
 
-- [ALGORITHM.md](ALGORITHM.md) - **Cost calculation algorithms, limitations, and known differences from AWS billing**
-- [CLAUDE.md](CLAUDE.md) - Project coding guidelines
-- [pkg/aws/README.md](pkg/aws/README.md) - AWS client package documentation
+**Essential Reading:**
+- **[ALGORITHM.md](ALGORITHM.md)** - Cost calculation algorithms, limitations, and AWS billing differences
+- **[docs/DEBUG.md](docs/DEBUG.md)** - Debug endpoints for troubleshooting cost calculations
+- **[pkg/metrics/README.md](pkg/metrics/README.md)** - Complete Prometheus metrics reference
+- **[pkg/config/README.md](pkg/config/README.md)** - Configuration file format and validation
+
+**Additional Resources:**
+- [docs/README.md](docs/README.md) - Documentation hub with organized guides
+- [pkg/aws/README.md](pkg/aws/README.md) - AWS client package internals
+- [CLAUDE.md](CLAUDE.md) - Project coding guidelines (for contributors)
 
 ## License
 
