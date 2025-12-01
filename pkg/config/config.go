@@ -42,6 +42,18 @@ const (
 	OSSUSE    = "SUSE"
 )
 
+// Default metric label names.
+// These are the default values used when label customization is not configured.
+const (
+	DefaultLabelClusterName = "cluster_name"
+	DefaultLabelAccountName = "account_name"
+	DefaultLabelAccountID   = "account_id"
+	DefaultLabelRegion      = "region"
+	DefaultLabelNodeName    = "node_name"
+	DefaultLabelHostName    = "host_name"
+	DefaultNodeNameTagKey   = "Name"
+)
+
 // Config represents the complete controller configuration.
 type Config struct {
 	// AWSAccounts is the list of AWS accounts to monitor for cost data.
@@ -383,13 +395,13 @@ func Load(path string) (*Config, error) {
 
 	// Set default metric label names
 	v.SetDefault("metrics.disableInstanceMetrics", false)
-	v.SetDefault("metrics.labels.clusterName", "cluster_name")
-	v.SetDefault("metrics.labels.accountName", "account_name")
-	v.SetDefault("metrics.labels.accountId", "account_id")
-	v.SetDefault("metrics.labels.region", "region")
-	v.SetDefault("metrics.labels.nodeName", "node_name")
-	v.SetDefault("metrics.labels.hostName", "host_name")
-	v.SetDefault("metrics.nodeNameSource.tagKey", "Name")
+	v.SetDefault("metrics.labels.clusterName", DefaultLabelClusterName)
+	v.SetDefault("metrics.labels.accountName", DefaultLabelAccountName)
+	v.SetDefault("metrics.labels.accountId", DefaultLabelAccountID)
+	v.SetDefault("metrics.labels.region", DefaultLabelRegion)
+	v.SetDefault("metrics.labels.nodeName", DefaultLabelNodeName)
+	v.SetDefault("metrics.labels.hostName", DefaultLabelHostName)
+	v.SetDefault("metrics.nodeNameSource.tagKey", DefaultNodeNameTagKey)
 
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
