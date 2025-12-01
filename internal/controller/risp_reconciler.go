@@ -256,12 +256,8 @@ func (r *RISPReconciler) reconcileReservedInstances(
 			"reserved_instances",
 		).Set(1)
 
-		// Record the Unix timestamp of this successful collection
-		r.Metrics.DataFreshness.WithLabelValues(
-			account.AccountID,
-			region,
-			"reserved_instances",
-		).Set(float64(time.Now().Unix()))
+		// Mark that reserved_instances data was updated for this account+region
+		r.Metrics.MarkDataUpdated(account.AccountID, region, "reserved_instances")
 
 		log.V(1).Info("updated reserved instances",
 			"region", region,
@@ -340,12 +336,8 @@ func (r *RISPReconciler) reconcileSavingsPlans(
 		"savings_plans",
 	).Set(1)
 
-	// Record the Unix timestamp of this successful collection
-	r.Metrics.DataFreshness.WithLabelValues(
-		account.AccountID,
-		"", // SPs are not regional
-		"savings_plans",
-	).Set(float64(time.Now().Unix()))
+	// Mark that savings_plans data was updated for this account (SPs are not regional)
+	r.Metrics.MarkDataUpdated(account.AccountID, "", "savings_plans")
 
 	log.V(1).Info("updated savings plans",
 		"count", len(sps),

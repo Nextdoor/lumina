@@ -188,12 +188,8 @@ func (r *PricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		"pricing",
 	).Set(1)
 
-	// Record the Unix timestamp of this successful collection
-	r.Metrics.DataFreshness.WithLabelValues(
-		"", // Not account-specific
-		"", // Not region-specific
-		"pricing",
-	).Set(float64(time.Now().Unix()))
+	// Mark that pricing data was updated (pricing is global, not account or region-specific)
+	r.Metrics.MarkDataUpdated("", "", "pricing")
 
 	// Log cache statistics with detailed information
 	stats := r.Cache.GetStats()

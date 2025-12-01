@@ -209,35 +209,34 @@ var _ = Describe("RISP Reconciler", Ordered, func() {
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
-		It("should record freshness as Unix timestamp", func() {
-			By("checking that freshness contains valid Unix timestamp")
+		It("should record freshness as age in seconds", func() {
+			By("checking that freshness contains valid age in seconds")
 			Eventually(func(g Gomega) {
 				metricsOutput, err := getMetricsOutput()
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Parse the freshness metrics and verify they contain valid Unix timestamps
-				// Timestamps should be > 1700000000 (Nov 2023) and recent (within last hour)
+				// Parse the freshness metrics and verify they contain valid age values
+				// Age should be small (< 3600 seconds = 1 hour) indicating recent update
 				lines := strings.Split(metricsOutput, "\n")
-				foundValidTimestamp := false
-				now := float64(time.Now().Unix())
+				foundValidAge := false
 				for _, line := range lines {
 					if strings.Contains(line, "lumina_data_freshness_seconds") &&
 						!strings.HasPrefix(line, "#") &&
 						strings.Contains(line, `data_type="reserved_instances"`) {
-						// Extract the value (last field after space)
+						// Extract the age value (last field after space)
 						parts := strings.Fields(line)
 						if len(parts) >= 2 {
-							value, err := strconv.ParseFloat(parts[len(parts)-1], 64)
-							// Check if it's a valid Unix timestamp (> Nov 2023) and recent (within last hour)
-							if err == nil && value > 1700000000 && value <= now && (now-value) < 3600 {
-								foundValidTimestamp = true
+							age, err := strconv.ParseFloat(parts[len(parts)-1], 64)
+							// Check if age is valid (>= 0 and < 3600 seconds = 1 hour)
+							if err == nil && age >= 0 && age < 3600 {
+								foundValidAge = true
 								break
 							}
 						}
 					}
 				}
-				g.Expect(foundValidTimestamp).To(BeTrue(),
-					"Data freshness should contain valid recent Unix timestamp")
+				g.Expect(foundValidAge).To(BeTrue(),
+					"Data freshness should contain valid recent age (< 3600 seconds)")
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 

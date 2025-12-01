@@ -20,6 +20,7 @@ limitations under the License.
 package metrics
 
 import (
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -29,6 +30,14 @@ import (
 // These metrics provide observability into controller health, AWS account
 // validation status, and data collection freshness.
 type Metrics struct {
+	// lastUpdateTimes tracks when each data type was last updated.
+	// Key format: "account_id:region:data_type" (e.g., "123456789012:us-west-2:ec2_instances")
+	// This is used by the background goroutine to calculate age for DataFreshness metrics.
+	lastUpdateTimes map[string]time.Time
+	lastUpdateMu    sync.RWMutex
+
+	// stopCh signals the background goroutine to stop when the controller shuts down
+	stopCh chan struct{}
 	// ControllerRunning indicates whether the controller is running.
 	// This is a simple gauge set to 1 on startup. If the metric disappears
 	// from the metrics endpoint, it indicates the controller has crashed.
@@ -51,10 +60,10 @@ type Metrics struct {
 	// Labels: account_id, account_name
 	AccountValidationDuration *prometheus.HistogramVec
 
-	// DataFreshness stores the Unix timestamp of the last successful data
-	// collection for each data type and region. To calculate data staleness
-	// (age), use the PromQL query: time() - lumina_data_freshness_seconds
-	// This enables alerting on stale data (e.g., data older than 10 minutes).
+	// DataFreshness stores the age (in seconds) of cached data since the last
+	// successful update. A value of 60 means the data is 60 seconds old.
+	// This metric is automatically updated every second by a background goroutine.
+	// This enables direct alerting on stale data (e.g., lumina_data_freshness_seconds > 600).
 	// Labels: account_id, region, data_type
 	DataFreshness *prometheus.GaugeVec
 
@@ -96,11 +105,6 @@ type Metrics struct {
 	// Labels: account_id, region, instance_family
 	EC2InstanceCount *prometheus.GaugeVec
 
-	// EC2RunningInstanceCount tracks the total count of running instances by account and region.
-	// This enables fleet-wide capacity tracking and monitoring.
-	// Labels: account_id, region
-	EC2RunningInstanceCount *prometheus.GaugeVec
-
 	// EC2InstanceHourlyCost tracks the effective hourly cost for each EC2 instance after
 	// applying all discounts (Reserved Instances, Savings Plans, spot pricing).
 	// This enables per-instance cost tracking and chargeback. Value is in USD/hour.
@@ -136,6 +140,9 @@ type Metrics struct {
 //	metrics.ControllerRunning.Set(1)
 func NewMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
+		lastUpdateTimes: make(map[string]time.Time),
+		stopCh:          make(chan struct{}),
+
 		ControllerRunning: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "lumina_controller_running",
 			Help: "Indicates whether the Lumina controller is running (1 = running)",
@@ -160,7 +167,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 
 		DataFreshness: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_data_freshness_seconds",
-			Help: "Unix timestamp of last successful data collection. Calculate age: time() - <metric>",
+			Help: "Age of cached data in seconds since last successful update (updated every second)",
 		}, []string{"account_id", "region", "data_type"}),
 
 		DataLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -197,11 +204,6 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "ec2_instance_count",
 			Help: "Count of running EC2 instances by instance family",
 		}, []string{"account_id", "region", "instance_family"}),
-
-		EC2RunningInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "ec2_running_instance_count",
-			Help: "Total count of running EC2 instances by account and region",
-		}, []string{"account_id", "region"}),
 
 		EC2InstanceHourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_hourly_cost",
@@ -241,12 +243,14 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.SavingsPlanRemainingHours,
 		m.EC2Instance,
 		m.EC2InstanceCount,
-		m.EC2RunningInstanceCount,
 		m.EC2InstanceHourlyCost,
 		m.SavingsPlanCurrentUtilizationRate,
 		m.SavingsPlanRemainingCapacity,
 		m.SavingsPlanUtilizationPercent,
 	)
+
+	// Start background goroutine to update data freshness metrics every second
+	go m.updateDataFreshnessLoop()
 
 	return m
 }
@@ -286,6 +290,98 @@ func (m *Metrics) RecordAccountValidation(accountID, accountName string, success
 		// Don't update last success timestamp on failures - we want to track
 		// how long it's been since the LAST successful validation
 	}
+}
+
+// MarkDataUpdated marks that data of a specific type has been successfully updated.
+// This records the current timestamp, which is used by the background goroutine to
+// calculate the age for the lumina_data_freshness_seconds metric.
+//
+// Parameters:
+//   - accountID: AWS account ID (can be empty string for global data like pricing)
+//   - region: AWS region (can be empty string for global data)
+//   - dataType: Type of data (e.g., "ec2_instances", "pricing", "spot-pricing")
+//
+// Example usage:
+//
+//	metrics.MarkDataUpdated("329239342014", "us-west-2", "ec2_instances")
+//	metrics.MarkDataUpdated("", "", "pricing")  // Global pricing data
+func (m *Metrics) MarkDataUpdated(accountID, region, dataType string) {
+	key := accountID + ":" + region + ":" + dataType
+	m.lastUpdateMu.Lock()
+	m.lastUpdateTimes[key] = time.Now()
+	m.lastUpdateMu.Unlock()
+}
+
+// updateDataFreshnessLoop runs in a background goroutine and updates all
+// lumina_data_freshness_seconds metrics every second. This calculates the age
+// of each data type by comparing the current time with the last update time.
+//
+// The loop continues until m.stopCh is closed (controller shutdown).
+func (m *Metrics) updateDataFreshnessLoop() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			m.updateAllDataFreshnessMetrics()
+		case <-m.stopCh:
+			return
+		}
+	}
+}
+
+// updateAllDataFreshnessMetrics updates all data freshness gauges with current ages.
+// This is called every second by the background goroutine.
+func (m *Metrics) updateAllDataFreshnessMetrics() {
+	now := time.Now()
+
+	m.lastUpdateMu.RLock()
+	defer m.lastUpdateMu.RUnlock()
+
+	for key, lastUpdate := range m.lastUpdateTimes {
+		// Parse key back into labels (format: "account_id:region:data_type")
+		parts := splitKey(key)
+		if len(parts) != 3 {
+			continue // Invalid key format, skip
+		}
+
+		accountID, region, dataType := parts[0], parts[1], parts[2]
+		age := now.Sub(lastUpdate).Seconds()
+
+		m.DataFreshness.With(prometheus.Labels{
+			"account_id": accountID,
+			"region":     region,
+			"data_type":  dataType,
+		}).Set(age)
+	}
+}
+
+// splitKey splits a key in "account_id:region:data_type" format into parts.
+// Handles empty account_id or region (they become empty strings in the parts).
+func splitKey(key string) []string {
+	// Simple split - empty values become empty strings
+	parts := make([]string, 0, 3)
+	start := 0
+	for i := 0; i < len(key); i++ {
+		if key[i] == ':' {
+			parts = append(parts, key[start:i])
+			start = i + 1
+		}
+	}
+	// Add the last part (after the last colon)
+	if start < len(key) {
+		parts = append(parts, key[start:])
+	} else {
+		parts = append(parts, "")
+	}
+	return parts
+}
+
+// Stop signals the background goroutine to stop updating metrics.
+// This should be called when the controller is shutting down.
+func (m *Metrics) Stop() {
+	close(m.stopCh)
 }
 
 // DeleteAccountMetrics removes all metric labels associated with a specific

@@ -103,13 +103,6 @@ func TestUpdateEC2InstanceMetrics_BasicFunctionality(t *testing.T) {
 		"instance_family": "c5",
 	}))
 	assert.Equal(t, 1.0, c5Count, "Expected c5 family count to be 1")
-
-	// Verify ec2_running_instance_count metric
-	runningCount := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "123456789012",
-		"region":     "us-west-2",
-	}))
-	assert.Equal(t, 3.0, runningCount, "Expected total running count to be 3")
 }
 
 // TestUpdateEC2InstanceMetrics_StateFiltering tests that only running instances
@@ -175,12 +168,6 @@ func TestUpdateEC2InstanceMetrics_StateFiltering(t *testing.T) {
 		"instance_family": "m5",
 	}))
 	assert.Equal(t, 1.0, familyCount, "Expected family count to only include running instance")
-
-	runningCount := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "123456789012",
-		"region":     "us-west-2",
-	}))
-	assert.Equal(t, 1.0, runningCount, "Expected running count to be 1")
 }
 
 // TestUpdateEC2InstanceMetrics_ResetBehavior tests that metrics are properly
@@ -217,12 +204,13 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 
 	m.UpdateEC2InstanceMetrics(initialInstances)
 
-	// Verify initial counts
-	initialCount := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "123456789012",
-		"region":     "us-west-2",
+	// Verify initial family count
+	initialCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
+		"account_id":      "123456789012",
+		"region":          "us-west-2",
+		"instance_family": "m5",
 	}))
-	assert.Equal(t, 2.0, initialCount, "Expected initial count to be 2")
+	assert.Equal(t, 2.0, initialCount, "Expected initial m5 family count to be 2")
 
 	// Second update with only 1 instance (i-001 terminated)
 	updatedInstances := []aws.Instance{
@@ -241,12 +229,13 @@ func TestUpdateEC2InstanceMetrics_ResetBehavior(t *testing.T) {
 
 	m.UpdateEC2InstanceMetrics(updatedInstances)
 
-	// Verify updated count (should be 1, not 2)
-	updatedCount := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "123456789012",
-		"region":     "us-west-2",
+	// Verify updated family count (should be 1, not 2)
+	updatedCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
+		"account_id":      "123456789012",
+		"region":          "us-west-2",
+		"instance_family": "m5",
 	}))
-	assert.Equal(t, 1.0, updatedCount, "Expected updated count to be 1")
+	assert.Equal(t, 1.0, updatedCount, "Expected updated m5 family count to be 1")
 
 	// Verify i-001 metric no longer exists (should be 0 after reset)
 	i001Value := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
@@ -304,27 +293,6 @@ func TestUpdateEC2InstanceMetrics_MultiAccountRegion(t *testing.T) {
 	}
 
 	m.UpdateEC2InstanceMetrics(instances)
-
-	// Verify account 1, region us-west-2
-	count1 := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "111111111111",
-		"region":     "us-west-2",
-	}))
-	assert.Equal(t, 1.0, count1, "Expected account 1 us-west-2 count to be 1")
-
-	// Verify account 1, region us-east-1
-	count2 := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "111111111111",
-		"region":     "us-east-1",
-	}))
-	assert.Equal(t, 1.0, count2, "Expected account 1 us-east-1 count to be 1")
-
-	// Verify account 2, region us-west-2
-	count3 := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "222222222222",
-		"region":     "us-west-2",
-	}))
-	assert.Equal(t, 1.0, count3, "Expected account 2 us-west-2 count to be 1")
 
 	// Verify family counts are separated by account+region
 	m5Account1West := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
@@ -390,11 +358,12 @@ func TestUpdateEC2InstanceMetrics_EmptyInput(t *testing.T) {
 	}))
 	assert.Equal(t, 0.0, emptyValue, "Expected instance metric to be reset to 0")
 
-	emptyCount := testutil.ToFloat64(m.EC2RunningInstanceCount.With(prometheus.Labels{
-		"account_id": "123456789012",
-		"region":     "us-west-2",
+	emptyCount := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
+		"account_id":      "123456789012",
+		"region":          "us-west-2",
+		"instance_family": "m5",
 	}))
-	assert.Equal(t, 0.0, emptyCount, "Expected running count to be reset to 0")
+	assert.Equal(t, 0.0, emptyCount, "Expected family count to be reset to 0")
 }
 
 // TestUpdateEC2InstanceMetrics_InstanceFamilyExtraction tests the instance

@@ -366,7 +366,8 @@ func TestDeleteAccountMetrics_NonExistent(t *testing.T) {
 }
 
 // TestDataFreshnessMetrics verifies the data freshness metrics work correctly.
-// DataFreshness stores Unix timestamps of last successful data collection.
+// DataFreshness stores age in seconds since last successful data collection.
+// The metric is automatically updated every second by a background goroutine.
 func TestDataFreshnessMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
@@ -375,24 +376,37 @@ func TestDataFreshnessMetrics(t *testing.T) {
 	assert.NotNil(t, m.DataFreshness)
 	assert.NotNil(t, m.DataLastSuccess)
 
-	// Verify they can be set with realistic values
-	labels := prometheus.Labels{
-		"account_id": "123456789012",
-		"region":     "us-west-2",
-		"data_type":  "ec2_instances",
-	}
+	// Test MarkDataUpdated and verify freshness is calculated
+	accountID := "123456789012"
+	region := "us-west-2"
+	dataType := "ec2_instances"
 
-	// DataFreshness stores Unix timestamps (e.g., 1704123600 for 2024-01-01)
+	// Mark data as updated
+	m.MarkDataUpdated(accountID, region, dataType)
+
+	// Wait a small amount for the background goroutine to update the metric
+	time.Sleep(1200 * time.Millisecond)
+
+	// DataFreshness should now show age in seconds (should be ~1 second)
+	labels := prometheus.Labels{
+		"account_id": accountID,
+		"region":     region,
+		"data_type":  dataType,
+	}
 	freshnessMetric, err := m.DataFreshness.GetMetricWith(labels)
 	require.NoError(t, err)
-	testTimestamp := 1704123600.0
-	freshnessMetric.Set(testTimestamp)
-	assert.Equal(t, testTimestamp, testutil.ToFloat64(freshnessMetric))
+	age := testutil.ToFloat64(freshnessMetric)
+	assert.GreaterOrEqual(t, age, 1.0, "age should be at least 1 second")
+	assert.Less(t, age, 2.0, "age should be less than 2 seconds")
 
+	// Test DataLastSuccess metric
 	successMetric, err := m.DataLastSuccess.GetMetricWith(labels)
 	require.NoError(t, err)
 	successMetric.Set(1.0)
 	assert.Equal(t, 1.0, testutil.ToFloat64(successMetric))
+
+	// Clean up: stop the background goroutine
+	m.Stop()
 }
 
 // TestMetricNaming verifies all metrics follow Prometheus naming conventions.
