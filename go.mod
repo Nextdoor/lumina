@@ -8,9 +8,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.25
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.269.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.50.2
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.7
 	github.com/aws/aws-sdk-go-v2/service/savingsplans v1.30.5
-	github.com/aws/aws-sdk-go-v2/service/sts v1.41.0
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.2
 	github.com/go-logr/logr v1.4.2
 	github.com/onsi/ginkgo/v2 v2.22.0
 	github.com/onsi/gomega v1.36.1
@@ -31,7 +31,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.14 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.14 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.7 // indirect
 	github.com/aws/smithy-go v1.23.2 // indirect
