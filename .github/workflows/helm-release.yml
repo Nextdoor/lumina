@@ -18,7 +18,7 @@ env:
 jobs:
   release:
     name: Release Helm Chart
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     permissions:
       contents: write
       packages: write
