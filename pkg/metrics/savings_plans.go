@@ -80,12 +80,12 @@ func (m *Metrics) UpdateSavingsPlansInventoryMetrics(sps []aws.SavingsPlan) {
 
 		// Set commitment metric
 		m.SavingsPlanCommitment.With(prometheus.Labels{
-			"savings_plan_arn": sp.SavingsPlanARN,
-			"account_id":       sp.AccountID,
-			"account_name":     sp.AccountName,
-			"type":             spType,
-			"region":           region,
-			"instance_family":  instanceFamily,
+			LabelSavingsPlanARN:            sp.SavingsPlanARN,
+			m.config.GetAccountIDLabel():   sp.AccountID,
+			m.config.GetAccountNameLabel(): sp.AccountName,
+			LabelType:                      spType,
+			m.config.GetRegionLabel():      region,
+			LabelInstanceFamily:            instanceFamily,
 		}).Set(sp.Commitment)
 
 		// Calculate remaining hours until expiration
@@ -93,10 +93,10 @@ func (m *Metrics) UpdateSavingsPlansInventoryMetrics(sps []aws.SavingsPlan) {
 
 		// Set remaining hours metric
 		m.SavingsPlanRemainingHours.With(prometheus.Labels{
-			"savings_plan_arn": sp.SavingsPlanARN,
-			"account_id":       sp.AccountID,
-			"account_name":     sp.AccountName,
-			"type":             spType,
+			LabelSavingsPlanARN:            sp.SavingsPlanARN,
+			m.config.GetAccountIDLabel():   sp.AccountID,
+			m.config.GetAccountNameLabel(): sp.AccountName,
+			LabelType:                      spType,
 		}).Set(remainingHours)
 	}
 }

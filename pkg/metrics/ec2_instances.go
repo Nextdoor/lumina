@@ -78,14 +78,14 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		}
 
 		m.EC2Instance.With(prometheus.Labels{
-			"account_id":        inst.AccountID,
-			"account_name":      inst.AccountName,
-			"region":            inst.Region,
-			"instance_type":     inst.InstanceType,
-			"availability_zone": inst.AvailabilityZone,
-			"instance_id":       inst.InstanceID,
-			"tenancy":           inst.Tenancy,
-			"platform":          platform,
+			m.config.GetAccountIDLabel():   inst.AccountID,
+			m.config.GetAccountNameLabel(): inst.AccountName,
+			m.config.GetRegionLabel():      inst.Region,
+			LabelInstanceType:              inst.InstanceType,
+			LabelAvailabilityZone:          inst.AvailabilityZone,
+			LabelInstanceID:                inst.InstanceID,
+			LabelTenancy:                   inst.Tenancy,
+			LabelPlatform:                  platform,
 		}).Set(1)
 
 		// Extract instance family from instance type
@@ -117,10 +117,10 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		for region, families := range regions {
 			for family, count := range families {
 				m.EC2InstanceCount.With(prometheus.Labels{
-					"account_id":      accountID,
-					"account_name":    accountName,
-					"region":          region,
-					"instance_family": family,
+					m.config.GetAccountIDLabel():   accountID,
+					m.config.GetAccountNameLabel(): accountName,
+					m.config.GetRegionLabel():      region,
+					LabelInstanceFamily:            family,
 				}).Set(float64(count))
 			}
 		}

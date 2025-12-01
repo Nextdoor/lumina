@@ -59,11 +59,11 @@ func (m *Metrics) UpdateReservedInstanceMetrics(ris []aws.ReservedInstance) {
 
 		// Set per-instance metric (always 1 when RI exists)
 		m.ReservedInstance.With(prometheus.Labels{
-			"account_id":        ri.AccountID,
-			"account_name":      ri.AccountName,
-			"region":            ri.Region,
-			"instance_type":     ri.InstanceType,
-			"availability_zone": ri.AvailabilityZone,
+			m.config.GetAccountIDLabel():   ri.AccountID,
+			m.config.GetAccountNameLabel(): ri.AccountName,
+			m.config.GetRegionLabel():      ri.Region,
+			LabelInstanceType:              ri.InstanceType,
+			LabelAvailabilityZone:          ri.AvailabilityZone,
 		}).Set(1)
 
 		// Extract instance family from instance type
@@ -82,10 +82,10 @@ func (m *Metrics) UpdateReservedInstanceMetrics(ris []aws.ReservedInstance) {
 			continue // Skip malformed keys
 		}
 		m.ReservedInstanceCount.With(prometheus.Labels{
-			"account_id":      parts[0],
-			"account_name":    parts[1],
-			"region":          parts[2],
-			"instance_family": parts[3],
+			m.config.GetAccountIDLabel():   parts[0],
+			m.config.GetAccountNameLabel(): parts[1],
+			m.config.GetRegionLabel():      parts[2],
+			LabelInstanceFamily:            parts[3],
 		}).Set(float64(count))
 	}
 }

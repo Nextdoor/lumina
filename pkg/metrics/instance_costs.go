@@ -143,15 +143,15 @@ func (m *Metrics) UpdateInstanceCostMetrics(
 			// Note: Prometheus requires consistent label cardinality, so all labels must always
 			// be present even if empty. Use label!="" in PromQL to filter to populated values.
 			m.EC2InstanceHourlyCost.With(prometheus.Labels{
-				"instance_id":                  ic.InstanceID,
+				LabelInstanceID:                ic.InstanceID,
 				m.config.GetAccountIDLabel():   ic.AccountID,
 				m.config.GetAccountNameLabel(): ic.AccountName,
 				m.config.GetRegionLabel():      ic.Region,
-				"instance_type":                ic.InstanceType,
-				"cost_type":                    costType,
-				"availability_zone":            ic.AvailabilityZone,
-				"lifecycle":                    ic.Lifecycle,
-				"pricing_accuracy":             string(ic.PricingAccuracy),
+				LabelInstanceType:              ic.InstanceType,
+				LabelCostType:                  costType,
+				LabelAvailabilityZone:          ic.AvailabilityZone,
+				LabelLifecycle:                 ic.Lifecycle,
+				LabelPricingAccuracy:           string(ic.PricingAccuracy),
 				m.config.GetNodeNameLabel():    nodeName,
 				m.config.GetClusterNameLabel(): clusterName,
 				m.config.GetHostNameLabel():    hostName,
@@ -168,28 +168,28 @@ func (m *Metrics) UpdateInstanceCostMetrics(
 
 		// Set current utilization rate ($/hour being consumed right now)
 		m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
-			"savings_plan_arn": sp.SavingsPlanARN,
-			"account_id":       sp.AccountID,
-			"account_name":     sp.AccountName,
-			"type":             spType,
+			LabelSavingsPlanARN:            sp.SavingsPlanARN,
+			m.config.GetAccountIDLabel():   sp.AccountID,
+			m.config.GetAccountNameLabel(): sp.AccountName,
+			LabelType:                      spType,
 		}).Set(sp.CurrentUtilizationRate)
 
 		// Set remaining capacity ($/hour still available)
 		// Can be negative if SP is over-utilized (spillover to on-demand)
 		m.SavingsPlanRemainingCapacity.With(prometheus.Labels{
-			"savings_plan_arn": sp.SavingsPlanARN,
-			"account_id":       sp.AccountID,
-			"account_name":     sp.AccountName,
-			"type":             spType,
+			LabelSavingsPlanARN:            sp.SavingsPlanARN,
+			m.config.GetAccountIDLabel():   sp.AccountID,
+			m.config.GetAccountNameLabel(): sp.AccountName,
+			LabelType:                      spType,
 		}).Set(sp.RemainingCapacity)
 
 		// Set utilization percentage (0-100+)
 		// Values >100 indicate over-utilization (some instances paying on-demand rates)
 		m.SavingsPlanUtilizationPercent.With(prometheus.Labels{
-			"savings_plan_arn": sp.SavingsPlanARN,
-			"account_id":       sp.AccountID,
-			"account_name":     sp.AccountName,
-			"type":             spType,
+			LabelSavingsPlanARN:            sp.SavingsPlanARN,
+			m.config.GetAccountIDLabel():   sp.AccountID,
+			m.config.GetAccountNameLabel(): sp.AccountName,
+			LabelType:                      spType,
 		}).Set(sp.UtilizationPercent)
 	}
 }
