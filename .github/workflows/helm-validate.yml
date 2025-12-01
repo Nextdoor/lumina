@@ -39,7 +39,7 @@ jobs:
         uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1
         with:
           version: v0.26.0
-          kubectl_version: v1.32.0
+          kubectl_version: v1.31.0
 
       - name: Install chart
         run: |
