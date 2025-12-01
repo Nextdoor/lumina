@@ -29,7 +29,6 @@ This enables cost-aware capacity management, chargeback, and cost optimization f
 - ✅ Spot price tracking with lazy-loading for running instances
 - ✅ Real-time cost metrics with Savings Plans utilization tracking
 - ⏳ Fargate support (planned)
-- ⏳ Cost trend analysis and forecasting (planned)
 
 ## Architecture
 
