@@ -6,6 +6,60 @@ Prometheus metrics for the Lumina cost visibility controller.
 
 This package provides operational metrics that enable monitoring and alerting for the Lumina controller. Metrics are exposed via the controller's `/metrics` endpoint and follow Prometheus naming conventions.
 
+## Label Customization
+
+Many metric labels can be customized via configuration to match your organization's conventions:
+
+**Configurable Labels:**
+- `account_id` - AWS account ID (default: `account_id`)
+- `account_name` - AWS account name (default: `account_name`)
+- `region` - AWS region (default: `region`)
+- `node_name` - Kubernetes node name (default: `node_name`)
+- `cluster_name` - Kubernetes cluster name (default: `cluster_name`)
+- `host_name` - EC2 instance hostname (default: `host_name`)
+
+**Configuration Example:**
+```yaml
+metrics:
+  labels:
+    accountId: aws_account_id
+    accountName: aws_account
+    region: aws_region
+    nodeName: k8s_node
+    clusterName: k8s_cluster
+    hostName: ec2_hostname
+```
+
+**Non-Configurable Labels:**
+These labels are fixed and cannot be customized:
+- `instance_id`, `instance_type`, `instance_family`, `availability_zone`, `tenancy`, `platform`
+- `lifecycle`, `cost_type`, `pricing_accuracy`
+- `savings_plan_arn`, `type`, `data_type`
+
+**Note:** Throughout this documentation, default label names are shown. If you customize labels in your configuration, replace the label names in example queries accordingly.
+
+## Multi-Cluster Deployments
+
+When multiple Lumina instances report to a shared Prometheus endpoint, configure them to prevent metric duplication:
+
+**Management Cluster** (emits all metrics):
+```yaml
+metrics:
+  disableInstanceMetrics: false  # Default - emit all instance metrics
+```
+
+**Worker Clusters** (emit only aggregate metrics):
+```yaml
+metrics:
+  disableInstanceMetrics: true  # Prevent duplication
+```
+
+When `disableInstanceMetrics: true`:
+- **Disabled:** `ec2_instance`, `ec2_instance_count`, `ec2_instance_hourly_cost`
+- **Enabled:** All other metrics (Savings Plans, Reserved Instances, controller health, data freshness)
+
+This prevents duplication because each Lumina instance discovers all EC2 instances across configured AWS accounts, not just instances in its own cluster.
+
 ## Metrics
 
 ### Controller Health
@@ -150,10 +204,18 @@ This package provides operational metrics that enable monitoring and alerting fo
 import (
     ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
     "github.com/nextdoor/lumina/pkg/metrics"
+    "github.com/nextdoor/lumina/pkg/config"
 )
 
+// Load configuration
+cfg, err := config.Load("/etc/lumina/config.yaml")
+if err != nil {
+    log.Fatal(err)
+}
+
 // Initialize metrics at controller startup
-m := metrics.NewMetrics(ctrlmetrics.Registry)
+// Pass config to enable label customization and multi-cluster settings
+m := metrics.NewMetrics(ctrlmetrics.Registry, cfg)
 m.ControllerRunning.Set(1)
 ```
 

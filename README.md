@@ -163,9 +163,58 @@ reconciliation:
   risp: 1h            # Reserved Instances & Savings Plans
   ec2: 5m             # EC2 instance inventory
   cost: event-driven  # Cost calculations (triggered by cache updates)
-  sp_rates: 15s       # Savings Plans rates
-  spot: 15s           # Spot pricing (lazy-loading)
+  spotPricing: 15s    # Spot pricing (lazy-loading)
 ```
+
+### Multi-Cluster Deployments
+
+When deploying Lumina to multiple Kubernetes clusters that report to a **shared Prometheus** endpoint, use the following configuration to prevent metric duplication:
+
+#### Management Cluster (emits all metrics)
+```yaml
+metrics:
+  disableInstanceMetrics: false  # Default - emit all instance metrics
+  labels:
+    clusterName: my_cluster_name  # Optional: customize label names
+    accountName: my_account_name
+    accountId: my_account_id
+```
+
+#### Worker Clusters (emit only aggregate metrics)
+```yaml
+metrics:
+  disableInstanceMetrics: true  # Prevent duplication
+```
+
+**Why this matters:**
+- Each Lumina instance discovers **all EC2 instances** across configured AWS accounts
+- Without `disableInstanceMetrics`, multiple clusters would emit duplicate `ec2_instance_hourly_cost` metrics
+- With this configuration, only the management cluster emits instance-level metrics
+- Worker clusters can still emit aggregate metrics (if added in future)
+
+**Metric Label Customization:**
+
+Customize metric label names to match your organization's conventions or avoid conflicts with external relabeling:
+
+```yaml
+metrics:
+  labels:
+    clusterName: k8s_cluster      # Default: cluster_name
+    accountName: aws_account      # Default: account_name
+    accountId: aws_account_id     # Default: account_id
+    region: aws_region            # Default: region
+    nodeName: k8s_node            # Default: node_name
+    hostName: ec2_hostname        # Default: host_name
+```
+
+All metrics (instance, Savings Plans, Reserved Instances, etc.) will use these custom label names.
+
+**Additional Features:**
+- `cluster_name` label: Automatically extracted from `kubernetes.io/cluster/*` EC2 tags
+- `host_name` label: Populated from EC2 `PrivateDNSName` field
+- `node_name` fallback: Uses Kubernetes correlation → EC2 Name tag → empty string
+
+> **📖 See [pkg/config/README.md](pkg/config/README.md) for complete configuration reference including environment variables.**
 
 ## Metrics
 
