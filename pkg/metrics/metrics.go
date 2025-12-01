@@ -31,7 +31,7 @@ import (
 // validation status, and data collection freshness.
 type Metrics struct {
 	// lastUpdateTimes tracks when each data type was last updated.
-	// Key format: "account_id:region:data_type" (e.g., "123456789012:us-west-2:ec2_instances")
+	// Key format: "account_id:account_name:region:data_type" (e.g., "123456789012:Production:us-west-2:ec2_instances")
 	// This is used by the background goroutine to calculate age for DataFreshness metrics.
 	lastUpdateTimes map[string]time.Time
 	lastUpdateMu    sync.RWMutex
@@ -168,65 +168,68 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		DataFreshness: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_data_freshness_seconds",
 			Help: "Age of cached data in seconds since last successful update (updated every second)",
-		}, []string{"account_id", "region", "data_type"}),
+		}, []string{"account_id", "account_name", "region", "data_type"}),
 
 		DataLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_data_last_success",
 			Help: "Indicator of whether last data collection succeeded (1 = success, 0 = failed, Phase 2+)",
-		}, []string{"account_id", "region", "data_type"}),
+		}, []string{"account_id", "account_name", "region", "data_type"}),
 
 		ReservedInstance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_reserved_instance",
 			Help: "Indicates presence of a Reserved Instance (1 = exists, metric absent = does not exist)",
-		}, []string{"account_id", "region", "instance_type", "availability_zone"}),
+		}, []string{"account_id", "account_name", "region", "instance_type", "availability_zone"}),
 
 		ReservedInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_reserved_instance_count",
 			Help: "Count of Reserved Instances by instance family",
-		}, []string{"account_id", "region", "instance_family"}),
+		}, []string{"account_id", "account_name", "region", "instance_family"}),
 
 		SavingsPlanCommitment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_hourly_commitment",
 			Help: "Hourly commitment amount ($/hour) for a Savings Plan",
-		}, []string{"savings_plan_arn", "account_id", "type", "region", "instance_family"}),
+		}, []string{"savings_plan_arn", "account_id", "account_name", "type", "region", "instance_family"}),
 
 		SavingsPlanRemainingHours: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_remaining_hours",
 			Help: "Number of hours remaining until Savings Plan expires",
-		}, []string{"savings_plan_arn", "account_id", "type"}),
+		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
 
 		EC2Instance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance",
 			Help: "Indicates presence of a running EC2 instance (1 = exists, metric absent = stopped or terminated)",
-		}, []string{"account_id", "region", "instance_type", "availability_zone", "instance_id", "tenancy", "platform"}),
+		}, []string{
+			"account_id", "account_name", "region", "instance_type",
+			"availability_zone", "instance_id", "tenancy", "platform",
+		}),
 
 		EC2InstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_count",
 			Help: "Count of running EC2 instances by instance family",
-		}, []string{"account_id", "region", "instance_family"}),
+		}, []string{"account_id", "account_name", "region", "instance_family"}),
 
 		EC2InstanceHourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_hourly_cost",
 			Help: "Effective hourly cost for an EC2 instance after applying all discounts (USD/hour)",
 		}, []string{
-			"instance_id", "account_id", "region", "instance_type",
+			"instance_id", "account_id", "account_name", "region", "instance_type",
 			"cost_type", "availability_zone", "lifecycle", "pricing_accuracy", "node_name",
 		}),
 
 		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_current_utilization_rate",
 			Help: "Current hourly rate being consumed by instances covered by this Savings Plan (USD/hour)",
-		}, []string{"savings_plan_arn", "account_id", "type"}),
+		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
 
 		SavingsPlanRemainingCapacity: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_remaining_capacity",
 			Help: "Unused capacity in USD/hour for a Savings Plan (negative if over-utilized)",
-		}, []string{"savings_plan_arn", "account_id", "type"}),
+		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
 
 		SavingsPlanUtilizationPercent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_utilization_percent",
 			Help: "Utilization percentage of a Savings Plan (can exceed 100% if over-utilized)",
-		}, []string{"savings_plan_arn", "account_id", "type"}),
+		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
 	}
 
 	// Register all metrics with the provided registry
@@ -298,15 +301,16 @@ func (m *Metrics) RecordAccountValidation(accountID, accountName string, success
 //
 // Parameters:
 //   - accountID: AWS account ID (can be empty string for global data like pricing)
+//   - accountName: AWS account name (can be empty string for global data)
 //   - region: AWS region (can be empty string for global data)
 //   - dataType: Type of data (e.g., "ec2_instances", "pricing", "spot-pricing")
 //
 // Example usage:
 //
-//	metrics.MarkDataUpdated("329239342014", "us-west-2", "ec2_instances")
-//	metrics.MarkDataUpdated("", "", "pricing")  // Global pricing data
-func (m *Metrics) MarkDataUpdated(accountID, region, dataType string) {
-	key := accountID + ":" + region + ":" + dataType
+//	metrics.MarkDataUpdated("329239342014", "Production", "us-west-2", "ec2_instances")
+//	metrics.MarkDataUpdated("", "", "", "pricing")  // Global pricing data
+func (m *Metrics) MarkDataUpdated(accountID, accountName, region, dataType string) {
+	key := accountID + ":" + accountName + ":" + region + ":" + dataType
 	m.lastUpdateMu.Lock()
 	m.lastUpdateTimes[key] = time.Now()
 	m.lastUpdateMu.Unlock()
@@ -340,28 +344,29 @@ func (m *Metrics) updateAllDataFreshnessMetrics() {
 	defer m.lastUpdateMu.RUnlock()
 
 	for key, lastUpdate := range m.lastUpdateTimes {
-		// Parse key back into labels (format: "account_id:region:data_type")
+		// Parse key back into labels (format: "account_id:account_name:region:data_type")
 		parts := splitKey(key)
-		if len(parts) != 3 {
+		if len(parts) != 4 {
 			continue // Invalid key format, skip
 		}
 
-		accountID, region, dataType := parts[0], parts[1], parts[2]
+		accountID, accountName, region, dataType := parts[0], parts[1], parts[2], parts[3]
 		age := now.Sub(lastUpdate).Seconds()
 
 		m.DataFreshness.With(prometheus.Labels{
-			"account_id": accountID,
-			"region":     region,
-			"data_type":  dataType,
+			"account_id":   accountID,
+			"account_name": accountName,
+			"region":       region,
+			"data_type":    dataType,
 		}).Set(age)
 	}
 }
 
-// splitKey splits a key in "account_id:region:data_type" format into parts.
-// Handles empty account_id or region (they become empty strings in the parts).
+// splitKey splits a key in "account_id:account_name:region:data_type" format into parts.
+// Handles empty account_id, account_name, or region (they become empty strings in the parts).
 func splitKey(key string) []string {
 	// Simple split - empty values become empty strings
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	start := 0
 	for i := 0; i < len(key); i++ {
 		if key[i] == ':' {

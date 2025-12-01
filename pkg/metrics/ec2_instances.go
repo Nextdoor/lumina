@@ -47,7 +47,7 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 	m.EC2InstanceCount.Reset()
 
 	// Track counts for aggregation
-	// familyCounts: account -> region -> family -> count
+	// familyCounts: account_id:account_name -> region -> family -> count
 	familyCounts := make(map[string]map[string]map[string]int)
 
 	// Process each instance
@@ -69,6 +69,7 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 
 		m.EC2Instance.With(prometheus.Labels{
 			"account_id":        inst.AccountID,
+			"account_name":      inst.AccountName,
 			"region":            inst.Region,
 			"instance_type":     inst.InstanceType,
 			"availability_zone": inst.AvailabilityZone,
@@ -81,26 +82,54 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		// e.g., "m5.xlarge" -> "m5", "c5.2xlarge" -> "c5"
 		family := extractInstanceFamily(inst.InstanceType)
 
+		// Create key combining account_id and account_name
+		accountKey := inst.AccountID + ":" + inst.AccountName
+
 		// Initialize nested maps if needed
-		if familyCounts[inst.AccountID] == nil {
-			familyCounts[inst.AccountID] = make(map[string]map[string]int)
+		if familyCounts[accountKey] == nil {
+			familyCounts[accountKey] = make(map[string]map[string]int)
 		}
-		if familyCounts[inst.AccountID][inst.Region] == nil {
-			familyCounts[inst.AccountID][inst.Region] = make(map[string]int)
+		if familyCounts[accountKey][inst.Region] == nil {
+			familyCounts[accountKey][inst.Region] = make(map[string]int)
 		}
-		familyCounts[inst.AccountID][inst.Region][family]++
+		familyCounts[accountKey][inst.Region][family]++
 	}
 
 	// Set aggregated family counts
-	for accountID, regions := range familyCounts {
+	for accountKey, regions := range familyCounts {
+		// Split account key back into account_id and account_name
+		parts := splitAccountKey(accountKey)
+		if len(parts) != 2 {
+			continue // Invalid key, skip
+		}
+		accountID, accountName := parts[0], parts[1]
+
 		for region, families := range regions {
 			for family, count := range families {
 				m.EC2InstanceCount.With(prometheus.Labels{
 					"account_id":      accountID,
+					"account_name":    accountName,
 					"region":          region,
 					"instance_family": family,
 				}).Set(float64(count))
 			}
 		}
 	}
+}
+
+// splitAccountKey splits "account_id:account_name" into parts.
+func splitAccountKey(key string) []string {
+	parts := make([]string, 0, 2)
+	colonIndex := -1
+	for i := 0; i < len(key); i++ {
+		if key[i] == ':' {
+			colonIndex = i
+			break
+		}
+	}
+	if colonIndex >= 0 {
+		parts = append(parts, key[:colonIndex])
+		parts = append(parts, key[colonIndex+1:])
+	}
+	return parts
 }

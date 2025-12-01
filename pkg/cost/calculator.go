@@ -166,6 +166,7 @@ func (c *Calculator) initializeInstanceCosts(input CalculationInput, costs map[s
 			InstanceType:        inst.InstanceType,
 			Region:              inst.Region,
 			AccountID:           inst.AccountID,
+			AccountName:         inst.AccountName,
 			AvailabilityZone:    inst.AvailabilityZone,
 			ShelfPrice:          shelfPrice,
 			EffectiveCost:       shelfPrice,       // Will be reduced by RIs/SPs
@@ -199,6 +200,7 @@ func (c *Calculator) initializeSPUtilization(input CalculationInput, utilization
 		utilization[sp.SavingsPlanARN] = &SavingsPlanUtilization{
 			SavingsPlanARN:         sp.SavingsPlanARN,
 			AccountID:              sp.AccountID,
+			AccountName:            sp.AccountName,
 			Type:                   sp.SavingsPlanType,
 			Region:                 sp.Region,
 			InstanceFamily:         sp.InstanceFamily,

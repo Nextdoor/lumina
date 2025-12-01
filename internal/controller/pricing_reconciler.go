@@ -162,9 +162,10 @@ func (r *PricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 
 	if err != nil {
 		// Record failure in metrics
-		// Pricing is global, so we use empty strings for account/region labels
+		// Pricing is global, so we use empty strings for account/account_name/region labels
 		r.Metrics.DataLastSuccess.WithLabelValues(
 			"", // Not account-specific
+			"", // Not account_name-specific
 			"", // Not region-specific
 			"pricing",
 		).Set(0)
@@ -184,12 +185,13 @@ func (r *PricingReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	// Record success in metrics
 	r.Metrics.DataLastSuccess.WithLabelValues(
 		"", // Not account-specific
+		"", // Not account_name-specific
 		"", // Not region-specific
 		"pricing",
 	).Set(1)
 
 	// Mark that pricing data was updated (pricing is global, not account or region-specific)
-	r.Metrics.MarkDataUpdated("", "", "pricing")
+	r.Metrics.MarkDataUpdated("", "", "", "pricing")
 
 	// Log cache statistics with detailed information
 	stats := r.Cache.GetStats()
