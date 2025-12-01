@@ -16,6 +16,12 @@ Lumina - Kubernetes Cost Visibility Controller
 
 * <https://github.com/Nextdoor/lumina>
 
+## Requirements
+
+| Repository | Name | Version |
+|------------|------|---------|
+| https://localstack.github.io/helm-charts | localstack | 0.6.27 |
+
 ## Values
 
 | Key | Type | Default | Description |
@@ -56,8 +62,9 @@ Lumina - Kubernetes Cost Visibility Controller
 | livenessProbe.initialDelaySeconds | int | `15` |  |
 | livenessProbe.periodSeconds | int | `20` |  |
 | livenessProbe.timeoutSeconds | int | `1` |  |
-| localstack | object | `{"enabled":false}` | LocalStack configuration for CI/testing |
-| localstack.enabled | bool | `false` | Enable LocalStack for mocking AWS services |
+| localstack | object | `{"enabled":false,"service":{"type":"ClusterIP"}}` | LocalStack configuration for CI/testing |
+| localstack.enabled | bool | `false` | Enable LocalStack for mocking AWS services (used in CI for testing) When enabled, deploys LocalStack as a subchart and provides a mock AWS environment See ci/ci-values.yaml for an example configuration with LocalStack |
+| localstack.service | object | `{"type":"ClusterIP"}` | Override service type for LocalStack (ClusterIP recommended for CI) |
 | metricsService.annotations | object | `{}` | Annotations to add to the metrics service |
 | metricsService.port | int | `8080` | Metrics service port |
 | metricsService.type | string | `"ClusterIP"` | Metrics service type |

@@ -16,3 +16,9 @@ sources:
 maintainers:
   - name: Lumina Maintainers
     url: https://github.com/Nextdoor/lumina
+dependencies:
+  # LocalStack for CI/testing (disabled by default)
+  - name: localstack
+    version: 0.6.27
+    condition: localstack.enabled
+    repository: https://localstack.github.io/helm-charts

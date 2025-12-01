@@ -266,5 +266,10 @@ serviceMonitor:
 
 # -- LocalStack configuration for CI/testing
 localstack:
-  # -- Enable LocalStack for mocking AWS services
+  # -- Enable LocalStack for mocking AWS services (used in CI for testing)
+  # When enabled, deploys LocalStack as a subchart and provides a mock AWS environment
+  # See ci/ci-values.yaml for an example configuration with LocalStack
   enabled: false
+  # -- Override service type for LocalStack (ClusterIP recommended for CI)
+  service:
+    type: ClusterIP

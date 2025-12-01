@@ -1,0 +1,40 @@
+# CI-specific values for testing the Lumina Helm chart
+# This file enables LocalStack and configures mock AWS resources for testing
+
+# Enable LocalStack for CI/testing
+localstack:
+  enabled: true
+  service:
+    type: ClusterIP
+
+# Disable IAM role creation for CI
+createIamRole: false
+
+# Single replica for CI
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: lumina
+
+# Mock AWS account configuration pointing to LocalStack
+awsAccounts:
+  - accountId: "000000000000"
+    name: "LocalStack"
+    assumeRoleArn: "arn:aws:iam::000000000000:role/lumina-controller"
+
+# Reduce validation interval to avoid constant AWS credential failures in CI
+accountValidationInterval: "1h"
+
+# Always pull latest image for CI
+image:
+  pullPolicy: Always
+
+# Reduced resources for CI
+resources:
+  limits:
+    cpu: "500m"
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

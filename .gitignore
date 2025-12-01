@@ -38,3 +38,5 @@ config.yaml
 # Helm chart artifacts
 *.tgz
 .deploy/
+charts/lumina/Chart.lock
+charts/lumina/charts/
