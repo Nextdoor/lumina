@@ -51,7 +51,12 @@ func TestNewMetrics(t *testing.T) {
 	m.AccountValidationLastSuccess.With(labels).Set(0)
 	m.AccountValidationDuration.With(labels).Observe(0.1)
 
-	dataLabels := prometheus.Labels{"account_id": "test", "region": "us-west-2", "data_type": "test"}
+	dataLabels := prometheus.Labels{
+		"account_id":   "test",
+		"account_name": "Test",
+		"region":       "us-west-2",
+		"data_type":    "test",
+	}
 	m.DataFreshness.With(dataLabels).Set(0)
 	m.DataLastSuccess.With(dataLabels).Set(0)
 

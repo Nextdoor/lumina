@@ -42,6 +42,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 			InstanceCount:      2,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-456",
@@ -51,6 +52,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 			InstanceCount:      3,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-789",
@@ -60,6 +62,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "222222222222",
+			AccountName:        "test-account",
 		},
 	}
 
@@ -69,6 +72,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 	// Verify per-instance metrics
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -76,6 +80,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.2xlarge",
 		"availability_zone": "us-west-2b",
@@ -83,6 +88,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "222222222222",
+		"account_name":      "test-account",
 		"region":            "us-east-1",
 		"instance_type":     "c5.large",
 		"availability_zone": "us-east-1a",
@@ -91,6 +97,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 	// Verify family count aggregation (m5 family: 2 + 3 = 5)
 	assert.Equal(t, 5.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
@@ -98,6 +105,7 @@ func TestUpdateReservedInstanceMetrics_BasicFunctionality(t *testing.T) {
 	// Verify c5 family count
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "222222222222",
+		"account_name":    "test-account",
 		"region":          "us-east-1",
 		"instance_family": "c5",
 	})))
@@ -118,6 +126,7 @@ func TestUpdateReservedInstanceMetrics_EmptyList(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 	}
 	m.UpdateReservedInstanceMetrics(ris)
@@ -125,6 +134,7 @@ func TestUpdateReservedInstanceMetrics_EmptyList(t *testing.T) {
 	// Verify metric exists
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -136,6 +146,7 @@ func TestUpdateReservedInstanceMetrics_EmptyList(t *testing.T) {
 	// Verify metrics were reset - count should be 0
 	count, err := m.ReservedInstance.GetMetricWith(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -161,6 +172,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-retired",
@@ -170,6 +182,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 			InstanceCount:      1,
 			State:              "retired",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-payment-failed",
@@ -179,6 +192,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 			InstanceCount:      1,
 			State:              "payment-failed",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 	}
 
@@ -188,6 +202,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 	// Verify only active RI has metric
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -196,6 +211,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 	// Verify retired RI metric is 0 (not set)
 	retiredMetric, err := m.ReservedInstance.GetMetricWith(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.2xlarge",
 		"availability_zone": "us-west-2b",
@@ -206,6 +222,7 @@ func TestUpdateReservedInstanceMetrics_InactiveRIsSkipped(t *testing.T) {
 	// Verify family count only includes active RI
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
@@ -226,6 +243,7 @@ func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 			InstanceCount:      2,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-456",
@@ -235,6 +253,7 @@ func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 			InstanceCount:      3,
 			State:              "active",
 			AccountID:          "222222222222",
+			AccountName:        "test-account",
 		},
 	}
 
@@ -244,6 +263,7 @@ func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 	// Verify each account has separate metrics
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -251,6 +271,7 @@ func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "222222222222",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -259,12 +280,14 @@ func TestUpdateReservedInstanceMetrics_MultipleAccounts(t *testing.T) {
 	// Verify family counts are separate per account
 	assert.Equal(t, 2.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
 
 	assert.Equal(t, 3.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "222222222222",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
@@ -285,6 +308,7 @@ func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-regional",
@@ -294,6 +318,7 @@ func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 			InstanceCount:      2,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 	}
 
@@ -303,6 +328,7 @@ func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 	// Verify zonal RI
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -311,6 +337,7 @@ func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 	// Verify regional RI
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.2xlarge",
 		"availability_zone": "regional",
@@ -319,6 +346,7 @@ func TestUpdateReservedInstanceMetrics_RegionalRIs(t *testing.T) {
 	// Verify family count aggregates both (1 + 2 = 3)
 	assert.Equal(t, 3.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
@@ -339,6 +367,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-456",
@@ -348,6 +377,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 	}
 	m.UpdateReservedInstanceMetrics(ris1)
@@ -355,12 +385,14 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 	// Verify both exist
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
 	})))
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "c5.large",
 		"availability_zone": "us-west-2a",
@@ -376,6 +408,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 	}
 	m.UpdateReservedInstanceMetrics(ris2)
@@ -383,6 +416,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 	// Verify first RI still exists
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.xlarge",
 		"availability_zone": "us-west-2a",
@@ -391,6 +425,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 	// Verify second RI was removed (reset to 0)
 	c5Metric, err := m.ReservedInstance.GetMetricWith(prometheus.Labels{
 		"account_id":        "111111111111",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "c5.large",
 		"availability_zone": "us-west-2a",
@@ -401,6 +436,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 	// Verify family counts updated
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
@@ -408,6 +444,7 @@ func TestUpdateReservedInstanceMetrics_MetricCleanup(t *testing.T) {
 	// c5 family should be removed
 	c5FamilyMetric, err := m.ReservedInstanceCount.GetMetricWith(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "c5",
 	})
@@ -432,6 +469,7 @@ func TestUpdateReservedInstanceMetrics_MalformedKeyHandling(t *testing.T) {
 			InstanceCount:      1,
 			State:              "active",
 			AccountID:          "111111111111",
+			AccountName:        "test-account",
 		},
 	}
 
@@ -442,6 +480,7 @@ func TestUpdateReservedInstanceMetrics_MalformedKeyHandling(t *testing.T) {
 	// Verify metric was set correctly
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "111111111111",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
@@ -517,6 +556,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 			Start:              now.Add(-365 * 24 * time.Hour),
 			End:                now.Add(365 * 24 * time.Hour),
 			AccountID:          "329239342014",
+			AccountName:        "test-account",
 		},
 		{
 			ReservedInstanceID: "ri-prod-2",
@@ -528,6 +568,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 			Start:              now.Add(-200 * 24 * time.Hour),
 			End:                now.Add(165 * 24 * time.Hour),
 			AccountID:          "329239342014",
+			AccountName:        "test-account",
 		},
 		// Staging account - us-east-1
 		{
@@ -540,6 +581,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 			Start:              now.Add(-100 * 24 * time.Hour),
 			End:                now.Add(265 * 24 * time.Hour),
 			AccountID:          "364942603424",
+			AccountName:        "test-account",
 		},
 		// Expired RI (should be skipped)
 		{
@@ -552,6 +594,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 			Start:              now.Add(-730 * 24 * time.Hour),
 			End:                now.Add(-30 * 24 * time.Hour),
 			AccountID:          "329239342014",
+			AccountName:        "test-account",
 		},
 	}
 
@@ -560,6 +603,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 	// Verify production account RIs
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "329239342014",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.2xlarge",
 		"availability_zone": "us-west-2a",
@@ -567,6 +611,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "329239342014",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "c5.xlarge",
 		"availability_zone": "regional",
@@ -575,6 +620,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 	// Verify staging account RI
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.ReservedInstance.With(prometheus.Labels{
 		"account_id":        "364942603424",
+		"account_name":      "test-account",
 		"region":            "us-east-1",
 		"instance_type":     "t3.medium",
 		"availability_zone": "us-east-1a",
@@ -583,18 +629,21 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 	// Verify family counts
 	assert.Equal(t, 5.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "329239342014",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "m5",
 	})))
 
 	assert.Equal(t, 10.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "329239342014",
+		"account_name":    "test-account",
 		"region":          "us-west-2",
 		"instance_family": "c5",
 	})))
 
 	assert.Equal(t, 3.0, testutil.ToFloat64(m.ReservedInstanceCount.With(prometheus.Labels{
 		"account_id":      "364942603424",
+		"account_name":    "test-account",
 		"region":          "us-east-1",
 		"instance_family": "t3",
 	})))
@@ -602,6 +651,7 @@ func TestUpdateReservedInstanceMetrics_RealWorldScenario(t *testing.T) {
 	// Verify expired RI is not present
 	expiredMetric, err := m.ReservedInstance.GetMetricWith(prometheus.Labels{
 		"account_id":        "329239342014",
+		"account_name":      "test-account",
 		"region":            "us-west-2",
 		"instance_type":     "m5.large",
 		"availability_zone": "us-west-2b",
