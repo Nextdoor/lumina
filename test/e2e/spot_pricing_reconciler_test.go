@@ -158,33 +158,33 @@ var _ = Describe("Spot Pricing Reconciler", Ordered, func() {
 					"data_freshness metric for spot-pricing should be present")
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
-			By("verifying spot pricing data freshness metric has recent timestamp")
+			By("verifying spot pricing data freshness metric shows recent age")
 			metricsOutput, err := getMetricsOutput()
 			Expect(err).NotTo(HaveOccurred())
 
-			// Extract the timestamp value for spot-pricing data_freshness
+			// Extract the age value for spot-pricing data_freshness
+		// DataFreshness now stores age in seconds (auto-updated every second)
 			lines := strings.Split(metricsOutput, "\n")
-			foundRecentTimestamp := false
-			currentTime := time.Now().Unix()
+			foundRecentAge := false
 
 			for _, line := range lines {
 				if strings.Contains(line, "lumina_data_freshness_seconds") && strings.Contains(line, `data_type="spot-pricing"`) {
 					parts := strings.Fields(line)
 					if len(parts) >= 2 {
-						var timestamp float64
-						_, err := fmt.Sscanf(parts[1], "%f", &timestamp)
+						var age float64
+						_, err := fmt.Sscanf(parts[1], "%f", &age)
 						if err == nil {
-							// Timestamp should be within the last 2 minutes
-							if int64(timestamp) >= currentTime-120 {
-								foundRecentTimestamp = true
+						// This means data was updated recently
+							if age >= 0 && age < 120 {
+								foundRecentAge = true
 								break
 							}
 						}
 					}
 				}
 			}
-			Expect(foundRecentTimestamp).To(BeTrue(),
-				"data_freshness for spot-pricing should have a recent timestamp")
+			Expect(foundRecentAge).To(BeTrue(),
+				"data_freshness for spot-pricing should show a recent age (< 120 seconds)")
 		})
 
 		It("should expose spot pricing last success metric", func() {
