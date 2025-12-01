@@ -14,51 +14,51 @@
   "prConcurrentLimit": 10,
   "prHourlyLimit": 0,
   "prCreation": "immediate",
-  "platformAutomerge": false,
+  "platformAutomerge": true,
   "schedule": [
     "before 10am on monday"
   ],
   "timezone": "America/Los_Angeles",
   "packageRules": [
     {
-      "description": "Group all Go module patch updates together",
+      "description": "Auto-merge all Go module patch updates",
       "matchDatasources": ["go"],
       "matchUpdateTypes": ["patch"],
       "groupName": "Go module patch updates",
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Group all Go module minor updates together",
+      "description": "Auto-merge all Go module minor updates",
       "matchDatasources": ["go"],
       "matchUpdateTypes": ["minor"],
       "groupName": "Go module minor updates",
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Separate major Go module updates (one PR per package)",
+      "description": "Auto-merge major Go module updates",
       "matchDatasources": ["go"],
       "matchUpdateTypes": ["major"],
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Group all GitHub Actions patch updates",
+      "description": "Auto-merge all GitHub Actions patch updates",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["patch"],
       "groupName": "GitHub Actions patch updates",
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Group all GitHub Actions minor updates",
+      "description": "Auto-merge all GitHub Actions minor updates",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor"],
       "groupName": "GitHub Actions minor updates",
-      "automerge": false
+      "automerge": true
     },
     {
-      "description": "Separate major GitHub Actions updates (one PR per action)",
+      "description": "Auto-merge major GitHub Actions updates",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["major"],
-      "automerge": false
+      "automerge": true
     },
     {
       "description": "Pin GitHub Actions to exact commits for security",
