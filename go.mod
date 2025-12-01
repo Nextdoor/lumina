@@ -3,12 +3,15 @@ module github.com/nextdoor/lumina
 go 1.24.6
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.39.6
-	github.com/aws/aws-sdk-go-v2/config v1.31.20
-	github.com/aws/aws-sdk-go-v2/credentials v1.18.24
+	github.com/aws/aws-sdk-go-v2 v1.40.0
+	github.com/aws/aws-sdk-go-v2/config v1.31.21
+	github.com/aws/aws-sdk-go-v2/credentials v1.18.25
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.269.0
-	github.com/aws/aws-sdk-go-v2/service/savingsplans v1.30.3
-	github.com/aws/aws-sdk-go-v2/service/sts v1.40.2
+	github.com/aws/aws-sdk-go-v2/service/iam v1.50.2
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5
+	github.com/aws/aws-sdk-go-v2/service/savingsplans v1.30.5
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.0
+	github.com/go-logr/logr v1.4.2
 	github.com/onsi/ginkgo/v2 v2.22.0
 	github.com/onsi/gomega v1.36.1
 	github.com/prometheus/client_golang v1.22.0
@@ -24,13 +27,11 @@ require (
 	cel.dev/expr v0.24.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.13 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.13 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.13 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.14 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.14 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/iam v1.50.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.13 // indirect
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.7 // indirect
 	github.com/aws/smithy-go v1.23.2 // indirect
@@ -44,7 +45,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
