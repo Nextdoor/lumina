@@ -475,5 +475,53 @@ func TestUpdateEC2InstanceMetrics_MalformedInstanceType(t *testing.T) {
 	assert.Equal(t, 1.0, familyCount, "Expected malformed family count to be 1")
 }
 
+// TestUpdateEC2InstanceMetrics_DisableInstanceMetrics tests that when
+// disableInstanceMetrics is set, no ec2_instance metrics are emitted.
+func TestUpdateEC2InstanceMetrics_DisableInstanceMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	cfg := newTestConfig()
+	cfg.Metrics.DisableInstanceMetrics = true
+	m := NewMetrics(reg, cfg)
+
+	instances := []aws.Instance{
+		{
+			InstanceID:       "i-001",
+			InstanceType:     "m5.xlarge",
+			AvailabilityZone: "us-west-2a",
+			Region:           "us-west-2",
+			AccountID:        "123456789012",
+			AccountName:      "test-account",
+			State:            "running",
+			LaunchTime:       time.Now(),
+			Tenancy:          "default",
+			Platform:         "",
+		},
+	}
+
+	m.UpdateEC2InstanceMetrics(instances)
+
+	// Verify no ec2_instance metrics were emitted
+	value := testutil.ToFloat64(m.EC2Instance.With(prometheus.Labels{
+		"account_id":        "123456789012",
+		"account_name":      "test-account",
+		"region":            "us-west-2",
+		"instance_type":     "m5.xlarge",
+		"availability_zone": "us-west-2a",
+		"instance_id":       "i-001",
+		"tenancy":           "default",
+		"platform":          "linux",
+	}))
+	assert.Equal(t, 0.0, value, "Expected no ec2_instance metric when disabled")
+
+	// Verify no ec2_instance_count metrics were emitted
+	count := testutil.ToFloat64(m.EC2InstanceCount.With(prometheus.Labels{
+		"account_id":      "123456789012",
+		"account_name":    "test-account",
+		"region":          "us-west-2",
+		"instance_family": "m5",
+	}))
+	assert.Equal(t, 0.0, count, "Expected no ec2_instance_count metric when disabled")
+}
+
 // Note: extractInstanceFamily is tested in reserved_instances_test.go
 // since it's a shared helper function used by both RI and EC2 metrics.
