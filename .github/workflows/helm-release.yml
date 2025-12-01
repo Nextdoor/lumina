@@ -1,0 +1,85 @@
+name: Helm Chart Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Release version (without v prefix, e.g., 1.2.3)'
+        required: true
+        type: string
+      image-tag:
+        description: 'Docker image tag to reference in the chart'
+        required: true
+        type: string
+
+env:
+  HELM_REPO_URL: https://nextdoor.github.io/lumina
+
+jobs:
+  release:
+    name: Release Helm Chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4
+        with:
+          version: v3.16.3
+
+      - name: Update Chart.yaml version and appVersion
+        run: |
+          VERSION="${{ inputs.version }}"
+
+          # Update chart version and appVersion
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/lumina/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/lumina/Chart.yaml
+
+          echo "Updated Chart.yaml:"
+          cat charts/lumina/Chart.yaml
+
+      - name: Install helm-docs
+        run: |
+          cd /tmp
+          wget https://github.com/norwoodj/helm-docs/releases/download/v1.14.2/helm-docs_1.14.2_Linux_x86_64.tar.gz
+          tar -xzf helm-docs_1.14.2_Linux_x86_64.tar.gz
+          sudo mv helm-docs /usr/local/bin/
+          helm-docs --version
+
+      - name: Update chart documentation
+        run: |
+          cd charts/lumina
+          helm-docs
+
+      - name: Package Helm chart
+        run: |
+          mkdir -p .cr-release-packages
+          helm package charts/lumina --destination .cr-release-packages
+
+      - name: Publish Helm chart to GitHub Pages
+        uses: helm/chart-releaser-action@a917fd15b20e8b64b94d9158ad54cd6345335584 # v1.6.0
+        with:
+          charts_dir: charts
+          skip_packaging: true
+          packages_with_index: true
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub release artifacts
+        uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2
+        with:
+          tag_name: v${{ inputs.version }}
+          files: |
+            .cr-release-packages/*.tgz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

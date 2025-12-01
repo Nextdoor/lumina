@@ -199,6 +199,30 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
 
+##@ Helm
+
+HELM_DOCS_VERSION ?= v1.14.2
+HELM_DOCS ?= $(LOCALBIN)/helm-docs
+
+.PHONY: helm-docs
+helm-docs: $(HELM_DOCS) ## Generate Helm chart documentation
+	@for chart in charts/*/; do \
+		echo "Generating docs for $$chart"; \
+		$(HELM_DOCS) --chart-search-root=$$chart; \
+	done
+
+.PHONY: helm-docs-check
+helm-docs-check: helm-docs ## Check if Helm chart documentation is up to date
+	@if [ -n "$$(git status --porcelain charts/)" ]; then \
+		echo "ERROR: Helm chart documentation is out of date. Run 'make helm-docs' and commit the changes."; \
+		git diff charts/; \
+		exit 1; \
+	fi
+	@echo "Helm chart documentation is up to date."
+
+$(HELM_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(HELM_DOCS),github.com/norwoodj/helm-docs/cmd/helm-docs,$(HELM_DOCS_VERSION))
+
 ##@ Dependencies
 
 ## Location to install dependencies to

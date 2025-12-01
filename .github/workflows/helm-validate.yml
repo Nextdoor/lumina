@@ -1,0 +1,72 @@
+name: Helm Chart Validation
+
+on:
+  pull_request:
+    paths:
+      - 'charts/lumina/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/lumina/**'
+
+jobs:
+  validate:
+    name: Validate Helm Chart
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4
+        with:
+          version: v3.16.3
+
+      - name: Helm Lint
+        run: |
+          helm lint charts/lumina
+
+      - name: Check Helm documentation
+        run: |
+          make helm-docs-check
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1
+        with:
+          version: v0.26.0
+          kubectl_version: v1.32.0
+
+      - name: Install chart
+        run: |
+          helm install lumina-test charts/lumina \
+            --namespace lumina-system \
+            --create-namespace \
+            --set skipConfig=true \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n lumina-system
+          kubectl get deployment -n lumina-system
+          kubectl rollout status deployment/lumina-test -n lumina-system --timeout=5m
+
+      - name: Check service endpoints
+        run: |
+          kubectl get svc -n lumina-system
+          kubectl get endpoints -n lumina-system
+
+      - name: Get pod logs
+        if: failure()
+        run: |
+          kubectl logs -n lumina-system -l app.kubernetes.io/name=lumina --tail=100
+
+      - name: Uninstall chart
+        if: always()
+        run: |
+          helm uninstall lumina-test -n lumina-system || true

@@ -1,0 +1,39 @@
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "lumina.fullname" . }}-controller-manager-metrics-monitor
+  labels:
+    {{- include "lumina.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.serviceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  endpoints:
+  - path: /metrics
+    port: {{ if .Values.controllerManager.metricsSecure }}https{{ else }}http{{ end }}
+    scheme: {{ if .Values.controllerManager.metricsSecure }}https{{ else }}http{{ end }}
+    interval: {{ .Values.serviceMonitor.interval }}
+    scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+    {{- if .Values.controllerManager.metricsSecure }}
+    tlsConfig:
+      insecureSkipVerify: true
+    {{- end }}
+    {{- with .Values.serviceMonitor.relabelings }}
+    relabelings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.serviceMonitor.metricRelabelings }}
+    metricRelabelings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "lumina.selectorLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}

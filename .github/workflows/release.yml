@@ -5,7 +5,14 @@ on:
     types: [released]
 
 jobs:
-  publish:
+  publish-docker:
     uses: ./.github/workflows/docker.yml
     with:
       publish: true
+
+  publish-helm:
+    needs: publish-docker
+    uses: ./.github/workflows/helm-release.yml
+    with:
+      version: ${{ needs.publish-docker.outputs.image-version }}
+      image-tag: ${{ needs.publish-docker.outputs.image-version }}
