@@ -65,6 +65,51 @@ logLevel: "info"
 # Default: :8080
 metricsBindAddress: ":8080"
 
+# Metrics Configuration (Optional)
+# Controls metric emission behavior and label customization
+metrics:
+  # Disable per-instance metrics for multi-cluster deployments
+  # When multiple Lumina instances report to a shared Prometheus endpoint,
+  # set this to true on worker clusters to prevent metric duplication.
+  # Only the management cluster should emit instance-level metrics.
+  #
+  # When true, disables:
+  #   - ec2_instance
+  #   - ec2_instance_count
+  #   - ec2_instance_hourly_cost
+  #
+  # Always enabled (regardless of this setting):
+  #   - Savings Plans metrics (utilization, commitment, etc.)
+  #   - Reserved Instance metrics
+  #   - Controller health and data freshness metrics
+  #
+  # Default: false (emit all metrics)
+  disableInstanceMetrics: false
+
+  # Customize metric label names (Optional)
+  # Override default label names to match your organization's conventions
+  # or avoid conflicts with external metric relabeling systems
+  #
+  # labels:
+  #   # Kubernetes-related labels
+  #   clusterName: "cluster_name"    # Default: cluster_name
+  #   nodeName: "node_name"          # Default: node_name
+  #   hostName: "host_name"          # Default: host_name
+  #
+  #   # AWS-related labels
+  #   accountId: "account_id"        # Default: account_id
+  #   accountName: "account_name"    # Default: account_name
+  #   region: "region"               # Default: region
+  #
+  # Example: Use custom label names
+  # labels:
+  #   clusterName: "k8s_cluster"
+  #   accountName: "aws_account"
+  #   accountId: "aws_account_id"
+  #   region: "aws_region"
+  #   nodeName: "k8s_node"
+  #   hostName: "ec2_hostname"
+
 # Address for health probe endpoints (/healthz, /readyz)
 # Can be overridden by LUMINA_HEALTH_PROBE_BIND_ADDRESS environment variable
 # Default: :8081
