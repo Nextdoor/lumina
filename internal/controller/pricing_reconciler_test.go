@@ -57,7 +57,7 @@ func TestPricingReconciler_Reconcile_Success(t *testing.T) {
 
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &PricingReconciler{
@@ -117,7 +117,7 @@ func TestPricingReconciler_Reconcile_CustomInterval(t *testing.T) {
 
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &PricingReconciler{
@@ -161,7 +161,7 @@ func TestPricingReconciler_Reconcile_InvalidInterval(t *testing.T) {
 
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &PricingReconciler{
@@ -233,7 +233,7 @@ func TestPricingReconciler_Reconcile_DefaultRegions(t *testing.T) {
 
 			// Create cache and metrics
 			pricingCache := cache.NewPricingCache()
-			m := metrics.NewMetrics(prometheus.NewRegistry())
+			m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 			// Create reconciler
 			reconciler := &PricingReconciler{
@@ -281,7 +281,7 @@ func TestPricingReconciler_Reconcile_DefaultOS(t *testing.T) {
 
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler with NO operating systems specified (should default to Linux+Windows)
 	reconciler := &PricingReconciler{
@@ -329,7 +329,7 @@ func TestPricingReconciler_Reconcile_CacheUpdate(t *testing.T) {
 
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &PricingReconciler{
@@ -402,7 +402,7 @@ func TestPricingReconciler_Reconcile_Metrics(t *testing.T) {
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
 	registry := prometheus.NewRegistry()
-	m := metrics.NewMetrics(registry)
+	m := metrics.NewMetrics(registry, newTestConfig())
 
 	// Create reconciler
 	reconciler := &PricingReconciler{
@@ -495,7 +495,7 @@ func TestPricingReconciler_Reconcile_TestData(t *testing.T) {
 
 	// Create cache and metrics
 	pricingCache := cache.NewPricingCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &PricingReconciler{

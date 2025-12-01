@@ -45,7 +45,7 @@ func TestCostReconciler_Reconcile_BlocksWhenNotInitialized(t *testing.T) {
 		EC2Cache:     cache.NewEC2Cache(),
 		RISPCache:    cache.NewRISPCache(),
 		PricingCache: pricingCache,
-		Metrics:      metrics.NewMetrics(prometheus.NewRegistry()),
+		Metrics:      metrics.NewMetrics(prometheus.NewRegistry(), cfg),
 		Log:          logr.Discard(),
 		// initialized is false by default (atomic.Bool zero value)
 	}
@@ -76,7 +76,7 @@ func TestCostReconciler_Reconcile_RunsWhenInitialized(t *testing.T) {
 		EC2Cache:     ec2Cache,
 		RISPCache:    rispCache,
 		PricingCache: pricingCache,
-		Metrics:      metrics.NewMetrics(prometheus.NewRegistry()),
+		Metrics:      metrics.NewMetrics(prometheus.NewRegistry(), cfg),
 		Log:          logr.Discard(),
 	}
 
@@ -192,7 +192,7 @@ func TestCostReconciler_Run_SetsInitializedFlag(t *testing.T) {
 		EC2Cache:         cache.NewEC2Cache(),
 		RISPCache:        cache.NewRISPCache(),
 		PricingCache:     pricingCache,
-		Metrics:          metrics.NewMetrics(prometheus.NewRegistry()),
+		Metrics:          metrics.NewMetrics(prometheus.NewRegistry(), cfg),
 		Debouncer:        cache.NewDebouncer(1*time.Second, func() {}),
 		Log:              logr.Discard(),
 		PricingReadyChan: pricingReadyCh,
@@ -257,7 +257,7 @@ func TestCostReconciler_Run_RunsInitialCalculation(t *testing.T) {
 		EC2Cache:         cache.NewEC2Cache(),
 		RISPCache:        cache.NewRISPCache(),
 		PricingCache:     pricingCache,
-		Metrics:          metrics.NewMetrics(prometheus.NewRegistry()),
+		Metrics:          metrics.NewMetrics(prometheus.NewRegistry(), cfg),
 		Debouncer:        cache.NewDebouncer(1*time.Second, func() {}),
 		Log:              logr.Discard(),
 		PricingReadyChan: pricingReadyCh,

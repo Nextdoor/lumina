@@ -42,6 +42,94 @@ const (
 	OSSUSE    = "SUSE"
 )
 
+// Configuration key constants for viper SetDefault and BindEnv calls.
+// These eliminate magic strings throughout the config loading code.
+const (
+	// Top-level configuration keys
+	KeyDefaultRegion             = "defaultRegion"
+	KeyLogLevel                  = "logLevel"
+	KeyMetricsBindAddress        = "metricsBindAddress"
+	KeyHealthProbeBindAddress    = "healthProbeBindAddress"
+	KeyAccountValidationInterval = "accountValidationInterval"
+
+	// Reconciliation configuration keys
+	KeyReconciliationRISP        = "reconciliation.risp"
+	KeyReconciliationEC2         = "reconciliation.ec2"
+	KeyReconciliationSpotPricing = "reconciliation.spotPricing"
+
+	// Pricing configuration keys
+	KeyPricingSpotPriceCacheExpiration = "pricing.spotPriceCacheExpiration"
+	KeyPricingDefaultDiscountsEC2      = "pricing.defaultDiscounts.ec2Instance"
+	KeyPricingDefaultDiscountsCompute  = "pricing.defaultDiscounts.compute"
+
+	// Metrics configuration keys
+	KeyMetricsDisableInstanceMetrics = "metrics.disableInstanceMetrics"
+	KeyMetricsLabelsClusterName      = "metrics.labels.clusterName"
+	KeyMetricsLabelsAccountName      = "metrics.labels.accountName"
+	KeyMetricsLabelsAccountID        = "metrics.labels.accountId"
+	KeyMetricsLabelsRegion           = "metrics.labels.region"
+	KeyMetricsLabelsNodeName         = "metrics.labels.nodeName"
+	KeyMetricsLabelsHostName         = "metrics.labels.hostName"
+	KeyMetricsNodeNameSourceTagKey   = "metrics.nodeNameSource.tagKey"
+
+	// Test data keys
+	KeyTestDataPricing = "testData.pricing"
+)
+
+// Environment variable name constants.
+const (
+	EnvDefaultRegion                 = "LUMINA_DEFAULT_REGION"
+	EnvLogLevel                      = "LUMINA_LOG_LEVEL"
+	EnvMetricsBindAddress            = "LUMINA_METRICS_BIND_ADDRESS"
+	EnvHealthProbeBindAddress        = "LUMINA_HEALTH_PROBE_BIND_ADDRESS"
+	EnvAccountValidationInterval     = "LUMINA_ACCOUNT_VALIDATION_INTERVAL"
+	EnvReconciliationRISP            = "LUMINA_RECONCILIATION_RISP"
+	EnvReconciliationEC2             = "LUMINA_RECONCILIATION_EC2"
+	EnvMetricsDisableInstanceMetrics = "LUMINA_METRICS_DISABLE_INSTANCE_METRICS"
+	EnvMetricsLabelsClusterName      = "LUMINA_METRICS_LABELS_CLUSTER_NAME"
+	EnvMetricsLabelsAccountName      = "LUMINA_METRICS_LABELS_ACCOUNT_NAME"
+	EnvMetricsLabelsAccountID        = "LUMINA_METRICS_LABELS_ACCOUNT_ID"
+	EnvMetricsLabelsRegion           = "LUMINA_METRICS_LABELS_REGION"
+	EnvMetricsLabelsNodeName         = "LUMINA_METRICS_LABELS_NODE_NAME"
+	EnvMetricsLabelsHostName         = "LUMINA_METRICS_LABELS_HOST_NAME"
+	EnvMetricsNodeNameSourceTagKey   = "LUMINA_METRICS_NODE_NAME_SOURCE_TAG_KEY"
+	EnvPrefix                        = "LUMINA"
+)
+
+// Default configuration values.
+const (
+	// Top-level defaults
+	DefaultRegion                    = "us-west-2"
+	DefaultLogLevel                  = "info"
+	DefaultMetricsBindAddress        = ":8080"
+	DefaultHealthProbeBindAddress    = ":8081"
+	DefaultAccountValidationInterval = "10m"
+
+	// Reconciliation defaults
+	DefaultReconciliationRISP        = "1h"
+	DefaultReconciliationEC2         = "5m"
+	DefaultReconciliationSpotPricing = "15s"
+
+	// Pricing defaults
+	DefaultSpotPriceCacheExpiration = "1h"
+	// Savings Plan discount multipliers (what you pay, not discount %)
+	// 1-year typical: ~28% OFF → you pay 72% → 0.72
+	DefaultSPDiscountEC2Instance = 0.72
+	DefaultSPDiscountCompute     = 0.72
+)
+
+// Default metric label names.
+// These are the default values used when label customization is not configured.
+const (
+	DefaultLabelClusterName = "cluster_name"
+	DefaultLabelAccountName = "account_name"
+	DefaultLabelAccountID   = "account_id"
+	DefaultLabelRegion      = "region"
+	DefaultLabelNodeName    = "node_name"
+	DefaultLabelHostName    = "host_name"
+	DefaultNodeNameTagKey   = "Name"
+)
+
 // Config represents the complete controller configuration.
 type Config struct {
 	// AWSAccounts is the list of AWS accounts to monitor for cost data.
@@ -87,6 +175,9 @@ type Config struct {
 
 	// Pricing contains settings for AWS pricing data collection.
 	Pricing PricingConfig `yaml:"pricing,omitempty"`
+
+	// Metrics contains settings for metrics collection and emission.
+	Metrics MetricsConfig `yaml:"metrics,omitempty"`
 
 	// TestData contains mock data for E2E testing.
 	// When present, the RISP reconciler will use this data instead of making AWS API calls.
@@ -200,6 +291,66 @@ type SavingsPlanDiscounts struct {
 	Compute float64 `yaml:"compute,omitempty"`
 }
 
+// MetricsConfig contains settings for metrics collection and emission.
+type MetricsConfig struct {
+	// DisableInstanceMetrics controls whether instance-level metrics are emitted.
+	// When true, ALL metrics with instance_id label will be skipped.
+	// This is useful in multi-cluster deployments where only a "management" cluster
+	// should emit instance metrics to prevent duplication.
+	// Default: false (metrics are emitted)
+	DisableInstanceMetrics bool `yaml:"disableInstanceMetrics,omitempty"`
+
+	// Labels configures the label names used in metrics.
+	// Allows customizing label names to match organizational conventions.
+	Labels MetricLabelsConfig `yaml:"labels,omitempty"`
+
+	// NodeNameSource configures how node_name label is populated as a fallback
+	// when Kubernetes correlation is not available.
+	NodeNameSource NodeNameSourceConfig `yaml:"nodeNameSource,omitempty"`
+}
+
+// MetricLabelsConfig allows customizing metric label names.
+// This enables matching organizational conventions and avoiding conflicts
+// with externally-added labels (e.g., from Prometheus relabeling).
+type MetricLabelsConfig struct {
+	// ClusterName is the label name for Kubernetes cluster identification.
+	// Default: "cluster_name"
+	// Extracted from kubernetes.io/cluster/<name> EC2 tag.
+	ClusterName string `yaml:"clusterName,omitempty"`
+
+	// AccountName is the label name for AWS account human-readable name.
+	// Default: "account_name"
+	AccountName string `yaml:"accountName,omitempty"`
+
+	// AccountID is the label name for AWS account ID.
+	// Default: "account_id"
+	AccountID string `yaml:"accountId,omitempty"`
+
+	// Region is the label name for AWS region.
+	// Default: "region"
+	Region string `yaml:"region,omitempty"`
+
+	// NodeName is the label name for Kubernetes node name.
+	// Default: "node_name"
+	NodeName string `yaml:"nodeName,omitempty"`
+
+	// HostName is the label name for EC2 private DNS name.
+	// Default: "host_name"
+	HostName string `yaml:"hostName,omitempty"`
+}
+
+// NodeNameSourceConfig configures how the node_name label is populated
+// as a fallback when Kubernetes correlation is not available.
+type NodeNameSourceConfig struct {
+	// TagKey specifies which EC2 tag to use as fallback for node_name.
+	// This is used when:
+	//   1. The instance has a cluster_name (is part of a K8s cluster)
+	//   2. Kubernetes NodeCache correlation is not available
+	// Default: "Name"
+	// Common alternatives: "kubernetes.io/node-name", custom tags
+	TagKey string `yaml:"tagKey,omitempty"`
+}
+
 // TestData contains mock data for E2E testing.
 // This allows testing functionality when LocalStack doesn't support certain APIs.
 // IMPORTANT: This should only be used in E2E tests, never in production.
@@ -301,34 +452,52 @@ func Load(path string) (*Config, error) {
 	v.SetConfigFile(path)
 
 	// Set default values
-	v.SetDefault("defaultRegion", "us-west-2")
-	v.SetDefault("logLevel", "info")
-	v.SetDefault("metricsBindAddress", ":8080")
-	v.SetDefault("healthProbeBindAddress", ":8081")
-	v.SetDefault("accountValidationInterval", "10m")
-	v.SetDefault("reconciliation.risp", "1h")
-	v.SetDefault("reconciliation.ec2", "5m")
-	v.SetDefault("reconciliation.spotPricing", "15s")
-	v.SetDefault("pricing.spotPriceCacheExpiration", "1h")
+	v.SetDefault(KeyDefaultRegion, DefaultRegion)
+	v.SetDefault(KeyLogLevel, DefaultLogLevel)
+	v.SetDefault(KeyMetricsBindAddress, DefaultMetricsBindAddress)
+	v.SetDefault(KeyHealthProbeBindAddress, DefaultHealthProbeBindAddress)
+	v.SetDefault(KeyAccountValidationInterval, DefaultAccountValidationInterval)
+	v.SetDefault(KeyReconciliationRISP, DefaultReconciliationRISP)
+	v.SetDefault(KeyReconciliationEC2, DefaultReconciliationEC2)
+	v.SetDefault(KeyReconciliationSpotPricing, DefaultReconciliationSpotPricing)
+	v.SetDefault(KeyPricingSpotPriceCacheExpiration, DefaultSpotPriceCacheExpiration)
 	// Cost reconciliation is event-driven (no default interval needed)
 
 	// Set default Savings Plan rate multipliers (1-year, typical)
 	// These are fallback values used when actual rates are not available from AWS API
 	// Values are multipliers (what you pay), not discount percentages
-	v.SetDefault("pricing.defaultDiscounts.ec2Instance", 0.72) // ~28% OFF → pay 72%
-	v.SetDefault("pricing.defaultDiscounts.compute", 0.72)     // ~28% OFF → pay 72%
+	v.SetDefault(KeyPricingDefaultDiscountsEC2, DefaultSPDiscountEC2Instance)
+	v.SetDefault(KeyPricingDefaultDiscountsCompute, DefaultSPDiscountCompute)
+
+	// Set default metric label names
+	v.SetDefault(KeyMetricsDisableInstanceMetrics, false)
+	v.SetDefault(KeyMetricsLabelsClusterName, DefaultLabelClusterName)
+	v.SetDefault(KeyMetricsLabelsAccountName, DefaultLabelAccountName)
+	v.SetDefault(KeyMetricsLabelsAccountID, DefaultLabelAccountID)
+	v.SetDefault(KeyMetricsLabelsRegion, DefaultLabelRegion)
+	v.SetDefault(KeyMetricsLabelsNodeName, DefaultLabelNodeName)
+	v.SetDefault(KeyMetricsLabelsHostName, DefaultLabelHostName)
+	v.SetDefault(KeyMetricsNodeNameSourceTagKey, DefaultNodeNameTagKey)
 
 	// Enable environment variable overrides with LUMINA_ prefix
 	// Manually bind each config key to its environment variable
 	// Viper's automatic mapping doesn't handle camelCase to SCREAMING_SNAKE_CASE well
-	v.SetEnvPrefix("LUMINA")
-	_ = v.BindEnv("defaultRegion", "LUMINA_DEFAULT_REGION")
-	_ = v.BindEnv("logLevel", "LUMINA_LOG_LEVEL")
-	_ = v.BindEnv("metricsBindAddress", "LUMINA_METRICS_BIND_ADDRESS")
-	_ = v.BindEnv("healthProbeBindAddress", "LUMINA_HEALTH_PROBE_BIND_ADDRESS")
-	_ = v.BindEnv("accountValidationInterval", "LUMINA_ACCOUNT_VALIDATION_INTERVAL")
-	_ = v.BindEnv("reconciliation.risp", "LUMINA_RECONCILIATION_RISP")
-	_ = v.BindEnv("reconciliation.ec2", "LUMINA_RECONCILIATION_EC2")
+	v.SetEnvPrefix(EnvPrefix)
+	_ = v.BindEnv(KeyDefaultRegion, EnvDefaultRegion)
+	_ = v.BindEnv(KeyLogLevel, EnvLogLevel)
+	_ = v.BindEnv(KeyMetricsBindAddress, EnvMetricsBindAddress)
+	_ = v.BindEnv(KeyHealthProbeBindAddress, EnvHealthProbeBindAddress)
+	_ = v.BindEnv(KeyAccountValidationInterval, EnvAccountValidationInterval)
+	_ = v.BindEnv(KeyReconciliationRISP, EnvReconciliationRISP)
+	_ = v.BindEnv(KeyReconciliationEC2, EnvReconciliationEC2)
+	_ = v.BindEnv(KeyMetricsDisableInstanceMetrics, EnvMetricsDisableInstanceMetrics)
+	_ = v.BindEnv(KeyMetricsLabelsClusterName, EnvMetricsLabelsClusterName)
+	_ = v.BindEnv(KeyMetricsLabelsAccountName, EnvMetricsLabelsAccountName)
+	_ = v.BindEnv(KeyMetricsLabelsAccountID, EnvMetricsLabelsAccountID)
+	_ = v.BindEnv(KeyMetricsLabelsRegion, EnvMetricsLabelsRegion)
+	_ = v.BindEnv(KeyMetricsLabelsNodeName, EnvMetricsLabelsNodeName)
+	_ = v.BindEnv(KeyMetricsLabelsHostName, EnvMetricsLabelsHostName)
+	_ = v.BindEnv(KeyMetricsNodeNameSourceTagKey, EnvMetricsNodeNameSourceTagKey)
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
@@ -348,7 +517,7 @@ func Load(path string) (*Config, error) {
 	//
 	// We use v.Get() to bypass mapstructure and read the raw data directly,
 	// then manually convert it to the expected type.
-	if rawPricing := v.Get("testData.pricing"); rawPricing != nil {
+	if rawPricing := v.Get(KeyTestDataPricing); rawPricing != nil {
 		if pricingMap, ok := rawPricing.(map[string]interface{}); ok {
 			// Convert map[string]interface{} to map[string]float64
 			converted := make(map[string]float64, len(pricingMap))
@@ -592,4 +761,67 @@ func (c *Config) GetOperatingSystems() []string {
 		return c.Pricing.OperatingSystems
 	}
 	return []string{OSLinux, OSWindows}
+}
+
+// GetClusterNameLabel returns the configured label name for cluster_name.
+// Returns "cluster_name" if not configured.
+func (c *Config) GetClusterNameLabel() string {
+	if c.Metrics.Labels.ClusterName != "" {
+		return c.Metrics.Labels.ClusterName
+	}
+	return "cluster_name"
+}
+
+// GetAccountNameLabel returns the configured label name for account_name.
+// Returns "account_name" if not configured.
+func (c *Config) GetAccountNameLabel() string {
+	if c.Metrics.Labels.AccountName != "" {
+		return c.Metrics.Labels.AccountName
+	}
+	return "account_name"
+}
+
+// GetAccountIDLabel returns the configured label name for account_id.
+// Returns "account_id" if not configured.
+func (c *Config) GetAccountIDLabel() string {
+	if c.Metrics.Labels.AccountID != "" {
+		return c.Metrics.Labels.AccountID
+	}
+	return "account_id"
+}
+
+// GetRegionLabel returns the configured label name for region.
+// Returns "region" if not configured.
+func (c *Config) GetRegionLabel() string {
+	if c.Metrics.Labels.Region != "" {
+		return c.Metrics.Labels.Region
+	}
+	return "region"
+}
+
+// GetNodeNameLabel returns the configured label name for node_name.
+// Returns "node_name" if not configured.
+func (c *Config) GetNodeNameLabel() string {
+	if c.Metrics.Labels.NodeName != "" {
+		return c.Metrics.Labels.NodeName
+	}
+	return "node_name"
+}
+
+// GetHostNameLabel returns the configured label name for host_name.
+// Returns "host_name" if not configured.
+func (c *Config) GetHostNameLabel() string {
+	if c.Metrics.Labels.HostName != "" {
+		return c.Metrics.Labels.HostName
+	}
+	return "host_name"
+}
+
+// GetNodeNameTagKey returns the configured EC2 tag key to use for node_name fallback.
+// Returns "Name" if not configured.
+func (c *Config) GetNodeNameTagKey() string {
+	if c.Metrics.NodeNameSource.TagKey != "" {
+		return c.Metrics.NodeNameSource.TagKey
+	}
+	return "Name"
 }

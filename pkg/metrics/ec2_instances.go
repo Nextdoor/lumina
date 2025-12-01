@@ -33,6 +33,11 @@ import (
 //   - ec2_instance: Per-instance presence indicator (always 1 when instance exists)
 //   - ec2_instance_count: Aggregated count by instance family
 //
+// Multi-cluster enhancements:
+//   - If config.Metrics.DisableInstanceMetrics is true, skips emitting ec2_instance metrics entirely
+//   - This prevents duplication in multi-cluster deployments where only a management cluster should
+//     emit instance metrics
+//
 // Only running instances are included in metrics. Stopped instances don't incur
 // compute charges (only EBS charges), and terminated instances are being cleaned up.
 //
@@ -45,6 +50,11 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 	// This is more reliable than trying to track which specific instances changed state.
 	m.EC2Instance.Reset()
 	m.EC2InstanceCount.Reset()
+
+	// Skip instance metrics if disabled (multi-cluster deployment mode)
+	if m.config.Metrics.DisableInstanceMetrics {
+		return
+	}
 
 	// Track counts for aggregation
 	// familyCounts: account_id:account_name -> region -> family -> count
@@ -68,14 +78,14 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		}
 
 		m.EC2Instance.With(prometheus.Labels{
-			"account_id":        inst.AccountID,
-			"account_name":      inst.AccountName,
-			"region":            inst.Region,
-			"instance_type":     inst.InstanceType,
-			"availability_zone": inst.AvailabilityZone,
-			"instance_id":       inst.InstanceID,
-			"tenancy":           inst.Tenancy,
-			"platform":          platform,
+			m.config.GetAccountIDLabel():   inst.AccountID,
+			m.config.GetAccountNameLabel(): inst.AccountName,
+			m.config.GetRegionLabel():      inst.Region,
+			LabelInstanceType:              inst.InstanceType,
+			LabelAvailabilityZone:          inst.AvailabilityZone,
+			LabelInstanceID:                inst.InstanceID,
+			LabelTenancy:                   inst.Tenancy,
+			LabelPlatform:                  platform,
 		}).Set(1)
 
 		// Extract instance family from instance type
@@ -107,10 +117,10 @@ func (m *Metrics) UpdateEC2InstanceMetrics(instances []aws.Instance) {
 		for region, families := range regions {
 			for family, count := range families {
 				m.EC2InstanceCount.With(prometheus.Labels{
-					"account_id":      accountID,
-					"account_name":    accountName,
-					"region":          region,
-					"instance_family": family,
+					m.config.GetAccountIDLabel():   accountID,
+					m.config.GetAccountNameLabel(): accountName,
+					m.config.GetRegionLabel():      region,
+					LabelInstanceFamily:            family,
 				}).Set(float64(count))
 			}
 		}

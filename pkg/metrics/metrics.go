@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nextdoor/lumina/pkg/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -30,6 +31,9 @@ import (
 // These metrics provide observability into controller health, AWS account
 // validation status, and data collection freshness.
 type Metrics struct {
+	// config holds the Lumina configuration for accessing label names and settings
+	config *config.Config
+
 	// lastUpdateTimes tracks when each data type was last updated.
 	// Key format: "account_id:account_name:region:data_type" (e.g., "123456789012:Production:us-west-2:ec2_instances")
 	// This is used by the background goroutine to calculate age for DataFreshness metrics.
@@ -133,13 +137,18 @@ type Metrics struct {
 // registry. The registry is typically the controller-runtime metrics registry
 // (ctrlmetrics.Registry) which exposes metrics via the /metrics endpoint.
 //
+// The config parameter is used to determine:
+//   - Custom metric label names (e.g., cluster_name, account_name)
+//   - Whether instance metrics should be disabled
+//
 // Example usage:
 //
 //	import ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-//	metrics := metrics.NewMetrics(ctrlmetrics.Registry)
+//	metrics := metrics.NewMetrics(ctrlmetrics.Registry, cfg)
 //	metrics.ControllerRunning.Set(1)
-func NewMetrics(reg prometheus.Registerer) *Metrics {
+func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 	m := &Metrics{
+		config:          cfg,
 		lastUpdateTimes: make(map[string]time.Time),
 		stopCh:          make(chan struct{}),
 
@@ -151,85 +160,114 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		AccountValidationStatus: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_account_validation_status",
 			Help: "AWS account validation status (1 = success, 0 = failed)",
-		}, []string{"account_id", "account_name"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
 
 		AccountValidationLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_account_validation_last_success_timestamp",
 			Help: "Unix timestamp of last successful validation",
-		}, []string{"account_id", "account_name"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
 
 		AccountValidationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "lumina_account_validation_duration_seconds",
 			Help: "Time taken to validate account access",
 			// Buckets cover 100ms to 10 seconds, reasonable for AssumeRole calls
 			Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
-		}, []string{"account_id", "account_name"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
 
 		DataFreshness: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_data_freshness_seconds",
 			Help: "Age of cached data in seconds since last successful update (updated every second)",
-		}, []string{"account_id", "account_name", "region", "data_type"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelDataType}),
 
 		DataLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lumina_data_last_success",
 			Help: "Indicator of whether last data collection succeeded (1 = success, 0 = failed, Phase 2+)",
-		}, []string{"account_id", "account_name", "region", "data_type"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelDataType}),
 
 		ReservedInstance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_reserved_instance",
 			Help: "Indicates presence of a Reserved Instance (1 = exists, metric absent = does not exist)",
-		}, []string{"account_id", "account_name", "region", "instance_type", "availability_zone"}),
+		}, []string{
+			cfg.GetAccountIDLabel(),
+			cfg.GetAccountNameLabel(),
+			cfg.GetRegionLabel(),
+			LabelInstanceType,
+			LabelAvailabilityZone,
+		}),
 
 		ReservedInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_reserved_instance_count",
 			Help: "Count of Reserved Instances by instance family",
-		}, []string{"account_id", "account_name", "region", "instance_family"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelInstanceFamily}),
 
 		SavingsPlanCommitment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_hourly_commitment",
 			Help: "Hourly commitment amount ($/hour) for a Savings Plan",
-		}, []string{"savings_plan_arn", "account_id", "account_name", "type", "region", "instance_family"}),
+		}, []string{
+			LabelSavingsPlanARN,
+			cfg.GetAccountIDLabel(),
+			cfg.GetAccountNameLabel(),
+			LabelType,
+			cfg.GetRegionLabel(),
+			LabelInstanceFamily,
+		}),
 
 		SavingsPlanRemainingHours: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_remaining_hours",
 			Help: "Number of hours remaining until Savings Plan expires",
-		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
+		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 
 		EC2Instance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance",
 			Help: "Indicates presence of a running EC2 instance (1 = exists, metric absent = stopped or terminated)",
 		}, []string{
-			"account_id", "account_name", "region", "instance_type",
-			"availability_zone", "instance_id", "tenancy", "platform",
+			cfg.GetAccountIDLabel(),
+			cfg.GetAccountNameLabel(),
+			cfg.GetRegionLabel(),
+			LabelInstanceType,
+			LabelAvailabilityZone,
+			LabelInstanceID,
+			LabelTenancy,
+			LabelPlatform,
 		}),
 
 		EC2InstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_count",
 			Help: "Count of running EC2 instances by instance family",
-		}, []string{"account_id", "account_name", "region", "instance_family"}),
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelInstanceFamily}),
 
 		EC2InstanceHourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ec2_instance_hourly_cost",
 			Help: "Effective hourly cost for an EC2 instance after applying all discounts (USD/hour)",
 		}, []string{
-			"instance_id", "account_id", "account_name", "region", "instance_type",
-			"cost_type", "availability_zone", "lifecycle", "pricing_accuracy", "node_name",
+			LabelInstanceID,
+			cfg.GetAccountIDLabel(),
+			cfg.GetAccountNameLabel(),
+			cfg.GetRegionLabel(),
+			LabelInstanceType,
+			LabelCostType,
+			LabelAvailabilityZone,
+			LabelLifecycle,
+			LabelPricingAccuracy,
+			cfg.GetNodeNameLabel(),
+			cfg.GetClusterNameLabel(),
+			cfg.GetHostNameLabel(),
 		}),
 
 		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_current_utilization_rate",
 			Help: "Current hourly rate being consumed by instances covered by this Savings Plan (USD/hour)",
-		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
+		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 
 		SavingsPlanRemainingCapacity: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_remaining_capacity",
 			Help: "Unused capacity in USD/hour for a Savings Plan (negative if over-utilized)",
-		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
+		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 
 		SavingsPlanUtilizationPercent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "savings_plan_utilization_percent",
 			Help: "Utilization percentage of a Savings Plan (can exceed 100% if over-utilized)",
-		}, []string{"savings_plan_arn", "account_id", "account_name", "type"}),
+		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 	}
 
 	// Register all metrics with the provided registry
@@ -276,8 +314,8 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 //	metrics.RecordAccountValidation(accountID, accountName, err == nil, duration)
 func (m *Metrics) RecordAccountValidation(accountID, accountName string, success bool, duration time.Duration) {
 	labels := prometheus.Labels{
-		"account_id":   accountID,
-		"account_name": accountName,
+		m.config.GetAccountIDLabel():   accountID,
+		m.config.GetAccountNameLabel(): accountName,
 	}
 
 	// Record validation duration regardless of success/failure
@@ -354,10 +392,10 @@ func (m *Metrics) updateAllDataFreshnessMetrics() {
 		age := now.Sub(lastUpdate).Seconds()
 
 		m.DataFreshness.With(prometheus.Labels{
-			"account_id":   accountID,
-			"account_name": accountName,
-			"region":       region,
-			"data_type":    dataType,
+			m.config.GetAccountIDLabel():   accountID,
+			m.config.GetAccountNameLabel(): accountName,
+			m.config.GetRegionLabel():      region,
+			LabelDataType:                  dataType,
 		}).Set(age)
 	}
 }
@@ -398,8 +436,8 @@ func (m *Metrics) Stop() {
 //	metrics.DeleteAccountMetrics("329239342014", "Production")
 func (m *Metrics) DeleteAccountMetrics(accountID, accountName string) {
 	labels := prometheus.Labels{
-		"account_id":   accountID,
-		"account_name": accountName,
+		m.config.GetAccountIDLabel():   accountID,
+		m.config.GetAccountNameLabel(): accountName,
 	}
 
 	// Delete all account-specific metrics

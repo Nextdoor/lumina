@@ -226,7 +226,7 @@ func runStandalone(
 	// Initialize Prometheus metrics without controller-runtime manager
 	// We'll create our own HTTP server for metrics
 	metricsRegistry := ctrlmetrics.Registry
-	luminaMetrics := metrics.NewMetrics(metricsRegistry)
+	luminaMetrics := metrics.NewMetrics(metricsRegistry, cfg)
 	luminaMetrics.ControllerRunning.Set(1)
 	setupLog.Info("metrics initialized")
 
@@ -614,7 +614,7 @@ func main() {
 	// Metrics are registered with the controller-runtime registry and exposed
 	// via the /metrics endpoint configured above. The ControllerRunning metric
 	// is set to 1 to indicate the controller has successfully started.
-	luminaMetrics := metrics.NewMetrics(ctrlmetrics.Registry)
+	luminaMetrics := metrics.NewMetrics(ctrlmetrics.Registry, cfg)
 	luminaMetrics.ControllerRunning.Set(1)
 	setupLog.Info("metrics initialized and controller running metric set")
 

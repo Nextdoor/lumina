@@ -29,7 +29,7 @@ import (
 func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create test calculation result with instance costs and SP utilization
 	result := cost.CalculationResult{
@@ -95,7 +95,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 	}
 
 	// Update metrics
-	m.UpdateInstanceCostMetrics(result, nil)
+	m.UpdateInstanceCostMetrics(result, nil, nil)
 
 	// Verify instance cost metrics
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
@@ -107,7 +107,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 		"cost_type":         "reserved_instance",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	assert.Equal(t, 0.10, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-def456",
@@ -118,7 +118,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 		"cost_type":         "compute_savings_plan",
 		"availability_zone": "us-east-1b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	assert.Equal(t, 0.0416, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ghi789",
@@ -129,7 +129,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	// Verify SP utilization metrics - EC2 Instance SP
 	assert.Equal(t, 75.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{
@@ -179,7 +179,7 @@ func TestUpdateInstanceCostMetrics_BasicFunctionality(t *testing.T) {
 func TestUpdateInstanceCostMetrics_EmptyResult(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create empty result
 	result := cost.CalculationResult{
@@ -189,7 +189,7 @@ func TestUpdateInstanceCostMetrics_EmptyResult(t *testing.T) {
 	}
 
 	// Update metrics - should not panic
-	m.UpdateInstanceCostMetrics(result, nil)
+	m.UpdateInstanceCostMetrics(result, nil, nil)
 
 	// Verify metrics are empty (no panics, no errors)
 	// We can't directly verify metrics are "empty" but we can verify the function doesn't crash
@@ -200,7 +200,7 @@ func TestUpdateInstanceCostMetrics_EmptyResult(t *testing.T) {
 func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// First update with two instances
 	result1 := cost.CalculationResult{
@@ -232,7 +232,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		CalculatedAt:           time.Now(),
 	}
 
-	m.UpdateInstanceCostMetrics(result1, nil)
+	m.UpdateInstanceCostMetrics(result1, nil, nil)
 
 	// Verify both instances exist
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
@@ -244,7 +244,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	// Second update with only one instance (i-def456 terminated)
 	result2 := cost.CalculationResult{
@@ -265,7 +265,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		CalculatedAt:           time.Now(),
 	}
 
-	m.UpdateInstanceCostMetrics(result2, nil)
+	m.UpdateInstanceCostMetrics(result2, nil, nil)
 
 	// Verify i-abc123 still exists
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
@@ -277,7 +277,7 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	// Verify i-def456 was removed (metric should be 0 or not exist after reset)
 	// After reset and not setting the metric, it should return 0
@@ -290,13 +290,13 @@ func TestUpdateInstanceCostMetrics_ResetsBetweenUpdates(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-east-1b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 }
 
 func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create result with all coverage types
 	result := cost.CalculationResult{
@@ -364,7 +364,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 	}
 
 	// Update metrics
-	m.UpdateInstanceCostMetrics(result, nil)
+	m.UpdateInstanceCostMetrics(result, nil, nil)
 
 	// Verify all coverage types are properly represented
 	assert.Equal(t, 0.15, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
@@ -376,7 +376,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "reserved_instance",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	assert.Equal(t, 0.25, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-ec2sp",
@@ -387,7 +387,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "ec2_instance_savings_plan",
 		"availability_zone": "us-west-2a",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	assert.Equal(t, 0.34, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-computesp",
@@ -398,7 +398,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "compute_savings_plan",
 		"availability_zone": "us-east-1b",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	assert.Equal(t, 0.05, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-spot",
@@ -409,7 +409,7 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "spot",
 		"availability_zone": "us-west-2b",
 		"lifecycle":         "spot",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 
 	assert.Equal(t, 0.0416, testutil.ToFloat64(m.EC2InstanceHourlyCost.With(prometheus.Labels{
 		"instance_id":       "i-od",
@@ -420,13 +420,13 @@ func TestUpdateInstanceCostMetrics_AllCoverageTypes(t *testing.T) {
 		"cost_type":         "on_demand",
 		"availability_zone": "us-west-2c",
 		"lifecycle":         "on-demand",
-		"pricing_accuracy":  "accurate", "node_name": ""})))
+		"pricing_accuracy":  "accurate", "node_name": "", "cluster_name": "", "host_name": ""})))
 }
 
 func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 	// Create metrics instance
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
+	m := NewMetrics(reg, newTestConfig())
 
 	// Create result with under-utilized, fully utilized, and over-utilized SPs
 	result := cost.CalculationResult{
@@ -467,7 +467,7 @@ func TestUpdateInstanceCostMetrics_SPUnderAndOverUtilization(t *testing.T) {
 	}
 
 	// Update metrics
-	m.UpdateInstanceCostMetrics(result, nil)
+	m.UpdateInstanceCostMetrics(result, nil, nil)
 
 	// Verify under-utilized SP (50%)
 	assert.Equal(t, 50.00, testutil.ToFloat64(m.SavingsPlanCurrentUtilizationRate.With(prometheus.Labels{

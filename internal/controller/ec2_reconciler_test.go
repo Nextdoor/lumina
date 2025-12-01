@@ -31,6 +31,19 @@ import (
 	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
+// newTestConfig creates a test configuration with default values for testing.
+func newTestConfig() *config.Config {
+	return &config.Config{
+		AWSAccounts: []config.AWSAccount{
+			{
+				AccountID:     "123456789012",
+				Name:          "Test",
+				AssumeRoleARN: "arn:aws:iam::123456789012:role/test",
+			},
+		},
+	}
+}
+
 // TestEC2Reconciler_Reconcile_Success tests successful reconciliation.
 func TestEC2Reconciler_Reconcile_Success(t *testing.T) {
 	// Setup test data
@@ -84,7 +97,7 @@ func TestEC2Reconciler_Reconcile_Success(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -183,7 +196,7 @@ func TestEC2Reconciler_Reconcile_MultipleAccounts(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -243,7 +256,7 @@ func TestEC2Reconciler_Reconcile_APIError(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -295,7 +308,7 @@ func TestEC2Reconciler_Reconcile_EmptyResults(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -356,7 +369,7 @@ func TestEC2Reconciler_Reconcile_DefaultRegions(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler with NO regions (should fall back to defaults)
 	reconciler := &EC2Reconciler{
@@ -439,7 +452,7 @@ func TestEC2Reconciler_Reconcile_AccountSpecificRegions(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -517,7 +530,7 @@ func TestEC2Reconciler_Reconcile_CacheUpdate(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -599,7 +612,7 @@ func TestEC2Reconciler_reconcileAccountRegion(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -647,7 +660,7 @@ func TestEC2Reconciler_reconcileAccountRegion_Error(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{
@@ -711,7 +724,7 @@ func TestEC2Reconciler_Reconcile_StateBreakdown(t *testing.T) {
 
 	// Create cache and metrics
 	ec2Cache := cache.NewEC2Cache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), newTestConfig())
 
 	// Create reconciler
 	reconciler := &EC2Reconciler{

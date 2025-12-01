@@ -99,7 +99,7 @@ func TestRISPReconciler_Reconcile_Success(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry()) // nil registry for testing
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg) // nil registry for testing
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -226,7 +226,7 @@ func TestRISPReconciler_Reconcile_MultipleAccounts(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -299,7 +299,7 @@ func TestRISPReconciler_Reconcile_EmptyData(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -374,7 +374,7 @@ func TestRISPReconciler_Reconcile_DefaultRegions(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler with NO regions (should use defaults)
 	reconciler := &RISPReconciler{
@@ -443,7 +443,7 @@ func TestRISPReconciler_Reconcile_UpdatesExistingData(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -515,7 +515,7 @@ func TestRISPReconciler_Reconcile_EC2ClientError(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -552,7 +552,7 @@ func TestRISPReconciler_Reconcile_SavingsPlansClientError(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -606,7 +606,7 @@ func TestRISPReconciler_Reconcile_DescribeReservedInstancesError(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{
@@ -659,7 +659,7 @@ func TestRISPReconciler_Reconcile_DescribeSavingsPlansError(t *testing.T) {
 
 	// Create cache and metrics
 	rispCache := cache.NewRISPCache()
-	m := metrics.NewMetrics(prometheus.NewRegistry())
+	m := metrics.NewMetrics(prometheus.NewRegistry(), cfg)
 
 	// Create reconciler
 	reconciler := &RISPReconciler{

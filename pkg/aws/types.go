@@ -21,6 +21,7 @@
 package aws
 
 import (
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,14 @@ const (
 const (
 	LifecycleOnDemand = "on-demand"
 	LifecycleSpot     = "spot"
+)
+
+// Kubernetes EC2 tag constants.
+// EKS automatically adds these tags to EC2 instances that are part of a Kubernetes cluster.
+const (
+	// ClusterTagPrefix is the EC2 tag key prefix used by EKS to identify cluster membership.
+	// Example tag: "kubernetes.io/cluster/prod-us-west-2": "owned"
+	ClusterTagPrefix = "kubernetes.io/cluster/"
 )
 
 // Tenancy constants for EC2 instance and Savings Plans tenancy types.
@@ -130,6 +139,22 @@ type Instance struct {
 
 	// SpotInstanceRequestID is the spot instance request ID if this is a spot instance
 	SpotInstanceRequestID string
+}
+
+// GetClusterName extracts the Kubernetes cluster name from EC2 tags.
+// EKS automatically adds tags like "kubernetes.io/cluster/prod-us-west-2": "owned"
+// to EC2 instances that are part of a Kubernetes cluster.
+// This function parses the cluster name from the tag key.
+// Returns empty string if no cluster tag is found.
+func (i *Instance) GetClusterName() string {
+	for tagKey := range i.Tags {
+		if strings.HasPrefix(tagKey, ClusterTagPrefix) {
+			// Extract cluster name from tag key
+			// e.g., "kubernetes.io/cluster/prod-us-west-2" -> "prod-us-west-2"
+			return strings.TrimPrefix(tagKey, ClusterTagPrefix)
+		}
+	}
+	return ""
 }
 
 // ReservedInstance represents an EC2 Reserved Instance.
