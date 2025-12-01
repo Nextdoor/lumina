@@ -102,49 +102,6 @@
       "additionalBranchPrefix": "prometheus-"
     }
   ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Update kustomize version in Makefile",
-      "fileMatch": ["^Makefile$"],
-      "matchStrings": [
-        "KUSTOMIZE_VERSION \\?= (?<currentValue>v?[0-9.]+)"
-      ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "kubernetes-sigs/kustomize",
-      "extractVersionTemplate": "^kustomize/(?<version>v?[0-9.]+)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Update controller-tools version in Makefile",
-      "fileMatch": ["^Makefile$"],
-      "matchStrings": [
-        "CONTROLLER_TOOLS_VERSION \\?= (?<currentValue>v?[0-9.]+)"
-      ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "kubernetes-sigs/controller-tools"
-    },
-    {
-      "customType": "regex",
-      "description": "Update golangci-lint version in Makefile",
-      "fileMatch": ["^Makefile$"],
-      "matchStrings": [
-        "GOLANGCI_LINT_VERSION \\?= (?<currentValue>v?[0-9.]+)"
-      ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "golangci/golangci-lint"
-    },
-    {
-      "customType": "regex",
-      "description": "Update Go version in go.mod",
-      "fileMatch": ["^go\\.mod$"],
-      "matchStrings": [
-        "go (?<currentValue>[0-9.]+)"
-      ],
-      "datasourceTemplate": "golang-version",
-      "depNameTemplate": "golang"
-    }
-  ],
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"],
@@ -156,7 +113,6 @@
   ],
   "enabledManagers": [
     "gomod",
-    "github-actions",
-    "custom.regex"
+    "github-actions"
   ]
 }
