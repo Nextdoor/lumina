@@ -76,11 +76,14 @@ jobs:
           # Check if gh-pages branch exists on remote
           if ! git ls-remote --exit-code --heads origin gh-pages; then
             echo "gh-pages branch does not exist, creating it..."
+            # Store current ref before switching
+            CURRENT_REF=$(git symbolic-ref HEAD)
             git checkout --orphan gh-pages
             git reset --hard
             git commit --allow-empty -m "Initialize gh-pages branch for Helm chart repository"
             git push origin gh-pages
-            git checkout -
+            # Return to original ref
+            git checkout "${CURRENT_REF#refs/heads/}"
           else
             echo "gh-pages branch already exists"
           fi
