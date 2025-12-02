@@ -61,6 +61,11 @@ jobs:
           cd charts/lumina
           helm-docs
 
+      - name: Update Helm dependencies
+        run: |
+          cd charts/lumina
+          helm dependency update
+
       - name: Package Helm chart
         run: |
           mkdir -p .cr-release-packages
