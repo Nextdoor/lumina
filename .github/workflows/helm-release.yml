@@ -13,7 +13,7 @@ on:
         type: string
 
 env:
-  HELM_REPO_URL: https://nextdoor.github.io/lumina
+  HELM_REPO_URL: https://oss.nextdoor.com/lumina
 
 jobs:
   release:
