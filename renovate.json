@@ -4,9 +4,12 @@
     "config:recommended",
     ":dependencyDashboard",
     ":semanticCommits",
-    ":enablePreCommit"
+    ":enablePreCommit",
+    "github>nextdoor/renovate:defaults"
   ],
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "semanticCommits": "enabled",
   "commitMessagePrefix": "chore(deps):",
   "separateMinorPatch": true,
@@ -22,89 +25,142 @@
   "packageRules": [
     {
       "description": "Auto-merge all Go module patch updates",
-      "matchDatasources": ["go"],
-      "matchUpdateTypes": ["patch"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
       "groupName": "Go module patch updates",
       "automerge": true
     },
     {
       "description": "Auto-merge all Go module minor updates",
-      "matchDatasources": ["go"],
-      "matchUpdateTypes": ["minor"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
       "groupName": "Go module minor updates",
       "automerge": true
     },
     {
       "description": "Auto-merge major Go module updates",
-      "matchDatasources": ["go"],
-      "matchUpdateTypes": ["major"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": true
     },
     {
       "description": "Auto-merge all GitHub Actions patch updates",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["patch"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
       "groupName": "GitHub Actions patch updates",
       "automerge": true
     },
     {
       "description": "Auto-merge all GitHub Actions minor updates",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
       "groupName": "GitHub Actions minor updates",
       "automerge": true
     },
     {
       "description": "Auto-merge major GitHub Actions updates",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["major"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": true
     },
     {
       "description": "Pin GitHub Actions to exact commits for security",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "pinDigests": true
     },
     {
       "description": "Critical security updates - create immediately",
-      "matchDatasources": ["go", "github-actions"],
-      "matchUpdateTypes": ["patch"],
+      "matchDatasources": [
+        "go",
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
       "matchCurrentVersion": "!/^0/",
       "prPriority": 10,
-      "labels": ["dependencies", "security"]
+      "labels": [
+        "dependencies",
+        "security"
+      ]
     },
     {
       "description": "Kubernetes ecosystem packages - group together",
-      "matchDatasources": ["go"],
-      "matchPackageNames": ["k8s.io/{/,}**", "sigs.k8s.io/{/,}**"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackageNames": [
+        "k8s.io/{/,}**",
+        "sigs.k8s.io/{/,}**"
+      ],
       "groupName": "Kubernetes packages",
       "additionalBranchPrefix": "k8s-"
     },
     {
       "description": "AWS SDK packages - group together",
-      "matchDatasources": ["go"],
-      "matchPackageNames": ["github.com/aws/aws-sdk-go-v2/{/,}**"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackageNames": [
+        "github.com/aws/aws-sdk-go-v2/{/,}**"
+      ],
       "groupName": "AWS SDK packages",
       "additionalBranchPrefix": "aws-"
     },
     {
       "description": "OpenTelemetry packages - group together",
-      "matchDatasources": ["go"],
-      "matchPackageNames": ["go.opentelemetry.io/{/,}**"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackageNames": [
+        "go.opentelemetry.io/{/,}**"
+      ],
       "groupName": "OpenTelemetry packages",
       "additionalBranchPrefix": "otel-"
     },
     {
       "description": "Prometheus packages - group together",
-      "matchDatasources": ["go"],
-      "matchPackageNames": ["github.com/prometheus/{/,}**"],
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackageNames": [
+        "github.com/prometheus/{/,}**"
+      ],
       "groupName": "Prometheus packages",
       "additionalBranchPrefix": "prometheus-"
     }
   ],
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": ["security"],
+    "labels": [
+      "security"
+    ],
     "assignees": []
   },
   "osvVulnerabilityAlerts": true,
