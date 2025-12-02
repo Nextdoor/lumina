@@ -26,9 +26,8 @@ Lumina - Kubernetes Cost Visibility Controller
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| accountValidationInterval | string | `""` | How often to validate AWS account access (e.g., 5m, 10m, 1h). Leave empty to use default (10m) |
 | affinity | object | `{}` | Affinity rules for pod assignment |
-| awsAccounts | list | `[]` | AWS account configuration for cross-account access. Will be passed to controller via ConfigMap mounted at /etc/lumina/config/config.yaml |
+| config | object | `{"accountValidationInterval":"","awsAccounts":[],"defaultAccount":{},"defaultRegion":"us-west-2","metrics":{"disableInstanceMetrics":false,"labels":{"accountId":"","accountName":"","clusterName":"","hostName":"","nodeName":"","region":""},"nodeNameSource":{"tagKey":""}},"pricing":{"defaultDiscounts":{"compute":null,"ec2Instance":null},"operatingSystems":[],"spotPriceCacheExpiration":""},"reconciliation":{"ec2":"","pricing":"","risp":"","spotPricing":""},"regions":[]}` | See config.example.yaml in the repository root for full documentation |
 | controllerManager.enableHttp2 | bool | `false` | Enable HTTP/2 for metrics and webhook servers |
 | controllerManager.extraArgs | list | `[]` | Extra command-line arguments to pass to the controller |
 | controllerManager.healthProbeBindAddress | string | `"0.0.0.0:8081"` | Health probe bind address (host:port) |
@@ -50,8 +49,6 @@ Lumina - Kubernetes Cost Visibility Controller
 | controllerManager.zap.encoder | string | `"json"` | Log encoding format (json or console) |
 | controllerManager.zap.stacktraceLevel | string | `"error"` | Stacktrace capture level (info, error, panic) |
 | controllerManager.zap.timeEncoding | string | `"epoch"` | Time encoding format (epoch, millis, nano, iso8601, rfc3339, rfc3339nano) |
-| defaultAccount | object | `{}` | If not specified, the first account in awsAccounts will be used. |
-| defaultRegion | string | `"us-west-2"` | Default AWS region for API operations |
 | fullnameOverride | string | `""` | Override the full name of the release |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
 | image.repository | string | `"ghcr.io/nextdoor/lumina"` | Container image repository |
@@ -76,19 +73,12 @@ Lumina - Kubernetes Cost Visibility Controller
 | podSecurityContext.runAsNonRoot | bool | `true` | Run as non-root user |
 | podSecurityContext.runAsUser | int | `65532` | User ID to run the container as |
 | podSecurityContext.seccompProfile.type | string | `"RuntimeDefault"` | Seccomp profile type |
-| pricing | object | `{"operatingSystems":[]}` | Pricing configuration |
-| pricing.operatingSystems | list | `[]` | Operating systems to fetch pricing data for |
 | rbac.create | bool | `true` | Create RBAC resources (ClusterRole, ClusterRoleBinding, Role, RoleBinding) |
 | readinessProbe.failureThreshold | int | `3` |  |
 | readinessProbe.httpGet | object | `{"path":"/readyz","port":8081}` | Readiness probe configuration |
 | readinessProbe.initialDelaySeconds | int | `5` |  |
 | readinessProbe.periodSeconds | int | `10` |  |
 | readinessProbe.timeoutSeconds | int | `1` |  |
-| reconciliation | object | `{"ec2":"","pricing":"","risp":""}` | Reconciliation intervals for different controllers |
-| reconciliation.ec2 | string | `""` | EC2 reconciliation interval (e.g., 2m, 5m, 1h) |
-| reconciliation.pricing | string | `""` | Pricing reconciliation interval (e.g., 24h) |
-| reconciliation.risp | string | `""` | RISP (Reserved Instances/Savings Plans) reconciliation interval (e.g., 1h) |
-| regions | list | `[]` | Global list of regions to query across all accounts (can be overridden per-account) |
 | replicaCount | int | `2` | Number of controller replicas (leader election handles HA) |
 | resources | object | `{"limits":{"cpu":"1","memory":"512Mi"},"requests":{"cpu":"200m","memory":"128Mi"}}` | Resource limits and requests for the controller |
 | securityContext.allowPrivilegeEscalation | bool | `false` | Prevent privilege escalation |
