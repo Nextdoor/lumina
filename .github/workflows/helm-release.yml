@@ -81,6 +81,7 @@ jobs:
           charts_dir: charts
           skip_packaging: true
           packages_with_index: true
+          mark_as_latest: false
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
