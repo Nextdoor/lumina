@@ -66,6 +66,25 @@ jobs:
           cd charts/lumina
           helm dependency update
 
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Initialize gh-pages branch if needed
+        run: |
+          # Check if gh-pages branch exists on remote
+          if ! git ls-remote --exit-code --heads origin gh-pages; then
+            echo "gh-pages branch does not exist, creating it..."
+            git checkout --orphan gh-pages
+            git reset --hard
+            git commit --allow-empty -m "Initialize gh-pages branch for Helm chart repository"
+            git push origin gh-pages
+            git checkout -
+          else
+            echo "gh-pages branch already exists"
+          fi
+
       - name: Package Helm chart
         run: |
           mkdir -p .cr-release-packages
