@@ -70,16 +70,10 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      - name: Package Helm chart
-        run: |
-          mkdir -p .cr-release-packages
-          helm package charts/lumina --destination .cr-release-packages
-
       - name: Publish Helm chart to GitHub Pages
         uses: helm/chart-releaser-action@a917fd15b20e8b64b94d9158ad54cd6345335584 # v1.6.0
         with:
           charts_dir: charts
-          skip_packaging: true
           packages_with_index: true
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
