@@ -1,0 +1,275 @@
+# Default values for lumina.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- Number of controller replicas (leader election handles HA)
+replicaCount: 2
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/nextdoor/lumina
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion
+  tag: ""
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- Override the name of the chart
+nameOverride: ""
+
+# -- Override the full name of the release
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Automatically mount a ServiceAccount's API credentials
+  automount: true
+  # -- Annotations to add to the service account (e.g., eks.amazonaws.com/role-arn for IRSA)
+  annotations: {}
+  # -- The name of the service account to use. If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# -- Annotations to add to the pod
+podAnnotations: {}
+
+# -- Labels to add to the pod
+podLabels: {}
+
+podSecurityContext:
+  # -- Run as non-root user
+  runAsNonRoot: true
+  # -- User ID to run the container as
+  runAsUser: 65532
+  # -- Group ID for filesystem access
+  fsGroup: 65532
+  seccompProfile:
+    # -- Seccomp profile type
+    type: RuntimeDefault
+
+securityContext:
+  # -- Prevent privilege escalation
+  allowPrivilegeEscalation: false
+  capabilities:
+    # -- Drop all capabilities
+    drop:
+    - ALL
+  # -- Read-only root filesystem
+  readOnlyRootFilesystem: true
+  # -- Run as non-root user
+  runAsNonRoot: true
+  # -- User ID to run the container as
+  runAsUser: 65532
+  seccompProfile:
+    # -- Seccomp profile type
+    type: RuntimeDefault
+
+# -- Skip creating the configuration ConfigMap. When true, the controller will start without a config file.
+# -- Useful for CI/testing or when the controller should run without AWS account configuration.
+skipConfig: false
+
+# -- Default AWS region for API operations
+defaultRegion: us-west-2
+
+# -- Global list of regions to query across all accounts (can be overridden per-account)
+regions: []
+  # - us-west-2
+  # - us-east-1
+
+# -- Reconciliation intervals for different controllers
+reconciliation:
+  # -- EC2 reconciliation interval (e.g., 2m, 5m, 1h)
+  ec2: ""
+  # -- Pricing reconciliation interval (e.g., 24h)
+  pricing: ""
+  # -- RISP (Reserved Instances/Savings Plans) reconciliation interval (e.g., 1h)
+  risp: ""
+
+# -- Pricing configuration
+pricing:
+  # -- Operating systems to fetch pricing data for
+  operatingSystems: []
+    # - Linux
+    # - Windows
+
+# -- AWS account configuration for cross-account access. Will be passed to controller via ConfigMap mounted at /etc/lumina/config/config.yaml
+awsAccounts: []
+  # - accountId: "329239342014"
+  #   name: "Production Account"
+  #   assumeRoleArn: "arn:aws:iam::329239342014:role/lumina-access"
+  #   regions:  # Optional: override global regions for this account
+  #     - us-west-2
+  #     - us-east-1
+  # - accountId: "364942603424"
+  #   name: "Engineering Account"
+  #   assumeRoleArn: "arn:aws:iam::364942603424:role/lumina-access"
+
+# -- Default account for non-account-specific API calls (e.g., Pricing API).
+# -- If not specified, the first account in awsAccounts will be used.
+defaultAccount: {}
+  # accountId: "329239342014"
+  # name: "Production Account"
+  # assumeRoleArn: "arn:aws:iam::329239342014:role/lumina-access"
+  # region: "us-west-2"  # Optional: override defaultRegion for this account
+
+# -- How often to validate AWS account access (e.g., 5m, 10m, 1h). Leave empty to use default (10m)
+accountValidationInterval: ""
+
+controllerManager:
+  leaderElection:
+    # -- Enable leader election for high availability
+    enabled: true
+
+  # -- Metrics server bind address (host:port). Use :8080 for HTTP or :8443 for HTTPS
+  metricsBindAddress: "0.0.0.0:8080"
+
+  # -- Enable secure HTTPS metrics endpoint (requires certificates)
+  metricsSecure: false
+
+  # -- Health probe bind address (host:port)
+  healthProbeBindAddress: "0.0.0.0:8081"
+
+  # -- Controller log level (debug, info, error)
+  logLevel: info
+
+  # -- Enable metrics endpoint authentication (Kubernetes RBAC)
+  metricsAuth: false
+
+  # -- Metrics TLS certificate configuration (only used if metricsSecure: true)
+  metricsCerts:
+    # -- Directory containing metrics server certificates
+    path: ""
+    # -- Metrics server certificate filename
+    certName: "tls.crt"
+    # -- Metrics server key filename
+    keyName: "tls.key"
+
+  # -- Webhook TLS certificate configuration
+  webhookCerts:
+    # -- Directory containing webhook certificates
+    path: ""
+    # -- Webhook certificate filename
+    certName: "tls.crt"
+    # -- Webhook key filename
+    keyName: "tls.key"
+
+  # -- Enable HTTP/2 for metrics and webhook servers
+  enableHttp2: false
+
+  # -- Zap logging configuration
+  zap:
+    # -- Development mode logging (consoleEncoder, debug level)
+    devel: false
+    # -- Log encoding format (json or console)
+    encoder: "json"
+    # -- Stacktrace capture level (info, error, panic)
+    stacktraceLevel: "error"
+    # -- Time encoding format (epoch, millis, nano, iso8601, rfc3339, rfc3339nano)
+    timeEncoding: "epoch"
+
+  # -- Extra command-line arguments to pass to the controller
+  extraArgs: []
+
+metricsService:
+  # -- Metrics service type
+  type: ClusterIP
+  # -- Metrics service port
+  port: 8080
+  # -- Annotations to add to the metrics service
+  annotations: {}
+
+# -- Resource limits and requests for the controller
+resources:
+  limits:
+    cpu: "1"
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 128Mi
+
+livenessProbe:
+  # -- Liveness probe configuration
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+readinessProbe:
+  # -- Readiness probe configuration
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+# -- Additional volumes for the deployment
+volumes: []
+  # - name: custom-config
+  #   secret:
+  #     secretName: mysecret
+  #     optional: false
+
+# -- Additional volume mounts for the deployment
+volumeMounts: []
+  # - name: custom-config
+  #   mountPath: "/etc/config"
+  #   readOnly: true
+
+# -- Node selector for pod assignment
+nodeSelector: {}
+
+# -- Tolerations for pod assignment
+tolerations: []
+
+# -- Affinity rules for pod assignment
+affinity: {}
+
+rbac:
+  # -- Create RBAC resources (ClusterRole, ClusterRoleBinding, Role, RoleBinding)
+  create: true
+
+serviceMonitor:
+  # -- Create ServiceMonitor resource for Prometheus Operator
+  enabled: true
+  # -- Scrape interval for Prometheus
+  interval: 30s
+  # -- Scrape timeout for Prometheus
+  scrapeTimeout: 10s
+  # -- Additional labels for the ServiceMonitor
+  labels: {}
+  # -- Additional annotations for the ServiceMonitor
+  annotations: {}
+  # -- RelabelConfigs to apply to samples before scraping
+  # -- Ref: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config
+  relabelings: []
+    # - sourceLabels: [__meta_kubernetes_pod_node_name]
+    #   separator: ;
+    #   regex: ^(.*)$
+    #   targetLabel: nodename
+    #   replacement: $1
+    #   action: replace
+  # -- MetricRelabelConfigs to apply to samples before ingestion
+  # -- Ref: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs
+  metricRelabelings: []
+    # - sourceLabels: [__name__]
+    #   separator: ;
+    #   regex: ^fluentd_output_status_buffer_(.*)|fluentd_output_status_retry_count$
+    #   replacement: $1
+    #   action: drop
+
+# -- LocalStack configuration for CI/testing
+localstack:
+  # -- Enable LocalStack for mocking AWS services (used in CI for testing)
+  # When enabled, deploys LocalStack as a subchart and provides a mock AWS environment
+  # See ci/ci-values.yaml for an example configuration with LocalStack
+  enabled: false
+  # -- Override service type for LocalStack (ClusterIP recommended for CI)
+  service:
+    type: ClusterIP

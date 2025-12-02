@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lumina.fullname" . }}-controller-manager
+  labels:
+    {{- include "lumina.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "lumina.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "lumina.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "lumina.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: manager
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- if .Values.localstack.enabled }}
+        env:
+        - name: AWS_ENDPOINT_URL
+          value: "http://{{ .Release.Name }}-localstack:4566"
+        - name: AWS_ACCESS_KEY_ID
+          value: "test"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "test"
+        {{- end }}
+        command:
+        - /manager
+        args:
+        {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+        - --config=/etc/lumina/config/config.yaml
+        {{- end }}
+        {{- if .Values.controllerManager.leaderElection.enabled }}
+        - --leader-elect
+        {{- end }}
+        - --health-probe-bind-address={{ .Values.controllerManager.healthProbeBindAddress }}
+        - --metrics-bind-address={{ .Values.controllerManager.metricsBindAddress }}
+        {{- if not .Values.controllerManager.metricsSecure }}
+        - --metrics-secure=false
+        {{- end }}
+        {{- if .Values.controllerManager.metricsAuth }}
+        - --metrics-auth=true
+        {{- end }}
+        {{- if .Values.controllerManager.metricsCerts.path }}
+        - --metrics-cert-path={{ .Values.controllerManager.metricsCerts.path }}
+        {{- end }}
+        {{- if ne .Values.controllerManager.metricsCerts.certName "tls.crt" }}
+        - --metrics-cert-name={{ .Values.controllerManager.metricsCerts.certName }}
+        {{- end }}
+        {{- if ne .Values.controllerManager.metricsCerts.keyName "tls.key" }}
+        - --metrics-cert-key={{ .Values.controllerManager.metricsCerts.keyName }}
+        {{- end }}
+        {{- if .Values.controllerManager.webhookCerts.path }}
+        - --webhook-cert-path={{ .Values.controllerManager.webhookCerts.path }}
+        {{- end }}
+        {{- if ne .Values.controllerManager.webhookCerts.certName "tls.crt" }}
+        - --webhook-cert-name={{ .Values.controllerManager.webhookCerts.certName }}
+        {{- end }}
+        {{- if ne .Values.controllerManager.webhookCerts.keyName "tls.key" }}
+        - --webhook-cert-key={{ .Values.controllerManager.webhookCerts.keyName }}
+        {{- end }}
+        {{- if .Values.controllerManager.enableHttp2 }}
+        - --enable-http2=true
+        {{- end }}
+        {{- if .Values.controllerManager.zap.devel }}
+        - --zap-devel=true
+        {{- end }}
+        {{- if ne .Values.controllerManager.zap.encoder "json" }}
+        - --zap-encoder={{ .Values.controllerManager.zap.encoder }}
+        {{- end }}
+        {{- if ne .Values.controllerManager.zap.stacktraceLevel "error" }}
+        - --zap-stacktrace-level={{ .Values.controllerManager.zap.stacktraceLevel }}
+        {{- end }}
+        {{- if ne .Values.controllerManager.zap.timeEncoding "epoch" }}
+        - --zap-time-encoding={{ .Values.controllerManager.zap.timeEncoding }}
+        {{- end }}
+        - --zap-log-level={{ .Values.controllerManager.logLevel }}
+        {{- range .Values.controllerManager.extraArgs }}
+        - {{ . }}
+        {{- end }}
+        ports:
+        - name: metrics
+          containerPort: {{ .Values.metricsService.port }}
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 12 }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 12 }}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        volumeMounts:
+        {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+        - name: config
+          mountPath: /etc/lumina/config
+          readOnly: true
+        {{- end }}
+        {{- with .Values.volumeMounts }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+      volumes:
+      {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+      - name: config
+        configMap:
+          name: {{ include "lumina.fullname" . }}-config
+      {{- end }}
+      {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10

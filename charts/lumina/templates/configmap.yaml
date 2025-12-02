@@ -1,0 +1,62 @@
+{{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lumina.fullname" . }}-config
+  labels:
+    {{- include "lumina.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- if .Values.defaultAccount.accountId }}
+    defaultAccount:
+      accountId: {{ .Values.defaultAccount.accountId | quote }}
+      name: {{ .Values.defaultAccount.name | quote }}
+      assumeRoleArn: {{ .Values.defaultAccount.assumeRoleArn | quote }}
+      {{- if .Values.defaultAccount.region }}
+      region: {{ .Values.defaultAccount.region }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.accountValidationInterval }}
+    accountValidationInterval: {{ .Values.accountValidationInterval }}
+    {{- end }}
+    defaultRegion: {{ .Values.defaultRegion }}
+    {{- if .Values.regions }}
+    regions:
+    {{- range .Values.regions }}
+      - {{ . }}
+    {{- end }}
+    {{- end }}
+    {{- if or .Values.reconciliation.ec2 .Values.reconciliation.risp }}
+    reconciliation:
+      {{- if .Values.reconciliation.ec2 }}
+      ec2: {{ .Values.reconciliation.ec2 }}
+      {{- end }}
+      {{- if .Values.reconciliation.risp }}
+      risp: {{ .Values.reconciliation.risp }}
+      {{- end }}
+    {{- end }}
+    {{- if or .Values.reconciliation.pricing .Values.pricing.operatingSystems }}
+    pricing:
+      {{- if .Values.reconciliation.pricing }}
+      reconciliation: {{ .Values.reconciliation.pricing }}
+      {{- end }}
+      {{- if .Values.pricing.operatingSystems }}
+      operatingSystems:
+      {{- range .Values.pricing.operatingSystems }}
+        - {{ . }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+    awsAccounts:
+    {{- range .Values.awsAccounts }}
+      - accountId: {{ .accountId | quote }}
+        name: {{ .name | quote }}
+        assumeRoleArn: {{ .assumeRoleArn | quote }}
+        {{- if .regions }}
+        regions:
+        {{- range .regions }}
+          - {{ . }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
+{{- end }}

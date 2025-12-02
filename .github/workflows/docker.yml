@@ -6,6 +6,10 @@ on:
       publish:
         type: boolean
         default: false
+    outputs:
+      image-version:
+        description: 'Version extracted from git tag (empty if not a tag)'
+        value: ${{ jobs.manifest.outputs.image-version }}
 
 env:
   IMAGE_REGISTRY: ghcr.io
@@ -137,6 +141,8 @@ jobs:
     name: Create Manifest
     needs: [build-amd64, build-arm64]
     runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
+    outputs:
+      image-version: ${{ steps.version.outputs.version }}
     permissions:
       packages: write
 
@@ -159,6 +165,18 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short,prefix=test-
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Extracted version from tag: ${VERSION}"
+          else
+            echo "version=" >> $GITHUB_OUTPUT
+            echo "Not a tag release, no version extracted"
+          fi
 
       - name: Create and push manifest
         uses: int128/docker-manifest-create-action@b60433fd4312d7a64a56d769b76ebe3f45cf36b4 # v2

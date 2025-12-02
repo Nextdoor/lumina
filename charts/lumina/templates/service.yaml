@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lumina.fullname" . }}-controller-manager-metrics-service
+  labels:
+    {{- include "lumina.labels" . | nindent 4 }}
+  {{- with .Values.metricsService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.metricsService.type }}
+  ports:
+  - name: {{ if .Values.controllerManager.metricsSecure }}https{{ else }}http{{ end }}
+    port: {{ .Values.metricsService.port }}
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    {{- include "lumina.selectorLabels" . | nindent 4 }}

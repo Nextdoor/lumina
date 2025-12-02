@@ -1,0 +1,99 @@
+# CI-specific values for testing the Lumina Helm chart
+# This file enables LocalStack and configures mock AWS resources for testing
+
+# Enable LocalStack for CI/testing
+localstack:
+  enabled: true
+  service:
+    type: ClusterIP
+  # Seed LocalStack with test data for CI
+  startupScriptContent: |
+    #!/bin/bash
+    set -e
+
+    echo "Seeding LocalStack with test data..."
+
+    # Create IAM policy for Lumina
+    awslocal iam create-policy \
+      --policy-name LuminaReadOnlyPolicy \
+      --description "Read-only access to EC2 and Savings Plans" \
+      --policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Action": [
+            "ec2:DescribeInstances",
+            "ec2:DescribeReservedInstances",
+            "ec2:DescribeSpotPriceHistory",
+            "savingsplans:DescribeSavingsPlans",
+            "pricing:GetProducts"
+          ],
+          "Resource": "*"
+        }]
+      }'
+
+    # Create IAM role for Lumina controller
+    awslocal iam create-role \
+      --role-name lumina-controller \
+      --assume-role-policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Principal": {"Service": "ec2.amazonaws.com"},
+          "Action": "sts:AssumeRole"
+        }]
+      }'
+
+    # Attach policy to role
+    awslocal iam attach-role-policy \
+      --role-name lumina-controller \
+      --policy-arn arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy
+
+    # Create test EC2 instances
+    awslocal ec2 run-instances \
+      --image-id ami-12345678 \
+      --instance-type m5.xlarge \
+      --count 2 \
+      --region us-east-1 \
+      --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=lumina-test-1},{Key=Environment,Value=test}]'
+
+    awslocal ec2 run-instances \
+      --image-id ami-12345678 \
+      --instance-type c5.large \
+      --count 1 \
+      --region us-east-1 \
+      --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=lumina-test-2},{Key=Environment,Value=production}]'
+
+    echo "LocalStack seeding complete!"
+
+# Disable IAM role creation for CI
+createIamRole: false
+
+# Single replica for CI
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: lumina
+
+# Mock AWS account configuration pointing to LocalStack
+awsAccounts:
+  - accountId: "000000000000"
+    name: "LocalStack"
+    assumeRoleArn: "arn:aws:iam::000000000000:role/lumina-controller"
+
+# Reduce validation interval to avoid constant AWS credential failures in CI
+accountValidationInterval: "1h"
+
+# Always pull latest image for CI
+image:
+  pullPolicy: Always
+
+# Reduced resources for CI
+resources:
+  limits:
+    cpu: "500m"
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
