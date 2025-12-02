@@ -13,7 +13,7 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
-        {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+        {{- if and (not .Values.skipConfig) .Values.config }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -50,7 +50,7 @@ spec:
         command:
         - /manager
         args:
-        {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+        {{- if and (not .Values.skipConfig) .Values.config }}
         - --config=/etc/lumina/config/config.yaml
         {{- end }}
         {{- if .Values.controllerManager.leaderElection.enabled }}
@@ -115,7 +115,7 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
         volumeMounts:
-        {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+        {{- if and (not .Values.skipConfig) .Values.config }}
         - name: config
           mountPath: /etc/lumina/config
           readOnly: true
@@ -124,7 +124,7 @@ spec:
           {{- toYaml . | nindent 12 }}
         {{- end }}
       volumes:
-      {{- if and (not .Values.skipConfig) (or .Values.awsAccounts .Values.regions .Values.pricing.operatingSystems .Values.defaultAccount.accountId .Values.reconciliation.ec2 .Values.reconciliation.pricing .Values.reconciliation.risp) }}
+      {{- if and (not .Values.skipConfig) .Values.config }}
       - name: config
         configMap:
           name: {{ include "lumina.fullname" . }}-config
