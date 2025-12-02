@@ -58,7 +58,7 @@ jobs:
         run: |
           kubectl get pods -n lumina-system
           kubectl get deployment -n lumina-system
-          kubectl rollout status deployment/lumina-test -n lumina-system --timeout=5m
+          kubectl rollout status deployment/lumina-test-controller-manager -n lumina-system --timeout=5m
 
       - name: Check service endpoints
         run: |
