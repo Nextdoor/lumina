@@ -71,6 +71,12 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
+          # Configure git to use the GitHub token for authentication
+          # This ensures worktrees created by chart-releaser can authenticate
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Initialize gh-pages branch if needed
         run: |
           # Check if gh-pages branch exists on remote
