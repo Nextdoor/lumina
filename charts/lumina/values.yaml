@@ -70,52 +70,42 @@ securityContext:
 # -- Useful for CI/testing or when the controller should run without AWS account configuration.
 skipConfig: false
 
-# -- Default AWS region for API operations
-defaultRegion: us-west-2
+# -- Controller configuration passed directly to config.yaml
+# -- All fields map directly to the Config struct in pkg/config/config.go
+# -- See config.example.yaml in the repository root for full documentation
+config:
+  defaultRegion: us-west-2
+  regions: []
+  accountValidationInterval: ""
 
-# -- Global list of regions to query across all accounts (can be overridden per-account)
-regions: []
-  # - us-west-2
-  # - us-east-1
+  reconciliation:
+    ec2: ""
+    pricing: ""
+    risp: ""
+    spotPricing: ""
 
-# -- Reconciliation intervals for different controllers
-reconciliation:
-  # -- EC2 reconciliation interval (e.g., 2m, 5m, 1h)
-  ec2: ""
-  # -- Pricing reconciliation interval (e.g., 24h)
-  pricing: ""
-  # -- RISP (Reserved Instances/Savings Plans) reconciliation interval (e.g., 1h)
-  risp: ""
+  pricing:
+    operatingSystems: []
+    spotPriceCacheExpiration: ""
+    defaultDiscounts:
+      ec2Instance: null
+      compute: null
 
-# -- Pricing configuration
-pricing:
-  # -- Operating systems to fetch pricing data for
-  operatingSystems: []
-    # - Linux
-    # - Windows
+  metrics:
+    disableInstanceMetrics: false
+    labels:
+      clusterName: ""
+      accountName: ""
+      accountId: ""
+      region: ""
+      nodeName: ""
+      hostName: ""
+    nodeNameSource:
+      tagKey: ""
 
-# -- AWS account configuration for cross-account access. Will be passed to controller via ConfigMap mounted at /etc/lumina/config/config.yaml
-awsAccounts: []
-  # - accountId: "329239342014"
-  #   name: "Production Account"
-  #   assumeRoleArn: "arn:aws:iam::329239342014:role/lumina-access"
-  #   regions:  # Optional: override global regions for this account
-  #     - us-west-2
-  #     - us-east-1
-  # - accountId: "364942603424"
-  #   name: "Engineering Account"
-  #   assumeRoleArn: "arn:aws:iam::364942603424:role/lumina-access"
+  defaultAccount: {}
 
-# -- Default account for non-account-specific API calls (e.g., Pricing API).
-# -- If not specified, the first account in awsAccounts will be used.
-defaultAccount: {}
-  # accountId: "329239342014"
-  # name: "Production Account"
-  # assumeRoleArn: "arn:aws:iam::329239342014:role/lumina-access"
-  # region: "us-west-2"  # Optional: override defaultRegion for this account
-
-# -- How often to validate AWS account access (e.g., 5m, 10m, 1h). Leave empty to use default (10m)
-accountValidationInterval: ""
+  awsAccounts: []
 
 controllerManager:
   leaderElection:

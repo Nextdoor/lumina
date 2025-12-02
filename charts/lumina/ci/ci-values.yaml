@@ -77,13 +77,13 @@ serviceAccount:
   name: lumina
 
 # Mock AWS account configuration pointing to LocalStack
-awsAccounts:
-  - accountId: "000000000000"
-    name: "LocalStack"
-    assumeRoleArn: "arn:aws:iam::000000000000:role/lumina-controller"
-
-# Reduce validation interval to avoid constant AWS credential failures in CI
-accountValidationInterval: "1h"
+config:
+  defaultRegion: us-west-2
+  accountValidationInterval: "1h"
+  awsAccounts:
+    - accountId: "000000000000"
+      name: "LocalStack"
+      assumeRoleArn: "arn:aws:iam::000000000000:role/lumina-controller"
 
 # Always pull latest image for CI
 image:
