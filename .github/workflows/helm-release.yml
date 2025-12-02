@@ -36,6 +36,11 @@ jobs:
         with:
           version: v3.16.3
 
+      - name: Add Helm repositories
+        run: |
+          helm repo add localstack https://localstack.github.io/helm-charts
+          helm repo update
+
       - name: Update Chart.yaml version and appVersion
         run: |
           VERSION="${{ inputs.version }}"
