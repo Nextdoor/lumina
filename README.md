@@ -91,7 +91,34 @@ make docker-build IMG=lumina-controller:dev
 
 ### Deployment
 
-#### Using Pre-built Images
+#### Using Helm (Recommended)
+
+Helm charts are automatically published to the Nextdoor OSS Helm repository:
+
+```bash
+# Add the Lumina Helm repository
+helm repo add lumina https://oss.nextdoor.com/lumina
+helm repo update
+
+# Install Lumina with default values
+helm install lumina lumina/lumina -n lumina-system --create-namespace
+
+# Or install a specific version
+helm install lumina lumina/lumina --version 0.2.8 -n lumina-system --create-namespace
+
+# Customize with your own values
+helm install lumina lumina/lumina -n lumina-system --create-namespace \
+  --set awsAccounts[0].name=production \
+  --set awsAccounts[0].accountId=123456789012 \
+  --set awsAccounts[0].roleArn=arn:aws:iam::123456789012:role/LuminaReadOnly
+
+# View available versions
+helm search repo lumina --versions
+```
+
+See [charts/lumina/README.md](charts/lumina/README.md) for complete Helm chart documentation and configuration options.
+
+#### Using Pre-built Images (Alternative)
 
 Container images are automatically built and published to GitHub Container Registry on every commit to main and on releases:
 
