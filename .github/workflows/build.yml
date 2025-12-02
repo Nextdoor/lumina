@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
 
 jobs:
   build:
     uses: ./.github/workflows/docker.yml
     with:
-      # Publish on main branch or tags
-      publish: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+      # Publish on main branch pushes
+      publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
