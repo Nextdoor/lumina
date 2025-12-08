@@ -40,7 +40,7 @@ jobs:
           make helm-docs-check
 
       - name: Create Kind cluster
-        uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1
         with:
           version: v0.26.0
           kubectl_version: v1.31.0
