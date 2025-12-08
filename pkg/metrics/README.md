@@ -6,6 +6,33 @@ Prometheus metrics for the Lumina cost visibility controller.
 
 This package provides operational metrics that enable monitoring and alerting for the Lumina controller. Metrics are exposed via the controller's `/metrics` endpoint and follow Prometheus naming conventions.
 
+## Programmatic Access
+
+For external tools that need to query Lumina metrics programmatically, this package exports both metric name and label name constants:
+
+```go
+import "github.com/nextdoor/lumina/pkg/metrics"
+
+// Type-safe metric name reference with compile-time checking
+query := fmt.Sprintf("sum(%s)", metrics.MetricEC2InstanceCount)
+
+// Type-safe label references
+query := fmt.Sprintf("%s{%s=\"us-west-2\", %s=\"m5\"}",
+    metrics.MetricEC2InstanceCount,
+    metrics.LabelRegion,
+    metrics.LabelInstanceFamily)
+```
+
+**Benefits:**
+- Compile-time checking (typos caught immediately)
+- IDE autocomplete for available metrics
+- Refactoring safety (renaming updates all consumers)
+- Self-documenting via godoc
+
+**Available constants:**
+- **Metric names:** See [names.go](names.go) - `MetricEC2InstanceCount`, `MetricSavingsPlanUtilizationPercent`, etc.
+- **Label names:** See [labels.go](labels.go) - `LabelRegion`, `LabelInstanceType`, `LabelAccountID`, etc.
+
 ## Label Customization
 
 Many metric labels can be customized via configuration to match your organization's conventions:
