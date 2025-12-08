@@ -2,6 +2,33 @@ apiVersion: v1
 entries:
   lumina:
   - apiVersion: v2
+    appVersion: 0.4.0
+    created: "2025-12-08T18:23:59.85489668Z"
+    dependencies:
+    - condition: localstack.enabled
+      name: localstack
+      repository: https://localstack.github.io/helm-charts
+      version: 0.6.27
+    description: Lumina - Kubernetes Cost Visibility Controller
+    digest: 985510f010311994f482a421ad82845a254401b19d9fb04491d29c0b6666d9f7
+    home: https://github.com/Nextdoor/lumina
+    keywords:
+    - kubernetes
+    - cost
+    - aws
+    - savings-plans
+    - visibility
+    maintainers:
+    - name: Lumina Maintainers
+      url: https://github.com/Nextdoor/lumina
+    name: lumina
+    sources:
+    - https://github.com/Nextdoor/lumina
+    type: application
+    urls:
+    - lumina-0.4.0.tgz
+    version: 0.4.0
+  - apiVersion: v2
     appVersion: 0.3.0
     created: "2025-12-02T03:56:42.431740281Z"
     dependencies:
@@ -82,4 +109,4 @@ entries:
     urls:
     - lumina-0.2.6.tgz
     version: 0.2.6
-generated: "2025-12-02T03:56:42.43175236Z"
+generated: "2025-12-08T18:23:59.854904594Z"
