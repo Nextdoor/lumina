@@ -153,39 +153,39 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 		stopCh:          make(chan struct{}),
 
 		ControllerRunning: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "lumina_controller_running",
+			Name: MetricLuminaControllerRunning,
 			Help: "Indicates whether the Lumina controller is running (1 = running)",
 		}),
 
 		AccountValidationStatus: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "lumina_account_validation_status",
+			Name: MetricLuminaAccountValidationStatus,
 			Help: "AWS account validation status (1 = success, 0 = failed)",
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
 
 		AccountValidationLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "lumina_account_validation_last_success_timestamp",
+			Name: MetricLuminaAccountValidationLastSuccess,
 			Help: "Unix timestamp of last successful validation",
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
 
 		AccountValidationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "lumina_account_validation_duration_seconds",
+			Name: MetricLuminaAccountValidationDurationSeconds,
 			Help: "Time taken to validate account access",
 			// Buckets cover 100ms to 10 seconds, reasonable for AssumeRole calls
 			Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
 
 		DataFreshness: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "lumina_data_freshness_seconds",
+			Name: MetricLuminaDataFreshnessSeconds,
 			Help: "Age of cached data in seconds since last successful update (updated every second)",
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelDataType}),
 
 		DataLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "lumina_data_last_success",
+			Name: MetricLuminaDataLastSuccess,
 			Help: "Indicator of whether last data collection succeeded (1 = success, 0 = failed, Phase 2+)",
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelDataType}),
 
 		ReservedInstance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "ec2_reserved_instance",
+			Name: MetricEC2ReservedInstance,
 			Help: "Indicates presence of a Reserved Instance (1 = exists, metric absent = does not exist)",
 		}, []string{
 			cfg.GetAccountIDLabel(),
@@ -196,12 +196,12 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 		}),
 
 		ReservedInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "ec2_reserved_instance_count",
+			Name: MetricEC2ReservedInstanceCount,
 			Help: "Count of Reserved Instances by instance family",
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelInstanceFamily}),
 
 		SavingsPlanCommitment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "savings_plan_hourly_commitment",
+			Name: MetricSavingsPlanHourlyCommitment,
 			Help: "Hourly commitment amount ($/hour) for a Savings Plan",
 		}, []string{
 			LabelSavingsPlanARN,
@@ -213,12 +213,12 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 		}),
 
 		SavingsPlanRemainingHours: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "savings_plan_remaining_hours",
+			Name: MetricSavingsPlanRemainingHours,
 			Help: "Number of hours remaining until Savings Plan expires",
 		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 
 		EC2Instance: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "ec2_instance",
+			Name: MetricEC2Instance,
 			Help: "Indicates presence of a running EC2 instance (1 = exists, metric absent = stopped or terminated)",
 		}, []string{
 			cfg.GetAccountIDLabel(),
@@ -232,12 +232,12 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 		}),
 
 		EC2InstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "ec2_instance_count",
+			Name: MetricEC2InstanceCount,
 			Help: "Count of running EC2 instances by instance family",
 		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), cfg.GetRegionLabel(), LabelInstanceFamily}),
 
 		EC2InstanceHourlyCost: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "ec2_instance_hourly_cost",
+			Name: MetricEC2InstanceHourlyCost,
 			Help: "Effective hourly cost for an EC2 instance after applying all discounts (USD/hour)",
 		}, []string{
 			LabelInstanceID,
@@ -255,17 +255,17 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 		}),
 
 		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "savings_plan_current_utilization_rate",
+			Name: MetricSavingsPlanCurrentUtilizationRate,
 			Help: "Current hourly rate being consumed by instances covered by this Savings Plan (USD/hour)",
 		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 
 		SavingsPlanRemainingCapacity: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "savings_plan_remaining_capacity",
+			Name: MetricSavingsPlanRemainingCapacity,
 			Help: "Unused capacity in USD/hour for a Savings Plan (negative if over-utilized)",
 		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 
 		SavingsPlanUtilizationPercent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "savings_plan_utilization_percent",
+			Name: MetricSavingsPlanUtilizationPercent,
 			Help: "Utilization percentage of a Savings Plan (can exceed 100% if over-utilized)",
 		}, []string{LabelSavingsPlanARN, cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel(), LabelType}),
 	}
