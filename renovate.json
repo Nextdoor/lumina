@@ -61,6 +61,12 @@
       "automerge": true
     },
     {
+      "description": "Auto-merge GitHub Actions digest updates (pinned commit SHA updates)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": true
+    },
+    {
       "description": "Pin GitHub Actions to exact commits for security",
       "matchManagers": ["github-actions"],
       "pinDigests": true
