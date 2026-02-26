@@ -1,6 +1,8 @@
 baseURL: /lumina/
 title: Lumina
 languageCode: en-us
+defaultContentLanguage: en
+defaultContentLanguageInSubdir: false
 
 module:
   hugoVersion:
@@ -14,6 +16,7 @@ languages:
   en:
     languageName: English
     weight: 1
+    contentDir: content/en
 
 markup:
   goldmark:
@@ -52,4 +55,3 @@ menu:
       weight: 50
       url: https://github.com/nextdoor/lumina
       pre: <i class='fab fa-github'></i>
-      post: <span class='alert'>External</span>
