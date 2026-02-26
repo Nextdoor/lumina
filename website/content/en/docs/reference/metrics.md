@@ -1,0 +1,345 @@
+---
+title: "Metrics"
+description: "Complete Prometheus metrics catalog for the Lumina controller"
+weight: 20
+---
+
+Lumina exposes Prometheus metrics on the `/metrics` endpoint (default port 8080). This page documents all available metrics, their labels, and example PromQL queries.
+
+{{% pageinfo %}}
+Label names shown in this document use defaults. If you have customized labels via `metrics.labels` configuration, replace the label names in queries accordingly.
+{{% /pageinfo %}}
+
+## Controller Health
+
+### `lumina_controller_running` (gauge)
+
+Indicates whether the controller is running.
+
+- Value: 1 = running
+- Use: Alert if metric disappears (controller crashed)
+
+```promql
+# Alert if controller is down
+absent(lumina_controller_running{cluster="prod-us1"})
+```
+
+## Account Validation
+
+### `lumina_account_validation_status` (gauge)
+
+AWS account validation status per account.
+
+- Labels: `account_id`, `account_name`
+- Values: 1 = success, 0 = failed
+
+### `lumina_account_validation_last_success_timestamp` (gauge)
+
+Unix timestamp of last successful validation.
+
+- Labels: `account_id`, `account_name`
+
+### `lumina_account_validation_duration_seconds` (histogram)
+
+Time taken to validate account access via AssumeRole.
+
+- Labels: `account_id`, `account_name`
+- Buckets: 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s
+
+```promql
+# Alert if any account validation is failing
+lumina_account_validation_status == 0
+
+# Alert if account hasn't been validated in 10 minutes
+time() - lumina_account_validation_last_success_timestamp > 600
+
+# Average validation time per account
+rate(lumina_account_validation_duration_seconds_sum[5m])
+  / rate(lumina_account_validation_duration_seconds_count[5m])
+
+# P95 validation latency
+histogram_quantile(0.95,
+  rate(lumina_account_validation_duration_seconds_bucket[5m]))
+```
+
+## Data Freshness
+
+### `lumina_data_freshness_seconds` (gauge)
+
+Age of cached data in seconds since last successful update (auto-updated every second).
+
+- Labels: `account_id`, `account_name`, `region`, `data_type`
+- Data types: `ec2_instances`, `reserved_instances`, `savings_plans`, `pricing`, `sp_rates`, `spot_pricing`
+
+### `lumina_data_last_success` (gauge)
+
+Last data collection success indicator.
+
+- Labels: `account_id`, `account_name`, `region`, `data_type`
+- Values: 1 = success, 0 = failed
+
+```promql
+# Alert if data collection is stale (>10 minutes old)
+lumina_data_freshness_seconds > 600
+
+# Alert if pricing data is stale (>1 hour)
+lumina_data_freshness_seconds{data_type="pricing"} > 3600
+
+# Alert if EC2 instance data is stale (>10 minutes)
+lumina_data_freshness_seconds{data_type="ec2_instances"} > 600
+
+# Alert if any data collection is failing
+lumina_data_last_success == 0
+```
+
+## Reserved Instances
+
+### `ec2_reserved_instance` (gauge)
+
+Indicates presence of a Reserved Instance.
+
+- Labels: `account_id`, `account_name`, `region`, `instance_type`, `availability_zone`
+- Value: 1 = RI exists
+
+### `ec2_reserved_instance_count` (gauge)
+
+Count of Reserved Instances by instance family.
+
+- Labels: `account_id`, `account_name`, `region`, `instance_family`
+
+```promql
+# Total RI count across all accounts
+count(ec2_reserved_instance)
+
+# RI count by account
+sum by (account_id) (ec2_reserved_instance)
+
+# RI count by instance family
+sum by (instance_family) (ec2_reserved_instance_count)
+
+# Total RIs in m5 family across all accounts
+sum(ec2_reserved_instance_count{instance_family="m5"})
+
+# Alert if RI count drops unexpectedly (possible expiration)
+rate(ec2_reserved_instance_count[1h]) < -5
+```
+
+## Savings Plans Inventory
+
+### `savings_plan_hourly_commitment` (gauge)
+
+Fixed hourly commitment amount ($/hour) for a Savings Plan.
+
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`, `region`, `instance_family`
+- `type`: `ec2_instance` or `compute`
+- `region`: Specific region for EC2 Instance SPs, empty for Compute SPs
+- `instance_family`: Specific family for EC2 Instance SPs, empty for Compute SPs
+
+### `savings_plan_remaining_hours` (gauge)
+
+Number of hours remaining until Savings Plan expires.
+
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
+
+```promql
+# Total SP commitment across all accounts ($/hour)
+sum(savings_plan_hourly_commitment)
+
+# SP commitment by account
+sum by (account_id) (savings_plan_hourly_commitment)
+
+# SP commitment by type
+sum by (type) (savings_plan_hourly_commitment)
+
+# Total Compute SP commitment (global)
+sum(savings_plan_hourly_commitment{type="compute"})
+
+# EC2 Instance SPs by region and family
+sum by (region, instance_family) (savings_plan_hourly_commitment{type="ec2_instance"})
+
+# SPs expiring within 30 days (720 hours)
+count(savings_plan_remaining_hours < 720)
+
+# SPs expiring within 7 days (168 hours) - critical
+count(savings_plan_remaining_hours < 168)
+
+# SP commitment expiring within 30 days
+sum(savings_plan_hourly_commitment and savings_plan_remaining_hours < 720)
+```
+
+## Savings Plans Utilization
+
+### `savings_plan_current_utilization_rate` (gauge)
+
+Current hourly rate ($/hour) being consumed by instances covered by this Savings Plan.
+
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
+
+### `savings_plan_remaining_capacity` (gauge)
+
+Unused capacity in $/hour for a Savings Plan (HourlyCommitment - CurrentUtilizationRate).
+
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
+
+### `savings_plan_utilization_percent` (gauge)
+
+Utilization percentage of a Savings Plan ((CurrentUtilizationRate / HourlyCommitment) * 100).
+
+- Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
+- Can exceed 100%
+
+```promql
+# SP utilization percentage by account
+sum by (account_id) (savings_plan_utilization_percent)
+  / count by (account_id) (savings_plan_utilization_percent)
+
+# Alert on under-utilized SPs (< 80%)
+savings_plan_utilization_percent < 80
+
+# Alert on over-utilized SPs (> 100%, spillover to on-demand)
+savings_plan_utilization_percent > 100
+
+# Wasted SP capacity (under-utilized, in $/hour)
+sum(savings_plan_remaining_capacity{} > 0)
+
+# Compute vs EC2 Instance SP utilization comparison
+sum by (type) (savings_plan_utilization_percent)
+  / count by (type) (savings_plan_utilization_percent)
+```
+
+## EC2 Instance Inventory
+
+### `ec2_instance` (gauge)
+
+Indicates presence of a running EC2 instance.
+
+- Labels: `account_id`, `account_name`, `region`, `instance_type`, `availability_zone`, `instance_id`, `tenancy`, `platform`
+- Value: 1 = instance exists and is running
+
+### `ec2_instance_count` (gauge)
+
+Count of running instances by instance family.
+
+- Labels: `account_id`, `account_name`, `region`, `instance_family`
+
+{{% pageinfo %}}
+Only running instances are included in metrics (stopped instances do not incur compute costs). Metrics are updated every 5 minutes by the EC2 reconciler. Instance family is extracted from instance type (e.g., `m5.xlarge` becomes `m5`).
+{{% /pageinfo %}}
+
+```promql
+# Total running instances across all accounts
+sum(ec2_instance_count)
+
+# Running instances by account
+sum by (account_id) (ec2_instance_count)
+
+# Running instances by region
+sum by (region) (ec2_instance_count)
+
+# Instance count by family
+sum by (instance_family) (ec2_instance_count)
+
+# Top 10 instance families by count
+topk(10, sum by (instance_family) (ec2_instance_count))
+
+# Specific instance type count
+count(ec2_instance{instance_type="m5.xlarge"})
+
+# Instances in a specific AZ
+count(ec2_instance{availability_zone="us-west-2a"})
+
+# Alert: Large instance count change (more than 10 instances/min)
+abs(rate(ec2_instance_count[5m])) > 10
+
+# Alert: Fleet size drops below threshold
+sum(ec2_instance_count) < 100
+
+# Instance type diversity (number of different instance types)
+count by (account_id) (count by (account_id, instance_type) (ec2_instance))
+```
+
+## EC2 Instance Costs
+
+### `ec2_instance_hourly_cost` (gauge)
+
+Effective hourly cost for each EC2 instance after applying all discounts.
+
+- Labels: `instance_id`, `account_id`, `account_name`, `region`, `instance_type`, `cost_type`, `availability_zone`, `lifecycle`, `pricing_accuracy`, `node_name`
+- Value: Hourly cost in USD
+
+**Label values:**
+- `cost_type`: `on_demand`, `reserved_instance`, `ec2_instance_savings_plan`, `compute_savings_plan`, or `spot`
+- `lifecycle`: `on-demand` or `spot`
+- `pricing_accuracy`: `accurate` (from API) or `estimated` (from fallback calculations)
+- `node_name`: Kubernetes node name (empty if instance is not correlated to a node)
+
+```promql
+# Total hourly cost across all instances
+sum(ec2_instance_hourly_cost)
+
+# Cost by account
+sum by (account_id) (ec2_instance_hourly_cost)
+
+# Cost by region
+sum by (region) (ec2_instance_hourly_cost)
+
+# Cost by cost type (on-demand vs discounted)
+sum by (cost_type) (ec2_instance_hourly_cost)
+
+# Cost per Kubernetes node
+sum by (node_name) (ec2_instance_hourly_cost{node_name!=""})
+
+# Savings from Savings Plans
+sum(ec2_instance_hourly_cost{cost_type=~".*savings_plan"})
+
+# On-demand cost (no discounts)
+sum(ec2_instance_hourly_cost{cost_type="on_demand"})
+
+# Spot instance cost
+sum(ec2_instance_hourly_cost{cost_type="spot"})
+
+# Cost breakdown by instance type
+sum by (instance_type) (ec2_instance_hourly_cost)
+
+# Top 10 most expensive instances
+topk(10, ec2_instance_hourly_cost)
+
+# Alert: High-cost instance running
+ec2_instance_hourly_cost > 5
+
+# Percentage of instances using accurate pricing
+sum(ec2_instance_hourly_cost{pricing_accuracy="accurate"}) /
+sum(ec2_instance_hourly_cost) * 100
+
+# Instances still using estimated pricing (cache warming or new types)
+sum(ec2_instance_hourly_cost{pricing_accuracy="estimated"})
+```
+
+## Multi-Cluster Configuration
+
+When `metrics.disableInstanceMetrics: true` is set:
+
+**Disabled:**
+- `ec2_instance`
+- `ec2_instance_count`
+- `ec2_instance_hourly_cost`
+
+**Always enabled:**
+- All Savings Plans metrics (utilization, commitment, etc.)
+- All Reserved Instance metrics
+- Controller health and data freshness metrics
+
+## Label Customization
+
+Configurable labels and their defaults:
+
+| Config Key | Default Label Name | Description |
+|-----------|-------------------|-------------|
+| `clusterName` | `cluster_name` | Kubernetes cluster name |
+| `accountName` | `account_name` | AWS account name |
+| `accountId` | `account_id` | AWS account ID |
+| `region` | `region` | AWS region |
+| `nodeName` | `node_name` | Kubernetes node name |
+| `hostName` | `host_name` | EC2 instance hostname |
+
+Non-configurable labels: `instance_id`, `instance_type`, `instance_family`, `availability_zone`, `tenancy`, `platform`, `lifecycle`, `cost_type`, `pricing_accuracy`, `savings_plan_arn`, `type`, `data_type`.
