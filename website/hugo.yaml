@@ -1,0 +1,55 @@
+baseURL: /lumina/
+title: Lumina
+languageCode: en-us
+
+module:
+  hugoVersion:
+    extended: true
+    min: "0.145.0"
+  imports:
+    - path: github.com/google/docsy
+      disable: false
+
+languages:
+  en:
+    languageName: English
+    weight: 1
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+
+outputs:
+  home:
+    - HTML
+
+enableRobotsTxt: true
+
+taxonomies: {}
+
+params:
+  ui:
+    navbar_logo: false
+    sidebar_menu_compact: true
+    breadcrumb_disable: true
+    feedback:
+      enable: false
+    readingtime:
+      enable: false
+  links:
+    developer:
+      - name: GitHub
+        url: https://github.com/nextdoor/lumina
+        icon: fab fa-github
+        desc: Lumina on GitHub
+  description: Real-time Kubernetes Cost Visibility
+  offlineSearch: false
+
+menu:
+  main:
+    - name: GitHub
+      weight: 50
+      url: https://github.com/nextdoor/lumina
+      pre: <i class='fab fa-github'></i>
+      post: <span class='alert'>External</span>
