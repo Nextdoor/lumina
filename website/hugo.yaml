@@ -1,4 +1,4 @@
-baseURL: /lumina/
+baseURL: https://oss.nextdoor.com/lumina/
 title: Lumina
 languageCode: en-us
 defaultContentLanguage: en
@@ -35,22 +35,33 @@ params:
   ui:
     navbar_logo: false
     sidebar_menu_compact: true
-    breadcrumb_disable: true
+    breadcrumb_disable: false
+    sidebar_menu_foldable: true
     feedback:
       enable: false
     readingtime:
       enable: false
   links:
+    user:
+      - name: GitHub Discussions
+        url: https://github.com/nextdoor/lumina/discussions
+        icon: fab fa-github
+        desc: Ask questions and share ideas
     developer:
       - name: GitHub
         url: https://github.com/nextdoor/lumina
         icon: fab fa-github
         desc: Lumina on GitHub
   description: Real-time Kubernetes Cost Visibility
-  offlineSearch: false
+  offlineSearch: true
+  copyright: "The Lumina Authors"
 
 menu:
   main:
+    - name: Documentation
+      weight: 10
+      url: /docs/
+      pre: <i class='fas fa-book'></i>
     - name: GitHub
       weight: 50
       url: https://github.com/nextdoor/lumina

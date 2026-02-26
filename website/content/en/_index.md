@@ -4,6 +4,9 @@ title: Lumina
 
 {{< blocks/cover title="Lumina" image_anchor="top" height="med" color="primary" >}}
 <p class="lead mt-4">Real-time Kubernetes Cost Visibility</p>
+<a class="btn btn-lg btn-primary me-3 mb-4" href="{{< relref "docs/getting-started" >}}">
+Get Started <i class="fas fa-arrow-right ms-2"></i>
+</a>
 <a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/nextdoor/lumina">
 View on GitHub <i class="fab fa-github ms-2"></i>
 </a>
