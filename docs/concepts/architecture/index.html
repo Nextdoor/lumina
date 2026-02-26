@@ -1,0 +1,142 @@
+<!doctype html><html itemscope itemtype=http://schema.org/WebPage lang=en class=no-js><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name=robots content="index, follow"><link rel="shortcut icon" href=/lumina/favicons/favicon.ico><link rel=apple-touch-icon href=/lumina/favicons/apple-touch-icon-180x180.png sizes=180x180><link rel=icon type=image/png href=/lumina/favicons/favicon-16x16.png sizes=16x16><link rel=icon type=image/png href=/lumina/favicons/favicon-32x32.png sizes=32x32><link rel=icon type=image/png href=/lumina/favicons/android-36x36.png sizes=36x36><link rel=icon type=image/png href=/lumina/favicons/android-48x48.png sizes=48x48><link rel=icon type=image/png href=/lumina/favicons/android-72x72.png sizes=72x72><link rel=icon type=image/png href=/lumina/favicons/android-96x96.png sizes=96x96><link rel=icon type=image/png href=/lumina/favicons/android-144x144.png sizes=144x144><link rel=icon type=image/png href=/lumina/favicons/android-192x192.png sizes=192x192><title>Architecture | Lumina</title>
+<meta name=description content="Lumina's data flow, reconciliation loops, and caching architecture"><meta property="og:url" content="https://oss.nextdoor.com/lumina/docs/concepts/architecture/"><meta property="og:site_name" content="Lumina"><meta property="og:title" content="Architecture"><meta property="og:description" content="Lumina's data flow, reconciliation loops, and caching architecture"><meta property="og:locale" content="en"><meta property="og:type" content="article"><meta property="article:section" content="docs"><meta itemprop=name content="Architecture"><meta itemprop=description content="Lumina's data flow, reconciliation loops, and caching architecture"><meta itemprop=wordCount content="738"><meta name=twitter:card content="summary"><meta name=twitter:title content="Architecture"><meta name=twitter:description content="Lumina's data flow, reconciliation loops, and caching architecture"><link rel=preload href=/lumina/scss/main.min.c8fa29825328ed2efa978460f6b94c9b17d6bb0c0082bfba163e09fa42eea2e8.css as=style integrity="sha256-yPopglMo7S76l4Rg9rlMmxfWuwwAgr+6Fj4J+kLuoug=" crossorigin=anonymous><link href=/lumina/scss/main.min.c8fa29825328ed2efa978460f6b94c9b17d6bb0c0082bfba163e09fa42eea2e8.css rel=stylesheet integrity="sha256-yPopglMo7S76l4Rg9rlMmxfWuwwAgr+6Fj4J+kLuoug=" crossorigin=anonymous><script src=https://code.jquery.com/jquery-3.7.1.min.js integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin=anonymous></script><script defer src=https://unpkg.com/lunr@2.3.9/lunr.min.js integrity=sha384-203J0SNzyqHby3iU6hzvzltrWi/M41wOP5Gu+BiJMz5nwKykbkUx8Kp7iti0Lpli crossorigin=anonymous></script></head><body class=td-page><header><nav class="td-navbar js-navbar-scroll" data-bs-theme=dark><div class="container-fluid flex-column flex-md-row"><a class=navbar-brand href=/lumina/><span class="navbar-brand__logo navbar-logo"></span><span class=navbar-brand__name>Lumina</span></a><div class="td-navbar-nav-scroll ms-md-auto" id=main_navbar><ul class=navbar-nav><li class=nav-item><a class=nav-link href=/lumina/docs/><i class='fas fa-book'></i><span>Documentation</span></a></li><li class=nav-item><a class=nav-link href=https://github.com/nextdoor/lumina target=_blank rel=noopener><i class='fab fa-github'></i><span>GitHub</span></a></li></ul></div><div class="d-none d-lg-block"><div class="td-search td-search--offline"><div class=td-search__icon></div><input type=search class="td-search__input form-control" placeholder="Search this site…" aria-label="Search this site…" autocomplete=off data-offline-search-index-json-src=/lumina/offline-search-index.16ad73d2e2ec427f00f4cde4ecc962d9.json data-offline-search-base-href=/ data-offline-search-max-results=10></div></div></div></nav></header><div class="container-fluid td-outer"><div class=td-main><div class="row flex-xl-nowrap"><aside class="col-12 col-md-3 col-xl-2 td-sidebar d-print-none"><div id=td-sidebar-menu class=td-sidebar__inner><form class="td-sidebar__search d-flex align-items-center"><div class="td-search td-search--offline"><div class=td-search__icon></div><input type=search class="td-search__input form-control" placeholder="Search this site…" aria-label="Search this site…" autocomplete=off data-offline-search-index-json-src=/lumina/offline-search-index.16ad73d2e2ec427f00f4cde4ecc962d9.json data-offline-search-base-href=/ data-offline-search-max-results=10></div><button class="btn btn-link td-sidebar__toggle d-md-none p-0 ms-3 fas fa-bars" type=button data-bs-toggle=collapse data-bs-target=#td-section-nav aria-controls=td-section-nav aria-expanded=false aria-label="Toggle section navigation"></button></form><nav class="td-sidebar-nav collapse foldable-nav" id=td-section-nav><ul class="td-sidebar-nav__section pe-md-3 ul-0"><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id=m-luminadocs-li><a href=/lumina/docs/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section tree-root" id=m-luminadocs><span>Documentation</span></a><ul class=ul-1><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id=m-luminadocsgetting-started-li><input type=checkbox id=m-luminadocsgetting-started-check>
+<label for=m-luminadocsgetting-started-check><a href=/lumina/docs/getting-started/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-luminadocsgetting-started><span>Getting Started</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsgetting-startedinstallation-li><input type=checkbox id=m-luminadocsgetting-startedinstallation-check>
+<label for=m-luminadocsgetting-startedinstallation-check><a href=/lumina/docs/getting-started/installation/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsgetting-startedinstallation><span>Installation</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id=m-luminadocsconcepts-li><input type=checkbox id=m-luminadocsconcepts-check checked>
+<label for=m-luminadocsconcepts-check><a href=/lumina/docs/concepts/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-luminadocsconcepts><span>Concepts</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child active-path" id=m-luminadocsconceptsarchitecture-li><input type=checkbox id=m-luminadocsconceptsarchitecture-check checked>
+<label for=m-luminadocsconceptsarchitecture-check><a href=/lumina/docs/concepts/architecture/ class="align-left ps-0 active td-sidebar-link td-sidebar-link__page" id=m-luminadocsconceptsarchitecture><span class=td-sidebar-nav-active-item>Architecture</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsconceptscost-calculation-li><input type=checkbox id=m-luminadocsconceptscost-calculation-check>
+<label for=m-luminadocsconceptscost-calculation-check><a href=/lumina/docs/concepts/cost-calculation/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsconceptscost-calculation><span>Cost Calculation</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id=m-luminadocsreference-li><input type=checkbox id=m-luminadocsreference-check>
+<label for=m-luminadocsreference-check><a href=/lumina/docs/reference/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-luminadocsreference><span>Reference</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsreferenceconfiguration-li><input type=checkbox id=m-luminadocsreferenceconfiguration-check>
+<label for=m-luminadocsreferenceconfiguration-check><a href=/lumina/docs/reference/configuration/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsreferenceconfiguration><span>Configuration</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsreferencemetrics-li><input type=checkbox id=m-luminadocsreferencemetrics-check>
+<label for=m-luminadocsreferencemetrics-check><a href=/lumina/docs/reference/metrics/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsreferencemetrics><span>Metrics</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsreferencehelm-chart-li><input type=checkbox id=m-luminadocsreferencehelm-chart-check>
+<label for=m-luminadocsreferencehelm-chart-check><a href=/lumina/docs/reference/helm-chart/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsreferencehelm-chart><span>Helm Chart</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsreferencedebug-endpoints-li><input type=checkbox id=m-luminadocsreferencedebug-endpoints-check>
+<label for=m-luminadocsreferencedebug-endpoints-check><a href=/lumina/docs/reference/debug-endpoints/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsreferencedebug-endpoints><span>Debug Endpoints</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocstroubleshooting-li><input type=checkbox id=m-luminadocstroubleshooting-check>
+<label for=m-luminadocstroubleshooting-check><a href=/lumina/docs/troubleshooting/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocstroubleshooting><span>Troubleshooting</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-luminadocsdevelopment-li><input type=checkbox id=m-luminadocsdevelopment-check>
+<label for=m-luminadocsdevelopment-check><a href=/lumina/docs/development/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-luminadocsdevelopment><span>Development</span></a></label></li></ul></li></ul></nav></div></aside><aside class="d-none d-xl-block col-xl-2 td-sidebar-toc d-print-none"><div class="td-page-meta ms-2 pb-1 pt-2 mb-0"></div><div class=td-toc><nav id=TableOfContents><ul><li><a href=#overview>Overview</a></li><li><a href=#rate-based-model>Rate-Based Model</a><ul><li><a href=#data-flow>Data Flow</a></li></ul></li><li><a href=#reconciliation-loops>Reconciliation Loops</a></li><li><a href=#caching-architecture>Caching Architecture</a><ul><li><a href=#ec2-cache>EC2 Cache</a></li><li><a href=#risp-cache>RISP Cache</a></li><li><a href=#pricing-cache-two-tier>Pricing Cache (Two-Tier)</a></li><li><a href=#spot-price-cache>Spot Price Cache</a></li></ul></li><li><a href=#multi-account-support>Multi-Account Support</a></li><li><a href=#multi-cluster-deployments>Multi-Cluster Deployments</a></li><li><a href=#kubernetes-node-correlation>Kubernetes Node Correlation</a></li></ul></nav></div></aside><main class="col-12 col-md-9 col-xl-8 ps-md-5" role=main><nav aria-label=breadcrumb class=td-breadcrumbs><ol class=breadcrumb><li class=breadcrumb-item><a href=/lumina/docs/>Documentation</a></li><li class=breadcrumb-item><a href=/lumina/docs/concepts/>Concepts</a></li><li class="breadcrumb-item active" aria-current=page>Architecture</li></ol></nav><div class=td-content><h1>Architecture</h1><div class=lead>Lumina&rsquo;s data flow, reconciliation loops, and caching architecture</div><header class=article-meta></header><h2 id=overview>Overview</h2><p>Lumina runs as a Kubernetes controller in each cluster and performs the following:</p><ol><li><strong>Discovers</strong> all AWS Savings Plans and Reserved Instances across your organization</li><li><strong>Tracks</strong> all EC2 instances in real-time (5-minute refresh)</li><li><strong>Correlates</strong> EC2 instances with Kubernetes nodes via provider ID</li><li><strong>Calculates</strong> effective costs per instance using AWS&rsquo;s Savings Plans allocation algorithm</li><li><strong>Exposes</strong> Prometheus metrics for monitoring and alerting</li></ol><pre class=mermaid>graph TD
+    classDef aws fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef ctrl fill:#E6F4EA,stroke:#34A853,color:#333
+    classDef prom fill:#FFF3E0,stroke:#FB8C00,color:#333
+
+    subgraph K8S[&#34;Kubernetes Cluster&#34;]
+        LUMINA[&#34;Lumina Controller&#34;]:::ctrl
+        PROM[&#34;Prometheus&#34;]:::prom
+    end
+
+    subgraph AWS[&#34;AWS Organization (All Accounts)&#34;]
+        EC2[&#34;EC2 Instances&#34;]:::aws
+        RI[&#34;Reserved Instances&#34;]:::aws
+        SP[&#34;Savings Plans&#34;]:::aws
+        SPOT[&#34;Spot Prices&#34;]:::aws
+    end
+
+    LUMINA --&gt;|Exposes /metrics| PROM
+    LUMINA --&gt;|AssumeRole &#43; API queries| EC2
+    LUMINA --&gt;|AssumeRole &#43; API queries| RI
+    LUMINA --&gt;|AssumeRole &#43; API queries| SP
+    LUMINA --&gt;|AssumeRole &#43; API queries| SPOT</pre><h2 id=rate-based-model>Rate-Based Model</h2><p>Lumina uses an <strong>instantaneous rate-based model</strong> (dollars per hour snapshot) rather than cumulative tracking within each billing hour like AWS billing does. This means Lumina&rsquo;s costs are estimates based on &ldquo;if current instances keep running.&rdquo;</p><p>Key concepts:</p><ul><li><strong>ShelfPrice</strong>: On-demand rate with no discounts (e.g., $1.00/hr for m5.xlarge)</li><li><strong>EffectiveCost</strong>: Actual estimated cost after all discounts (e.g., $0.34/hr with SP)</li></ul><h3 id=data-flow>Data Flow</h3><pre class=mermaid>graph TD
+    classDef api fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef recon fill:#E6F4EA,stroke:#34A853,color:#333
+    classDef cache fill:#FFF3E0,stroke:#FB8C00,color:#333
+    classDef output fill:#FCE4EC,stroke:#E91E63,color:#333
+
+    EC2_API[&#34;EC2 DescribeInstances&#34;]:::api
+    RI_API[&#34;EC2 DescribeReservedInstances&#34;]:::api
+    SP_API[&#34;DescribeSavingsPlans&#34;]:::api
+    SPR_API[&#34;DescribeSavingsPlanRates&#34;]:::api
+    SPOT_API[&#34;EC2 Spot Price History&#34;]:::api
+    PRICING_API[&#34;AWS Pricing API&#34;]:::api
+
+    EC2R[&#34;EC2 Reconciler&#34;]:::recon
+    RISPR[&#34;RISP Reconciler&#34;]:::recon
+    SPRR[&#34;SP Rates Reconciler&#34;]:::recon
+    SPOTR[&#34;Spot Reconciler&#34;]:::recon
+    PRICINGR[&#34;Pricing Reconciler&#34;]:::recon
+
+    EC2C[&#34;EC2 Cache&#34;]:::cache
+    RISPC[&#34;RISP Cache&#34;]:::cache
+    PRICEC[&#34;Pricing Cache&#34;]:::cache
+    SPOTC[&#34;Spot Price Cache&#34;]:::cache
+
+    COST[&#34;Cost Calculator&#34;]:::recon
+    METRICS[&#34;Prometheus Metrics&#34;]:::output
+
+    EC2_API --&gt; EC2R --&gt; EC2C
+    RI_API --&gt; RISPR --&gt; RISPC
+    SP_API --&gt; RISPR
+    SPR_API --&gt; SPRR --&gt; PRICEC
+    SPOT_API --&gt; SPOTR --&gt; SPOTC
+    PRICING_API --&gt; PRICINGR --&gt; PRICEC
+
+    EC2C --&gt; COST
+    RISPC --&gt; COST
+    PRICEC --&gt; COST
+    SPOTC --&gt; COST
+    COST --&gt; METRICS</pre><h2 id=reconciliation-loops>Reconciliation Loops</h2><p>Lumina uses multiple reconciliation loops running at different intervals, each responsible for a different data source:</p><table><thead><tr><th>Reconciler</th><th>Default Interval</th><th>Data Source</th><th>Notes</th></tr></thead><tbody><tr><td><strong>Pricing</strong></td><td>24h</td><td>AWS Pricing API</td><td>On-demand prices change monthly</td></tr><tr><td><strong>RISP</strong></td><td>1h</td><td>EC2 + Savings Plans APIs</td><td>RI/SP data changes infrequently</td></tr><tr><td><strong>EC2</strong></td><td>5m</td><td>EC2 DescribeInstances</td><td>Instances change frequently (autoscaling)</td></tr><tr><td><strong>SP Rates</strong></td><td>1-2m</td><td>DescribeSavingsPlanRates</td><td>Incremental; only fetches missing rates</td></tr><tr><td><strong>Spot Pricing</strong></td><td>15s</td><td>EC2 Spot Price History</td><td>Fast checks OK due to lazy-loading</td></tr><tr><td><strong>Cost</strong></td><td>Event-driven</td><td>Internal calculation</td><td>Triggered by cache updates</td></tr></tbody></table><pre class=mermaid>graph LR
+    classDef step fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef trigger fill:#E6F4EA,stroke:#34A853,color:#333
+
+    TIMER[&#34;Timer fires&lt;br/&gt;(per-reconciler interval)&#34;]:::trigger
+    FETCH[&#34;Fetch data&lt;br/&gt;from AWS API&#34;]:::step
+    UPDATE[&#34;Update&lt;br/&gt;in-memory cache&#34;]:::step
+    NOTIFY[&#34;Notify cost&lt;br/&gt;calculator&#34;]:::trigger
+    RECALC[&#34;Recalculate&lt;br/&gt;all instance costs&#34;]:::step
+    EXPOSE[&#34;Update&lt;br/&gt;Prometheus metrics&#34;]:::step
+
+    TIMER --&gt; FETCH --&gt; UPDATE --&gt; NOTIFY --&gt; RECALC --&gt; EXPOSE</pre><h2 id=caching-architecture>Caching Architecture</h2><p>Lumina maintains several in-memory caches that are populated by the reconciliation loops:</p><h3 id=ec2-cache>EC2 Cache</h3><p>Stores all running EC2 instances across all configured accounts and regions. Updated every 5 minutes.</p><h3 id=risp-cache>RISP Cache</h3><p>Stores Reserved Instances and Savings Plans. Updated hourly.</p><h3 id=pricing-cache-two-tier>Pricing Cache (Two-Tier)</h3><p>Lumina uses a two-tier pricing system for Savings Plans rates:</p><p><strong>Tier 1 &ndash; Actual SP Rates from AWS API (Preferred)</strong></p><p>The SP Rates Reconciler fetches real Savings Plan rates using the AWS <code>DescribeSavingsPlanRates</code> API. These are the exact purchase-time rates locked in when each SP was bought. Rates are cached using keys like:</p><pre tabindex=0><code>spArn,instanceType,region,tenancy,os
+</code></pre><p>Features:</p><ul><li>Per-SP rates (different SPs can have different rates)</li><li>Tenancy-aware (default vs dedicated)</li><li>OS-aware (Linux vs Windows)</li><li>Incremental updates (only fetches missing rates)</li><li>Sentinel values (-1.0) mark non-existent rate combinations</li></ul><p>When Tier 1 rates are used, metrics show <code>pricing_accuracy="accurate"</code>.</p><p><strong>Tier 2 &ndash; Discount Multiplier Fallback</strong></p><p>If a rate is not cached (new instance type, cache warming), Lumina falls back to configured discount multipliers (default: 0.72 for 28% discount). When Tier 2 is used, metrics show <code>pricing_accuracy="estimated"</code>.</p><h3 id=spot-price-cache>Spot Price Cache</h3><p>Stores real-time spot market rates. Uses lazy-loading &ndash; only fetches prices for instance types that are actually running. Automatically refreshes stale prices.</p><h2 id=multi-account-support>Multi-Account Support</h2><p>Lumina uses AWS <code>AssumeRole</code> to access multiple AWS accounts from a single controller deployment. Each configured account gets its own IAM role that Lumina assumes to query EC2, Savings Plans, and pricing APIs.</p><h2 id=multi-cluster-deployments>Multi-Cluster Deployments</h2><p>When deploying Lumina to multiple clusters that report to a shared Prometheus endpoint, configure them to prevent metric duplication:</p><ul><li><strong>Management cluster</strong>: Emits all metrics (default)</li><li><strong>Worker clusters</strong>: Set <code>metrics.disableInstanceMetrics: true</code> to emit only aggregate metrics</li></ul><p>This is necessary because each Lumina instance discovers all EC2 instances across configured AWS accounts, not just instances in its own cluster.</p><h2 id=kubernetes-node-correlation>Kubernetes Node Correlation</h2><p>Lumina correlates EC2 instances with Kubernetes nodes using the provider ID on the Node object. This enables the <code>node_name</code> label on cost metrics, allowing per-node cost tracking for chargeback and cost allocation.</p><p>The <code>node_name</code> label uses a fallback chain: Kubernetes node correlation, then EC2 Name tag, then empty string.</p></div></main></div></div><footer class="td-footer row d-print-none"><div class=container-fluid><div class="row mx-md-2"><div class="td-footer__left col-6 col-sm-4 order-sm-1"><ul class=td-footer__links-list><li class=td-footer__links-item data-bs-toggle=tooltip title="GitHub Discussions" aria-label="GitHub Discussions"><a target=_blank rel=noopener href=https://github.com/nextdoor/lumina/discussions aria-label="GitHub Discussions"><i class="fab fa-github"></i></a></li></ul></div><div class="td-footer__right col-6 col-sm-4 order-sm-3"><ul class=td-footer__links-list><li class=td-footer__links-item data-bs-toggle=tooltip title=GitHub aria-label=GitHub><a target=_blank rel=noopener href=https://github.com/nextdoor/lumina aria-label=GitHub><i class="fab fa-github"></i></a></li></ul></div><div class="td-footer__center col-12 col-sm-4 py-2 order-sm-2"><span class=td-footer__copyright>&copy;
+2026
+<span class=td-footer__authors>The Lumina Authors</span></span><span class=td-footer__all_rights_reserved>All Rights Reserved</span></div></div></div></footer></div><script type=module async>
+  import mermaid from "https:\/\/cdn.jsdelivr.net\/npm\/mermaid@latest\/dist\/mermaid.esm.min.mjs";
+
+  (function ($) {
+    if ($('.mermaid').length == 0) {
+      mermaid.initialize({ startOnLoad: false });
+      return;
+    }
+
+    var params = {};
+
+    
+    
+    var norm = function (defaultConfig, params) {
+      var result = {};
+      for (const key in defaultConfig) {
+        const keyLower = key.toLowerCase();
+        if (defaultConfig.hasOwnProperty(key) && params.hasOwnProperty(keyLower)) {
+          if (typeof defaultConfig[key] === "object") {
+            result[key] = norm(defaultConfig[key], params[keyLower]);
+          } else {
+            result[key] = params[keyLower];
+          }
+        }
+      }
+      return result;
+    };
+
+    var settings = norm(mermaid.mermaidAPI.defaultConfig, params);
+    settings.startOnLoad = true;
+    if ($('html[data-bs-theme="dark"]').length) {
+      settings.theme = 'dark';
+    }
+    mermaid.initialize(settings);
+
+    
+    const lightDarkModeThemeChangeHandler = function (mutationsList, observer) {
+      for (const mutation of mutationsList) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'data-bs-theme') {
+          
+          
+          
+          location.reload();
+        }
+      }
+    };
+
+    const observer = new MutationObserver(lightDarkModeThemeChangeHandler);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-bs-theme']
+    });
+    
+
+  })(jQuery);
+</script><script src=/lumina/js/main.min.4a7a8cc982d6f5fa05fafe95c8fcbc9cd50dee051600e57e7d587df2d2a35b07.js integrity="sha256-SnqMyYLW9foF+v6VyPy8nNUN7gUWAOV+fVh98tKjWwc=" crossorigin=anonymous></script><script defer src=/lumina/js/click-to-copy.min.73478a7d4807698aed7e355eb23f9890ca18fea3158604c8471746d046702bad.js integrity="sha256-c0eKfUgHaYrtfjVesj+YkMoY/qMVhgTIRxdG0EZwK60=" crossorigin=anonymous></script><script src=/lumina/js/tabpane-persist.js></script></body></html>

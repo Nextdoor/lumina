@@ -1,0 +1,670 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Reference on Lumina</title><link>https://oss.nextdoor.com/lumina/docs/reference/</link><description>Recent content in Reference on Lumina</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/lumina/docs/reference/index.xml" rel="self" type="application/rss+xml"/><item><title>Configuration</title><link>https://oss.nextdoor.com/lumina/docs/reference/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/reference/configuration/</guid><description>&lt;p>Lumina is configured via a YAML configuration file. When deployed with Helm, the configuration is managed via the &lt;code>config&lt;/code> section in your Helm values. See also the &lt;a href="https://oss.nextdoor.com/lumina/docs/reference/helm-chart/">Helm Chart Reference&lt;/a>.&lt;/p>
+&lt;h2 id="full-configuration-example">Full Configuration Example&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># AWS Accounts Configuration&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">awsAccounts&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">accountId&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;123456789012&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;Production&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">assumeRoleArn&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;arn:aws:iam::123456789012:role/lumina-controller&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># region: &amp;#34;us-west-2&amp;#34; # Optional: override default region for this account&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">accountId&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;987654321098&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;Staging&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">assumeRoleArn&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;arn:aws:iam::987654321098:role/lumina-controller&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Default Account for non-account-specific API calls (e.g., AWS Pricing API)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># If not specified, the first account in awsAccounts is used.&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># defaultAccount:&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># accountId: &amp;#34;123456789012&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># name: &amp;#34;Production&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># assumeRoleArn: &amp;#34;arn:aws:iam::123456789012:role/lumina-controller&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Default AWS region&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">defaultRegion&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;us-west-2&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Regions to query for Reserved Instances (can be overridden per-account)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">regions&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#e6db74">&amp;#34;us-west-2&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#e6db74">&amp;#34;us-east-1&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Log level: debug, info, warn, error&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">logLevel&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;info&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Metrics endpoint address&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metricsBindAddress&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;:8080&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Health probe endpoint address&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">healthProbeBindAddress&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;:8081&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Account validation interval&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">accountValidationInterval&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;10m&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Reconciliation intervals&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">reconciliation&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">risp&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;1h&amp;#34;&lt;/span> &lt;span style="color:#75715e"># Reserved Instances &amp;amp; Savings Plans&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">ec2&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;5m&amp;#34;&lt;/span> &lt;span style="color:#75715e"># EC2 instance inventory&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">pricing&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;24h&amp;#34;&lt;/span> &lt;span style="color:#75715e"># On-demand pricing (AWS Pricing API)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">spotPricing&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;15s&amp;#34;&lt;/span> &lt;span style="color:#75715e"># Spot pricing (check for stale prices)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Pricing configuration&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">pricing&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">operatingSystems&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#e6db74">&amp;#34;Linux&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#e6db74">&amp;#34;Windows&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">spotPriceCacheExpiration&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;1h&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># defaultDiscounts:&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># ec2Instance: 0.72 # EC2 Instance SP multiplier (28% discount)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># compute: 0.72 # Compute SP multiplier (28% discount)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Metrics configuration&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metrics&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">disableInstanceMetrics&lt;/span>: &lt;span style="color:#66d9ef">false&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># labels:&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># clusterName: &amp;#34;cluster_name&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># accountName: &amp;#34;account_name&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># accountId: &amp;#34;account_id&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># region: &amp;#34;region&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># nodeName: &amp;#34;node_name&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># hostName: &amp;#34;host_name&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="aws-account-configuration">AWS Account Configuration&lt;/h2>
+&lt;p>Each AWS account requires:&lt;/p></description></item><item><title>Metrics</title><link>https://oss.nextdoor.com/lumina/docs/reference/metrics/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/reference/metrics/</guid><description>&lt;p>Lumina exposes Prometheus metrics on the &lt;code>/metrics&lt;/code> endpoint (default port 8080). This page documents all available metrics, their labels, and example PromQL queries.&lt;/p>
+
+
+&lt;div class="pageinfo pageinfo-primary">
+&lt;p>Label names shown in this document use defaults. If you have customized labels via &lt;code>metrics.labels&lt;/code> configuration, replace the label names in queries accordingly.&lt;/p>
+
+&lt;/div>
+
+&lt;h2 id="metrics-summary">Metrics Summary&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Metric Name&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#lumina_controller_running-gauge">&lt;code>lumina_controller_running&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Controller running indicator&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#lumina_account_validation_status-gauge">&lt;code>lumina_account_validation_status&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Per-account AWS validation status&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#lumina_account_validation_last_success_timestamp-gauge">&lt;code>lumina_account_validation_last_success_timestamp&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Last successful validation time&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#lumina_account_validation_duration_seconds-histogram">&lt;code>lumina_account_validation_duration_seconds&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Histogram&lt;/td>
+ &lt;td>Validation latency&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#lumina_data_freshness_seconds-gauge">&lt;code>lumina_data_freshness_seconds&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Age of cached data by type&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#lumina_data_last_success-gauge">&lt;code>lumina_data_last_success&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Data collection success indicator&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#ec2_reserved_instance-gauge">&lt;code>ec2_reserved_instance&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Reserved Instance presence&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#ec2_reserved_instance_count-gauge">&lt;code>ec2_reserved_instance_count&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>RI count by instance family&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_hourly_commitment-gauge">&lt;code>savings_plan_hourly_commitment&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>SP hourly commitment ($/hr)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_remaining_hours-gauge">&lt;code>savings_plan_remaining_hours&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Hours until SP expiration&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_current_utilization_rate-gauge">&lt;code>savings_plan_current_utilization_rate&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Current SP consumption ($/hr)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_remaining_capacity-gauge">&lt;code>savings_plan_remaining_capacity&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Unused SP capacity ($/hr)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_utilization_percent-gauge">&lt;code>savings_plan_utilization_percent&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>SP utilization percentage&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#ec2_instance-gauge">&lt;code>ec2_instance&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Running EC2 instance presence&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#ec2_instance_count-gauge">&lt;code>ec2_instance_count&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Instance count by family&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#ec2_instance_hourly_cost-gauge">&lt;code>ec2_instance_hourly_cost&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Per-instance effective hourly cost&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h2 id="controller-health">Controller Health&lt;/h2>
+&lt;h3 id="lumina_controller_running-gauge">&lt;code>lumina_controller_running&lt;/code> (gauge)&lt;/h3>
+&lt;p>Indicates whether the controller is running.&lt;/p></description></item><item><title>Helm Chart</title><link>https://oss.nextdoor.com/lumina/docs/reference/helm-chart/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/reference/helm-chart/</guid><description>&lt;p>Lumina is distributed as a Helm chart published to the Nextdoor OSS Helm repository.&lt;/p>
+&lt;h2 id="installation">Installation&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>helm repo add lumina https://oss.nextdoor.com/lumina
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>helm repo update
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>helm install lumina lumina/lumina -n lumina-system --create-namespace
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="values-reference">Values Reference&lt;/h2>
+&lt;h3 id="image">Image&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>image.repository&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>ghcr.io/nextdoor/lumina&lt;/code>&lt;/td>
+ &lt;td>Container image repository&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>image.pullPolicy&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>IfNotPresent&lt;/code>&lt;/td>
+ &lt;td>Image pull policy&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>image.tag&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Overrides the image tag (default is chart appVersion)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>imagePullSecrets&lt;/code>&lt;/td>
+ &lt;td>list&lt;/td>
+ &lt;td>&lt;code>[]&lt;/code>&lt;/td>
+ &lt;td>Image pull secrets for private registries&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="replicas-and-naming">Replicas and Naming&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>replicaCount&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>2&lt;/code>&lt;/td>
+ &lt;td>Number of controller replicas (leader election handles HA)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>nameOverride&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Override the name of the chart&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>fullnameOverride&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Override the full name of the release&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="service-account">Service Account&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.create&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Create a service account&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.automount&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Automount API credentials&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.annotations&lt;/code>&lt;/td>
+ &lt;td>object&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Annotations (e.g., &lt;code>eks.amazonaws.com/role-arn&lt;/code> for IRSA)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.name&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Service account name (auto-generated if empty)&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="pod-configuration">Pod Configuration&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>podAnnotations&lt;/code>&lt;/td>
+ &lt;td>object&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Annotations to add to the pod&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>podLabels&lt;/code>&lt;/td>
+ &lt;td>object&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Labels to add to the pod&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>nodeSelector&lt;/code>&lt;/td>
+ &lt;td>object&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Node selector for pod assignment&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>tolerations&lt;/code>&lt;/td>
+ &lt;td>list&lt;/td>
+ &lt;td>&lt;code>[]&lt;/code>&lt;/td>
+ &lt;td>Tolerations for pod assignment&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>affinity&lt;/code>&lt;/td>
+ &lt;td>object&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Affinity rules for pod assignment&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>volumes&lt;/code>&lt;/td>
+ &lt;td>list&lt;/td>
+ &lt;td>&lt;code>[]&lt;/code>&lt;/td>
+ &lt;td>Additional volumes for the deployment&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>volumeMounts&lt;/code>&lt;/td>
+ &lt;td>list&lt;/td>
+ &lt;td>&lt;code>[]&lt;/code>&lt;/td>
+ &lt;td>Additional volume mounts for the deployment&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="security-context">Security Context&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>podSecurityContext.runAsNonRoot&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Run as non-root user&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>podSecurityContext.runAsUser&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>65532&lt;/code>&lt;/td>
+ &lt;td>User ID&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>podSecurityContext.fsGroup&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>65532&lt;/code>&lt;/td>
+ &lt;td>Group ID for filesystem access&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>podSecurityContext.seccompProfile.type&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>RuntimeDefault&lt;/code>&lt;/td>
+ &lt;td>Seccomp profile&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>securityContext.allowPrivilegeEscalation&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>false&lt;/code>&lt;/td>
+ &lt;td>Prevent privilege escalation&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>securityContext.capabilities.drop&lt;/code>&lt;/td>
+ &lt;td>list&lt;/td>
+ &lt;td>&lt;code>[&amp;quot;ALL&amp;quot;]&lt;/code>&lt;/td>
+ &lt;td>Drop all capabilities&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>securityContext.readOnlyRootFilesystem&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Read-only root filesystem&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="resources">Resources&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>resources.limits.cpu&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;1&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>CPU limit&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>resources.limits.memory&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>512Mi&lt;/code>&lt;/td>
+ &lt;td>Memory limit&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>resources.requests.cpu&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>200m&lt;/code>&lt;/td>
+ &lt;td>CPU request&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>resources.requests.memory&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>128Mi&lt;/code>&lt;/td>
+ &lt;td>Memory request&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="health-probes">Health Probes&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>livenessProbe.httpGet.path&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>/healthz&lt;/code>&lt;/td>
+ &lt;td>Liveness probe path&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>livenessProbe.httpGet.port&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>8081&lt;/code>&lt;/td>
+ &lt;td>Liveness probe port&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>livenessProbe.initialDelaySeconds&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>15&lt;/code>&lt;/td>
+ &lt;td>Initial delay&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>livenessProbe.periodSeconds&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>20&lt;/code>&lt;/td>
+ &lt;td>Check period&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>readinessProbe.httpGet.path&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>/readyz&lt;/code>&lt;/td>
+ &lt;td>Readiness probe path&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>readinessProbe.httpGet.port&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>8081&lt;/code>&lt;/td>
+ &lt;td>Readiness probe port&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>readinessProbe.initialDelaySeconds&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>5&lt;/code>&lt;/td>
+ &lt;td>Initial delay&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>readinessProbe.periodSeconds&lt;/code>&lt;/td>
+ &lt;td>int&lt;/td>
+ &lt;td>&lt;code>10&lt;/code>&lt;/td>
+ &lt;td>Check period&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="controller-manager">Controller Manager&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.leaderElection.enabled&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Enable leader election for HA&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.metricsBindAddress&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>0.0.0.0:8080&lt;/code>&lt;/td>
+ &lt;td>Metrics server bind address&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.metricsSecure&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>false&lt;/code>&lt;/td>
+ &lt;td>Enable HTTPS metrics endpoint&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.healthProbeBindAddress&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>0.0.0.0:8081&lt;/code>&lt;/td>
+ &lt;td>Health probe bind address&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.logLevel&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>info&lt;/code>&lt;/td>
+ &lt;td>Log level (debug, info, error)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.metricsAuth&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>false&lt;/code>&lt;/td>
+ &lt;td>Enable metrics RBAC authentication&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.enableHttp2&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>false&lt;/code>&lt;/td>
+ &lt;td>Enable HTTP/2&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.extraArgs&lt;/code>&lt;/td>
+ &lt;td>list&lt;/td>
+ &lt;td>&lt;code>[]&lt;/code>&lt;/td>
+ &lt;td>Extra command-line arguments&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="controller-manager--logging">Controller Manager &amp;ndash; Logging&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.zap.devel&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>false&lt;/code>&lt;/td>
+ &lt;td>Development mode logging&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.zap.encoder&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>json&lt;/code>&lt;/td>
+ &lt;td>Log encoding (json or console)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.zap.stacktraceLevel&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>error&lt;/code>&lt;/td>
+ &lt;td>Stacktrace capture level&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.zap.timeEncoding&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>epoch&lt;/code>&lt;/td>
+ &lt;td>Time encoding format&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="controller-manager--tls">Controller Manager &amp;ndash; TLS&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.metricsCerts.path&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Metrics certificate directory&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.metricsCerts.certName&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>tls.crt&lt;/code>&lt;/td>
+ &lt;td>Certificate filename&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.metricsCerts.keyName&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>tls.key&lt;/code>&lt;/td>
+ &lt;td>Key filename&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.webhookCerts.path&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Webhook certificate directory&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.webhookCerts.certName&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>tls.crt&lt;/code>&lt;/td>
+ &lt;td>Certificate filename&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>controllerManager.webhookCerts.keyName&lt;/code>&lt;/td>
+ &lt;td>string&lt;/td>
+ &lt;td>&lt;code>tls.key&lt;/code>&lt;/td>
+ &lt;td>Key filename&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="lumina-configuration">Lumina Configuration&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Key&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>skipConfig&lt;/code>&lt;/td>
+ &lt;td>bool&lt;/td>
+ &lt;td>&lt;code>false&lt;/code>&lt;/td>
+ &lt;td>Skip creating the ConfigMap (useful for CI/testing)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>config&lt;/code>&lt;/td>
+ &lt;td>object&lt;/td>
+ &lt;td>See below&lt;/td>
+ &lt;td>Controller configuration (maps to config.yaml)&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;p>The &lt;code>config&lt;/code> section maps directly to the Lumina configuration file. See the &lt;a href="https://oss.nextdoor.com/lumina/docs/reference/configuration/">Configuration Reference&lt;/a> for all options.&lt;/p></description></item><item><title>Debug Endpoints</title><link>https://oss.nextdoor.com/lumina/docs/reference/debug-endpoints/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/reference/debug-endpoints/</guid><description>&lt;p>Lumina provides HTTP debug endpoints for inspecting internal cache state. These endpoints are useful for troubleshooting cost calculation issues, verifying pricing data, and understanding what data Lumina has loaded.&lt;/p>
+
+
+&lt;div class="pageinfo pageinfo-warning">
+&lt;p>Debug endpoints expose internal cache data including AWS account IDs, instance details, and pricing information. Ensure these endpoints are only accessible in development/staging environments or protected by appropriate authentication in production.&lt;/p>
+
+&lt;/div>
+
+&lt;p>All debug endpoints are available at &lt;code>http://localhost:8080/debug/cache/&lt;/code> (or your configured metrics bind address). They return JSON responses and are read-only.&lt;/p></description></item></channel></rss>

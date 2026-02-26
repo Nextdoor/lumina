@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Getting Started on Lumina</title><link>https://oss.nextdoor.com/lumina/docs/getting-started/</link><description>Recent content in Getting Started on Lumina</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/lumina/docs/getting-started/index.xml" rel="self" type="application/rss+xml"/><item><title>Installation</title><link>https://oss.nextdoor.com/lumina/docs/getting-started/installation/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/getting-started/installation/</guid><description>&lt;h2 id="prerequisites">Prerequisites&lt;/h2>
+&lt;ul>
+&lt;li>Kubernetes cluster (1.30+)&lt;/li>
+&lt;li>Helm 3.x&lt;/li>
+&lt;li>AWS credentials with cross-account access (see &lt;a href="https://oss.nextdoor.com/lumina/docs/getting-started/installation/#iam-setup">IAM Setup&lt;/a> below)&lt;/li>
+&lt;li>Prometheus (for scraping cost metrics)&lt;/li>
+&lt;/ul>
+&lt;h2 id="install-with-helm">Install with Helm&lt;/h2>
+&lt;p>Helm charts are automatically published to the Nextdoor OSS Helm repository.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Add the Lumina Helm repository&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>helm repo add lumina https://oss.nextdoor.com/lumina
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>helm repo update
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Install Lumina with default values&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>helm install lumina lumina/lumina -n lumina-system --create-namespace
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Or install a specific version&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>helm install lumina lumina/lumina --version 0.2.8 -n lumina-system --create-namespace
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="customize-with-your-own-values">Customize with Your Own Values&lt;/h3>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>helm install lumina lumina/lumina -n lumina-system --create-namespace &lt;span style="color:#ae81ff">\
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">&lt;/span> --set awsAccounts&lt;span style="color:#f92672">[&lt;/span>0&lt;span style="color:#f92672">]&lt;/span>.name&lt;span style="color:#f92672">=&lt;/span>production &lt;span style="color:#ae81ff">\
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">&lt;/span> --set awsAccounts&lt;span style="color:#f92672">[&lt;/span>0&lt;span style="color:#f92672">]&lt;/span>.accountId&lt;span style="color:#f92672">=&lt;/span>&lt;span style="color:#ae81ff">123456789012&lt;/span> &lt;span style="color:#ae81ff">\
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">&lt;/span> --set awsAccounts&lt;span style="color:#f92672">[&lt;/span>0&lt;span style="color:#f92672">]&lt;/span>.roleArn&lt;span style="color:#f92672">=&lt;/span>arn:aws:iam::123456789012:role/LuminaReadOnly
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>See the &lt;a href="https://oss.nextdoor.com/lumina/docs/reference/helm-chart/">Helm Chart Reference&lt;/a> for all available values.&lt;/p></description></item></channel></rss>

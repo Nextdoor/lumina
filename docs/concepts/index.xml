@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Concepts on Lumina</title><link>https://oss.nextdoor.com/lumina/docs/concepts/</link><description>Recent content in Concepts on Lumina</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/lumina/docs/concepts/index.xml" rel="self" type="application/rss+xml"/><item><title>Architecture</title><link>https://oss.nextdoor.com/lumina/docs/concepts/architecture/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/concepts/architecture/</guid><description>&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>Lumina runs as a Kubernetes controller in each cluster and performs the following:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>Discovers&lt;/strong> all AWS Savings Plans and Reserved Instances across your organization&lt;/li>
+&lt;li>&lt;strong>Tracks&lt;/strong> all EC2 instances in real-time (5-minute refresh)&lt;/li>
+&lt;li>&lt;strong>Correlates&lt;/strong> EC2 instances with Kubernetes nodes via provider ID&lt;/li>
+&lt;li>&lt;strong>Calculates&lt;/strong> effective costs per instance using AWS&amp;rsquo;s Savings Plans allocation algorithm&lt;/li>
+&lt;li>&lt;strong>Exposes&lt;/strong> Prometheus metrics for monitoring and alerting&lt;/li>
+&lt;/ol>
+&lt;pre class="mermaid">graph TD
+ classDef aws fill:#E8F0FE,stroke:#4285F4,color:#333
+ classDef ctrl fill:#E6F4EA,stroke:#34A853,color:#333
+ classDef prom fill:#FFF3E0,stroke:#FB8C00,color:#333
+
+ subgraph K8S[&amp;#34;Kubernetes Cluster&amp;#34;]
+ LUMINA[&amp;#34;Lumina Controller&amp;#34;]:::ctrl
+ PROM[&amp;#34;Prometheus&amp;#34;]:::prom
+ end
+
+ subgraph AWS[&amp;#34;AWS Organization (All Accounts)&amp;#34;]
+ EC2[&amp;#34;EC2 Instances&amp;#34;]:::aws
+ RI[&amp;#34;Reserved Instances&amp;#34;]:::aws
+ SP[&amp;#34;Savings Plans&amp;#34;]:::aws
+ SPOT[&amp;#34;Spot Prices&amp;#34;]:::aws
+ end
+
+ LUMINA --&amp;gt;|Exposes /metrics| PROM
+ LUMINA --&amp;gt;|AssumeRole &amp;#43; API queries| EC2
+ LUMINA --&amp;gt;|AssumeRole &amp;#43; API queries| RI
+ LUMINA --&amp;gt;|AssumeRole &amp;#43; API queries| SP
+ LUMINA --&amp;gt;|AssumeRole &amp;#43; API queries| SPOT&lt;/pre>
+&lt;h2 id="rate-based-model">Rate-Based Model&lt;/h2>
+&lt;p>Lumina uses an &lt;strong>instantaneous rate-based model&lt;/strong> (dollars per hour snapshot) rather than cumulative tracking within each billing hour like AWS billing does. This means Lumina&amp;rsquo;s costs are estimates based on &amp;ldquo;if current instances keep running.&amp;rdquo;&lt;/p></description></item><item><title>Cost Calculation</title><link>https://oss.nextdoor.com/lumina/docs/concepts/cost-calculation/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/concepts/cost-calculation/</guid><description>&lt;p>This page describes the algorithms Lumina uses to calculate per-instance costs, including how AWS Savings Plans and Reserved Instances are allocated. It also documents known limitations and differences from AWS&amp;rsquo;s actual billing.&lt;/p>
+&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>Lumina replicates AWS&amp;rsquo;s cost allocation algorithm to estimate how Savings Plans (SPs) and Reserved Instances (RIs) are applied to running EC2 instances. The goal is to provide &lt;strong>real-time cost visibility&lt;/strong> for Kubernetes capacity management, not to replicate AWS billing exactly.&lt;/p></description></item></channel></rss>

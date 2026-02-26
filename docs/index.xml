@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Documentation on Lumina</title><link>https://oss.nextdoor.com/lumina/docs/</link><description>Recent content in Documentation on Lumina</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/lumina/docs/index.xml" rel="self" type="application/rss+xml"/><item><title>Troubleshooting</title><link>https://oss.nextdoor.com/lumina/docs/troubleshooting/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/troubleshooting/</guid><description>&lt;h2 id="controller-not-starting">Controller Not Starting&lt;/h2>
+&lt;p>&lt;strong>Symptoms&lt;/strong>&lt;/p>
+&lt;ul>
+&lt;li>Pod is in CrashLoopBackOff&lt;/li>
+&lt;li>Logs show configuration errors&lt;/li>
+&lt;/ul>
+&lt;p>&lt;strong>Resolution&lt;/strong>&lt;/p>
+&lt;ol>
+&lt;li>
+&lt;p>Check logs for configuration validation errors:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>kubectl logs -n lumina-system deployment/lumina-controller-manager
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;/li>
+&lt;li>
+&lt;p>Verify the ConfigMap has valid YAML:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>kubectl get configmap -n lumina-system lumina-config -o yaml
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;/li>
+&lt;li>
+&lt;p>Common config issues (see the &lt;a href="https://oss.nextdoor.com/lumina/docs/reference/configuration/">Configuration Reference&lt;/a> for valid formats):&lt;/p>
+&lt;ul>
+&lt;li>Account IDs must be exactly 12 digits&lt;/li>
+&lt;li>IAM role ARNs must match the format &lt;code>arn:aws:iam::&amp;lt;account-id&amp;gt;:role/&amp;lt;role-name&amp;gt;&lt;/code>&lt;/li>
+&lt;li>ARN account ID must match the configured &lt;code>accountId&lt;/code>&lt;/li>
+&lt;li>Duration values must be valid Go durations (e.g., &amp;ldquo;5m&amp;rdquo;, &amp;ldquo;1h&amp;rdquo;, &amp;ldquo;24h&amp;rdquo;)&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ol>
+&lt;h2 id="aws-account-access-failures">AWS Account Access Failures&lt;/h2>
+&lt;p>&lt;strong>Symptoms&lt;/strong>&lt;/p></description></item><item><title>Development</title><link>https://oss.nextdoor.com/lumina/docs/development/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/lumina/docs/development/</guid><description>&lt;h2 id="prerequisites">Prerequisites&lt;/h2>
+&lt;ul>
+&lt;li>&lt;strong>Go 1.24+&lt;/strong>&lt;/li>
+&lt;li>&lt;strong>AWS CLI&lt;/strong> configured with credentials&lt;/li>
+&lt;li>AWS IAM permissions to assume roles and query EC2/Savings Plans&lt;/li>
+&lt;li>&lt;strong>kubebuilder 4.10+&lt;/strong> (for development)&lt;/li>
+&lt;/ul>
+&lt;h2 id="setup">Setup&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Clone and install dependencies&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>git clone https://github.com/nextdoor/lumina.git
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>cd lumina
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>go mod download
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Create local config&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>cp config.example.yaml config.yaml
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Edit config.yaml with your AWS accounts&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="running-locally">Running Locally&lt;/h2>
+&lt;p>Run the controller in standalone mode (no Kubernetes required):&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>make run-local
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>This runs the controller with:&lt;/p>
+&lt;ul>
+&lt;li>AWS data collection only (no Kubernetes)&lt;/li>
+&lt;li>Debug logging enabled&lt;/li>
+&lt;li>Metrics on http://localhost:8080/metrics&lt;/li>
+&lt;li>Health checks on http://localhost:8081/healthz&lt;/li>
+&lt;/ul>
+&lt;h3 id="verify-it-is-working">Verify It Is Working&lt;/h3>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Check metrics&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>curl http://localhost:8080/metrics | grep savings_plan
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Check health&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>curl http://localhost:8081/readyz
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="running-with-kubernetes">Running with Kubernetes&lt;/h3>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run controller against current kubeconfig context&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make run
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run with debug logging&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make run ARGS&lt;span style="color:#f92672">=&lt;/span>&lt;span style="color:#e6db74">&amp;#34;--zap-log-level=debug&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="building">Building&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Build binary&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make build
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Build using GoReleaser (matches CI exactly)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>bin/goreleaser build --snapshot --clean
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Build Docker images using GoReleaser&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>IMG&lt;span style="color:#f92672">=&lt;/span>lumina:dev bin/goreleaser release --snapshot --clean
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="loading-into-kind">Loading into Kind&lt;/h3>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Build image with GoReleaser&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>IMG&lt;span style="color:#f92672">=&lt;/span>lumina:dev bin/goreleaser release --snapshot --clean
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Load into Kind cluster&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>kind load docker-image lumina:dev
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Deploy to Kind&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make deploy IMG&lt;span style="color:#f92672">=&lt;/span>lumina:dev
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="testing">Testing&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run tests&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>go test ./...
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run tests with race detection&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>go test -race ./...
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run linter&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make lint
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run E2E tests (requires Kind cluster)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make test-e2e
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Coverage report&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make cover
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># HTML coverage report&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make coverhtml
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="test-requirements">Test Requirements&lt;/h3>
+&lt;ul>
+&lt;li>&lt;strong>100% code coverage is mandatory&lt;/strong> for all code in this repository&lt;/li>
+&lt;li>Use &lt;code>// coverage:ignore&lt;/code> comments only when 100% coverage is genuinely not possible&lt;/li>
+&lt;li>Every &lt;code>// coverage:ignore&lt;/code> must have a clear comment explaining why&lt;/li>
+&lt;li>CI fails if coverage drops below 100%&lt;/li>
+&lt;/ul>
+&lt;h3 id="testing-strategy">Testing Strategy&lt;/h3>
+&lt;ul>
+&lt;li>&lt;strong>Unit tests&lt;/strong>: Test individual functions and methods in isolation&lt;/li>
+&lt;li>&lt;strong>Integration tests&lt;/strong>: Test component interactions and real workflows with realistic scenarios&lt;/li>
+&lt;li>&lt;strong>Table-driven tests&lt;/strong>: Use Go&amp;rsquo;s table-driven test pattern for multiple scenarios&lt;/li>
+&lt;li>Unit tests go in &lt;code>*_test.go&lt;/code> files alongside source&lt;/li>
+&lt;li>Integration tests go in &lt;code>integration_test.go&lt;/code> or separate &lt;code>integration/&lt;/code> directory&lt;/li>
+&lt;/ul>
+&lt;h2 id="pre-commit-checklist">Pre-Commit Checklist&lt;/h2>
+&lt;p>Always run before committing:&lt;/p></description></item></channel></rss>
