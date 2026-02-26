@@ -14,23 +14,29 @@ Lumina runs as a Kubernetes controller in each cluster and performs the followin
 4. **Calculates** effective costs per instance using AWS's Savings Plans allocation algorithm
 5. **Exposes** Prometheus metrics for monitoring and alerting
 
-```
-+-------------------------------------+
-|   Kubernetes Cluster                |
-|  +---------------+   +------------+ |
-|  |   Lumina      |-->| Prometheus | |
-|  |  Controller   |   +------------+ |
-|  +---------------+                   |
-+--------+----------------------------+
-         | AssumeRole + Query APIs
-         v
-+-------------------------------------+
-|   AWS Organization (All Accounts)   |
-|  - EC2 Instances                    |
-|  - Reserved Instances               |
-|  - Savings Plans                    |
-|  - Spot Prices                      |
-+-------------------------------------+
+```mermaid
+graph TD
+    classDef aws fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef ctrl fill:#E6F4EA,stroke:#34A853,color:#333
+    classDef prom fill:#FFF3E0,stroke:#FB8C00,color:#333
+
+    subgraph K8S["Kubernetes Cluster"]
+        LUMINA["Lumina Controller"]:::ctrl
+        PROM["Prometheus"]:::prom
+    end
+
+    subgraph AWS["AWS Organization (All Accounts)"]
+        EC2["EC2 Instances"]:::aws
+        RI["Reserved Instances"]:::aws
+        SP["Savings Plans"]:::aws
+        SPOT["Spot Prices"]:::aws
+    end
+
+    LUMINA -->|Exposes /metrics| PROM
+    LUMINA -->|AssumeRole + API queries| EC2
+    LUMINA -->|AssumeRole + API queries| RI
+    LUMINA -->|AssumeRole + API queries| SP
+    LUMINA -->|AssumeRole + API queries| SPOT
 ```
 
 ## Rate-Based Model
@@ -41,6 +47,50 @@ Key concepts:
 
 - **ShelfPrice**: On-demand rate with no discounts (e.g., $1.00/hr for m5.xlarge)
 - **EffectiveCost**: Actual estimated cost after all discounts (e.g., $0.34/hr with SP)
+
+### Data Flow
+
+```mermaid
+graph TD
+    classDef api fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef recon fill:#E6F4EA,stroke:#34A853,color:#333
+    classDef cache fill:#FFF3E0,stroke:#FB8C00,color:#333
+    classDef output fill:#FCE4EC,stroke:#E91E63,color:#333
+
+    EC2_API["EC2 DescribeInstances"]:::api
+    RI_API["EC2 DescribeReservedInstances"]:::api
+    SP_API["DescribeSavingsPlans"]:::api
+    SPR_API["DescribeSavingsPlanRates"]:::api
+    SPOT_API["EC2 Spot Price History"]:::api
+    PRICING_API["AWS Pricing API"]:::api
+
+    EC2R["EC2 Reconciler"]:::recon
+    RISPR["RISP Reconciler"]:::recon
+    SPRR["SP Rates Reconciler"]:::recon
+    SPOTR["Spot Reconciler"]:::recon
+    PRICINGR["Pricing Reconciler"]:::recon
+
+    EC2C["EC2 Cache"]:::cache
+    RISPC["RISP Cache"]:::cache
+    PRICEC["Pricing Cache"]:::cache
+    SPOTC["Spot Price Cache"]:::cache
+
+    COST["Cost Calculator"]:::recon
+    METRICS["Prometheus Metrics"]:::output
+
+    EC2_API --> EC2R --> EC2C
+    RI_API --> RISPR --> RISPC
+    SP_API --> RISPR
+    SPR_API --> SPRR --> PRICEC
+    SPOT_API --> SPOTR --> SPOTC
+    PRICING_API --> PRICINGR --> PRICEC
+
+    EC2C --> COST
+    RISPC --> COST
+    PRICEC --> COST
+    SPOTC --> COST
+    COST --> METRICS
+```
 
 ## Reconciliation Loops
 
@@ -54,6 +104,21 @@ Lumina uses multiple reconciliation loops running at different intervals, each r
 | **SP Rates** | 1-2m | DescribeSavingsPlanRates | Incremental; only fetches missing rates |
 | **Spot Pricing** | 15s | EC2 Spot Price History | Fast checks OK due to lazy-loading |
 | **Cost** | Event-driven | Internal calculation | Triggered by cache updates |
+
+```mermaid
+graph LR
+    classDef step fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef trigger fill:#E6F4EA,stroke:#34A853,color:#333
+
+    TIMER["Timer fires<br/>(per-reconciler interval)"]:::trigger
+    FETCH["Fetch data<br/>from AWS API"]:::step
+    UPDATE["Update<br/>in-memory cache"]:::step
+    NOTIFY["Notify cost<br/>calculator"]:::trigger
+    RECALC["Recalculate<br/>all instance costs"]:::step
+    EXPOSE["Update<br/>Prometheus metrics"]:::step
+
+    TIMER --> FETCH --> UPDATE --> NOTIFY --> RECALC --> EXPOSE
+```
 
 ## Caching Architecture
 

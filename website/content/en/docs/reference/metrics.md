@@ -10,6 +10,27 @@ Lumina exposes Prometheus metrics on the `/metrics` endpoint (default port 8080)
 Label names shown in this document use defaults. If you have customized labels via `metrics.labels` configuration, replace the label names in queries accordingly.
 {{% /pageinfo %}}
 
+## Metrics Summary
+
+| Metric Name | Type | Description |
+|-------------|------|-------------|
+| [`lumina_controller_running`](#lumina_controller_running-gauge) | Gauge | Controller running indicator |
+| [`lumina_account_validation_status`](#lumina_account_validation_status-gauge) | Gauge | Per-account AWS validation status |
+| [`lumina_account_validation_last_success_timestamp`](#lumina_account_validation_last_success_timestamp-gauge) | Gauge | Last successful validation time |
+| [`lumina_account_validation_duration_seconds`](#lumina_account_validation_duration_seconds-histogram) | Histogram | Validation latency |
+| [`lumina_data_freshness_seconds`](#lumina_data_freshness_seconds-gauge) | Gauge | Age of cached data by type |
+| [`lumina_data_last_success`](#lumina_data_last_success-gauge) | Gauge | Data collection success indicator |
+| [`ec2_reserved_instance`](#ec2_reserved_instance-gauge) | Gauge | Reserved Instance presence |
+| [`ec2_reserved_instance_count`](#ec2_reserved_instance_count-gauge) | Gauge | RI count by instance family |
+| [`savings_plan_hourly_commitment`](#savings_plan_hourly_commitment-gauge) | Gauge | SP hourly commitment ($/hr) |
+| [`savings_plan_remaining_hours`](#savings_plan_remaining_hours-gauge) | Gauge | Hours until SP expiration |
+| [`savings_plan_current_utilization_rate`](#savings_plan_current_utilization_rate-gauge) | Gauge | Current SP consumption ($/hr) |
+| [`savings_plan_remaining_capacity`](#savings_plan_remaining_capacity-gauge) | Gauge | Unused SP capacity ($/hr) |
+| [`savings_plan_utilization_percent`](#savings_plan_utilization_percent-gauge) | Gauge | SP utilization percentage |
+| [`ec2_instance`](#ec2_instance-gauge) | Gauge | Running EC2 instance presence |
+| [`ec2_instance_count`](#ec2_instance_count-gauge) | Gauge | Instance count by family |
+| [`ec2_instance_hourly_cost`](#ec2_instance_hourly_cost-gauge) | Gauge | Per-instance effective hourly cost |
+
 ## Controller Health
 
 ### `lumina_controller_running` (gauge)

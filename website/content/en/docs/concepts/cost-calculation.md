@@ -36,6 +36,36 @@ AWS applies discounts in strict priority order ([AWS Savings Plans application o
 4. **Compute Savings Plans** -- Applied to any instance family, any region
 5. **On-Demand** -- Remaining uncovered usage pays full on-demand rates
 
+```mermaid
+graph TD
+    classDef spot fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef ri fill:#E6F4EA,stroke:#34A853,color:#333
+    classDef sp fill:#FFF3E0,stroke:#FB8C00,color:#333
+    classDef od fill:#FCE4EC,stroke:#E91E63,color:#333
+    classDef check fill:#F3E5F5,stroke:#9C27B0,color:#333
+
+    START["EC2 Instance"]:::check
+    IS_SPOT{"Spot instance?"}:::check
+    SPOT_RATE["Pay spot market rate"]:::spot
+    HAS_RI{"Matching RI<br/>available?"}:::check
+    RI_RATE["RI-covered<br/>EffectiveCost = $0"]:::ri
+    HAS_EC2SP{"EC2 Instance SP<br/>with capacity?"}:::check
+    EC2SP_RATE["EC2 Instance SP rate"]:::sp
+    HAS_CSP{"Compute SP<br/>with capacity?"}:::check
+    CSP_RATE["Compute SP rate"]:::sp
+    OD_RATE["On-Demand rate"]:::od
+
+    START --> IS_SPOT
+    IS_SPOT -->|Yes| SPOT_RATE
+    IS_SPOT -->|No| HAS_RI
+    HAS_RI -->|Yes| RI_RATE
+    HAS_RI -->|No| HAS_EC2SP
+    HAS_EC2SP -->|Yes| EC2SP_RATE
+    HAS_EC2SP -->|No| HAS_CSP
+    HAS_CSP -->|Yes| CSP_RATE
+    HAS_CSP -->|No| OD_RATE
+```
+
 Lumina implements all of these priorities correctly.
 
 ## Reserved Instances Algorithm
@@ -62,6 +92,25 @@ Reserved Instances match based on ([AWS RI Matching Rules](https://docs.aws.amaz
    - EffectiveCost = $0 (RIs are pre-paid)
    - RICoverage = ShelfPrice (what the RI contributed)
    - CoverageType = "reserved_instance"
+```
+
+```mermaid
+graph TD
+    classDef step fill:#E8F0FE,stroke:#4285F4,color:#333
+    classDef decision fill:#F3E5F5,stroke:#9C27B0,color:#333
+    classDef result fill:#E6F4EA,stroke:#34A853,color:#333
+
+    GROUP["Group RIs by<br/>instance_type + AZ + account"]:::step
+    FIND["Find matching running instances<br/>(exclude spot)"]:::step
+    SORT["Sort instances by launch time<br/>(oldest first)"]:::step
+    HAS_RI{"RI count<br/>remaining?"}:::decision
+    APPLY["Apply RI coverage<br/>EffectiveCost = $0"]:::result
+    NEXT["Move to next instance"]:::step
+    DONE["Remaining instances<br/>eligible for SP coverage"]:::result
+
+    GROUP --> FIND --> SORT --> HAS_RI
+    HAS_RI -->|Yes| APPLY --> NEXT --> HAS_RI
+    HAS_RI -->|No| DONE
 ```
 
 **RI coverage is binary**: An instance is either fully RI-covered or not covered at all.

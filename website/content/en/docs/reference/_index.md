@@ -4,9 +4,12 @@ description: "Detailed reference documentation for Lumina configuration, metrics
 weight: 30
 ---
 
-Comprehensive reference documentation for operating Lumina.
+This section contains detailed reference documentation for operating and configuring Lumina. Use these pages when you need specific values, formats, or API details.
 
-- [Configuration]({{< relref "configuration" >}}) -- All config options, environment variables, and defaults
-- [Metrics]({{< relref "metrics" >}}) -- Full Prometheus metrics catalog with PromQL examples
-- [Helm Chart]({{< relref "helm-chart" >}}) -- Helm values reference
-- [Debug Endpoints]({{< relref "debug-endpoints" >}}) -- HTTP debug API for inspecting cache state
+- [Configuration]({{< relref "configuration" >}}) -- Complete YAML configuration reference including AWS account setup, reconciliation intervals, pricing tuning, and environment variable overrides. Start here when customizing Lumina's behavior.
+
+- [Metrics]({{< relref "metrics" >}}) -- Full catalog of every Prometheus metric Lumina exposes, with labels, descriptions, and ready-to-use PromQL queries for alerting and dashboards.
+
+- [Helm Chart]({{< relref "helm-chart" >}}) -- All available Helm values for deploying Lumina, including resource limits, service account configuration, and multi-cluster settings.
+
+- [Debug Endpoints]({{< relref "debug-endpoints" >}}) -- HTTP endpoints for inspecting Lumina's internal cache state, useful for verifying that EC2 instances, Savings Plans, and pricing data are being collected correctly.

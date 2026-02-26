@@ -204,24 +204,4 @@ These are **multipliers** (what you pay), not discount percentages. Typical valu
 
 ## IAM Permissions Required
 
-Each target AWS account needs a role with these permissions:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeInstances",
-        "ec2:DescribeReservedInstances",
-        "ec2:DescribeSpotPriceHistory",
-        "savingsplans:DescribeSavingsPlans",
-        "savingsplans:DescribeSavingsPlansOfferingRates",
-        "pricing:GetProducts"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
+For IAM policy setup, including the required permissions and trust relationship, see the [Installation Guide]({{< relref "../getting-started/installation#iam-setup" >}}).
