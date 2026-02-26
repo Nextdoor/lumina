@@ -1,0 +1,85 @@
+// Nextdoor brand colors
+$nd-green-50: #008E5A;
+$nd-green-60: #007852;
+$nd-green-70: #006142;
+$nd-blue-gray-70: #232F46;
+$nd-blue-gray-80: #1A2233;
+$nd-blue-gray-90: #0D111A;
+$nd-gray-0: #F9F9F9;
+$nd-gray-5: #F2F2F2;
+$nd-lime-50: #8ED500;
+
+// Nextdoor font stack
+$nd-font-family: Lato, system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, 'Roboto', 'Segoe UI', Arial, sans-serif;
+
+// Import Lato from Google Fonts
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
+
+// Apply Nextdoor fonts globally
+body {
+  font-family: $nd-font-family;
+}
+
+// Hero cover block
+.td-cover-block {
+  background: linear-gradient(135deg, $nd-blue-gray-80 0%, $nd-green-70 100%);
+
+  .display-1 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}
+
+// Navbar
+.td-navbar {
+  background: $nd-blue-gray-90 !important;
+}
+
+// Lead section
+.td-box--dark {
+  background-color: $nd-blue-gray-70;
+}
+
+// Feature section
+.td-box--white {
+  background-color: #ffffff;
+
+  h4 {
+    color: $nd-blue-gray-70;
+    font-weight: 600;
+  }
+}
+
+// Light section (Quick Start)
+.td-box--light {
+  background-color: $nd-gray-0;
+}
+
+// Buttons — Nextdoor pill style
+.btn-secondary {
+  background-color: $nd-green-50;
+  border-color: $nd-green-50;
+  border-radius: 10000px;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 12px 32px;
+  transition: filter 150ms ease;
+
+  &:hover {
+    background-color: $nd-green-50;
+    border-color: $nd-green-50;
+    filter: brightness(0.92);
+    color: #ffffff;
+  }
+}
+
+// Footer
+.td-footer {
+  background-color: $nd-blue-gray-90;
+}
+
+// Feature icons — brand green
+.td-box--white .h1 > i {
+  color: $nd-green-50;
+  font-size: 2.5rem;
+}
