@@ -92,6 +92,9 @@ type CostReconciler struct {
 	// dependencies (Pricing, RISP, EC2, SPRates, SpotPricing) are confirmed ready.
 	// Uses atomic operations for thread-safe access from multiple goroutines.
 	initialized atomic.Bool
+
+	// HealthTracker is used to report permanent failures to the readiness probe.
+	HealthTracker *ReconcilerHealthTracker
 }
 
 // Reconcile performs a single cost calculation cycle.
@@ -188,11 +191,19 @@ func (r *CostReconciler) Run(ctx context.Context) error {
 	// Mark as initialized so debouncer-triggered calculations can proceed
 	r.initialized.Store(true)
 
-	// Run initial calculation now that dependencies are ready
-	log.Info("running initial cost calculation")
-	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		log.Error(err, "initial cost calculation failed")
-		// Don't exit - future cache updates will trigger recalculation
+	// Run initial calculation with retry logic now that dependencies are ready.
+	// Retry logic provides self-healing for transient errors.
+	log.Info("⏳ running initial cost calculation (with retry)")
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), log, "initial cost calculation", func() error {
+		_, err := r.Reconcile(ctx, ctrl.Request{})
+		return err
+	})
+	if err != nil {
+		log.Error(err, "❌ initial cost calculation failed permanently")
+		if r.HealthTracker != nil {
+			r.HealthTracker.MarkFailed("cost", err)
+		}
+		return err
 	}
 
 	log.Info("cost reconciler ready, waiting for cache updates to trigger recalculation")

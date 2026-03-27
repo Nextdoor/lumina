@@ -59,6 +59,9 @@ type RISPReconciler struct {
 	// (like SPRatesReconciler) to wait for RISP data to be populated before
 	// they start their work.
 	ReadyChan chan struct{}
+
+	// HealthTracker is used to report permanent failures to the readiness probe.
+	HealthTracker *ReconcilerHealthTracker
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -409,11 +412,19 @@ func (r *RISPReconciler) Run(ctx context.Context) error {
 	log := r.Log
 	log.Info("starting RISP reconciler")
 
-	// Run immediately on startup
-	log.Info("running initial reconciliation")
-	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		log.Error(err, "initial reconciliation failed")
-		// Don't exit - continue with periodic reconciliation
+	// Run initial reconciliation with retry logic (BLOCKING)
+	// Retry logic provides self-healing for transient errors (API rate limits, network issues).
+	log.Info("⏳ running initial RISP reconciliation (BLOCKING with retry)")
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), log, "initial RISP reconciliation", func() error {
+		_, err := r.Reconcile(ctx, ctrl.Request{})
+		return err
+	})
+	if err != nil {
+		log.Error(err, "❌ initial RISP reconciliation failed permanently")
+		if r.HealthTracker != nil {
+			r.HealthTracker.MarkFailed("risp", err)
+		}
+		return err
 	}
 
 	// Signal that initial reconciliation is complete (if channel was provided)

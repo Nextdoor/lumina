@@ -71,6 +71,9 @@ type EC2Reconciler struct {
 
 	// readyOnce ensures ReadyChan is closed only once (after first reconciliation)
 	readyOnce sync.Once
+
+	// HealthTracker is used to report permanent failures to the readiness probe.
+	HealthTracker *ReconcilerHealthTracker
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -288,11 +291,19 @@ func (r *EC2Reconciler) Run(ctx context.Context) error {
 	log := r.Log
 	log.Info("starting EC2 reconciler")
 
-	// Run immediately on startup
-	log.Info("running initial reconciliation")
-	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		log.Error(err, "initial reconciliation failed")
-		// Don't exit - continue with periodic reconciliation
+	// Run initial reconciliation with retry logic (BLOCKING)
+	// Retry logic provides self-healing for transient errors (API rate limits, network issues).
+	log.Info("⏳ running initial EC2 reconciliation (BLOCKING with retry)")
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), log, "initial EC2 reconciliation", func() error {
+		_, err := r.Reconcile(ctx, ctrl.Request{})
+		return err
+	})
+	if err != nil {
+		log.Error(err, "❌ initial EC2 reconciliation failed permanently")
+		if r.HealthTracker != nil {
+			r.HealthTracker.MarkFailed("ec2", err)
+		}
+		return err
 	}
 
 	// Signal that initial reconciliation is complete (if channel was provided)

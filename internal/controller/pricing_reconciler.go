@@ -74,6 +74,12 @@ type PricingReconciler struct {
 	// (like SPRatesReconciler and CostReconciler) to wait for pricing data to be
 	// populated before they start their work.
 	ReadyChan chan struct{}
+
+	// HealthTracker is used to report permanent failures to the readiness probe.
+	// When the initial reconciliation fails after all retries, the reconciler marks
+	// itself as failed in this tracker, causing the readiness probe to fail and
+	// Kubernetes to restart the pod.
+	HealthTracker *ReconcilerHealthTracker
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -240,13 +246,20 @@ func (r *PricingReconciler) Run(ctx context.Context) error {
 	log := r.Log
 	log.Info("starting pricing reconciler")
 
-	// Run immediately on startup (BLOCKING)
-	// This is critical - we must have pricing data before serving cost metrics
-	log.Info("⏳ running initial pricing reconciliation (BLOCKING - this may take 30-60 seconds)")
-	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		// Initial pricing load failure is FATAL - without pricing data, cost calculations will fail
-		log.Error(err, "❌ initial pricing reconciliation failed - exiting")
-		return fmt.Errorf("fatal: initial pricing load failed: %w", err)
+	// Run initial reconciliation with retry logic (BLOCKING)
+	// Initial pricing load is REQUIRED - without pricing data, cost calculations will fail.
+	// Retry logic provides self-healing for transient errors (API rate limits, network issues).
+	log.Info("⏳ running initial pricing reconciliation (BLOCKING with retry)")
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), log, "initial pricing reconciliation", func() error {
+		_, err := r.Reconcile(ctx, ctrl.Request{})
+		return err
+	})
+	if err != nil {
+		log.Error(err, "❌ initial pricing reconciliation failed permanently")
+		if r.HealthTracker != nil {
+			r.HealthTracker.MarkFailed("pricing", err)
+		}
+		return err
 	}
 	log.Info("✅ initial pricing reconciliation completed successfully - cache is populated and ready")
 

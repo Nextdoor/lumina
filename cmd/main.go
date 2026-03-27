@@ -71,6 +71,12 @@ type reconcilers struct {
 	SpotPricing *controller.SpotPricingReconciler
 	Cost        *controller.CostReconciler
 	ReadyCh     chan struct{} // Channel for RISP->SPRates coordination
+
+	// HealthTracker tracks reconciler liveness for the readiness probe.
+	// When any reconciler permanently fails (after exhausting retries), it marks
+	// itself as failed here, causing the readiness probe to fail and Kubernetes
+	// to restart the pod.
+	HealthTracker *controller.ReconcilerHealthTracker
 }
 
 // initializeReconcilers creates all reconciler instances with their dependencies.
@@ -104,6 +110,11 @@ func initializeReconcilers(
 	spRatesReadyCh := make(chan struct{})
 	spotPricingReadyCh := make(chan struct{})
 
+	// Create health tracker shared by all reconcilers.
+	// When any reconciler permanently fails (after exhausting retries on initial load),
+	// it marks itself as failed here, causing the readiness probe to fail.
+	healthTracker := controller.NewReconcilerHealthTracker()
+
 	return &reconcilers{
 		Pricing: &controller.PricingReconciler{
 			AWSClient:        awsClient,
@@ -114,24 +125,27 @@ func initializeReconcilers(
 			Regions:          cfg.Regions,
 			OperatingSystems: cfg.GetOperatingSystems(),
 			ReadyChan:        pricingReadyCh,
+			HealthTracker:    healthTracker,
 		},
 		RISP: &controller.RISPReconciler{
-			AWSClient: awsClient,
-			Config:    cfg,
-			Cache:     rispCache,
-			Metrics:   luminaMetrics,
-			Log:       ctrl.Log.WithName("risp-reconciler"),
-			Regions:   cfg.Regions,
-			ReadyChan: rispReadyCh,
+			AWSClient:     awsClient,
+			Config:        cfg,
+			Cache:         rispCache,
+			Metrics:       luminaMetrics,
+			Log:           ctrl.Log.WithName("risp-reconciler"),
+			Regions:       cfg.Regions,
+			ReadyChan:     rispReadyCh,
+			HealthTracker: healthTracker,
 		},
 		EC2: &controller.EC2Reconciler{
-			AWSClient: awsClient,
-			Config:    cfg,
-			Cache:     ec2Cache,
-			Metrics:   luminaMetrics,
-			Log:       ctrl.Log.WithName("ec2-reconciler"),
-			Regions:   cfg.Regions,
-			ReadyChan: ec2ReadyCh,
+			AWSClient:     awsClient,
+			Config:        cfg,
+			Cache:         ec2Cache,
+			Metrics:       luminaMetrics,
+			Log:           ctrl.Log.WithName("ec2-reconciler"),
+			Regions:       cfg.Regions,
+			ReadyChan:     ec2ReadyCh,
+			HealthTracker: healthTracker,
 		},
 		SPRates: &controller.SPRatesReconciler{
 			AWSClient:        awsClient,
@@ -145,16 +159,18 @@ func initializeReconcilers(
 			RISPReadyChan:    rispReadyCh,
 			EC2ReadyChan:     ec2ReadyCh,
 			ReadyChan:        spRatesReadyCh,
+			HealthTracker:    healthTracker,
 		},
 		SpotPricing: &controller.SpotPricingReconciler{
-			AWSClient:    awsClient,
-			Config:       cfg,
-			EC2Cache:     ec2Cache,
-			Cache:        pricingCache,
-			Metrics:      luminaMetrics,
-			Log:          ctrl.Log.WithName("spot-pricing-reconciler"),
-			EC2ReadyChan: ec2ReadyCh,
-			ReadyChan:    spotPricingReadyCh,
+			AWSClient:     awsClient,
+			Config:        cfg,
+			EC2Cache:      ec2Cache,
+			Cache:         pricingCache,
+			Metrics:       luminaMetrics,
+			Log:           ctrl.Log.WithName("spot-pricing-reconciler"),
+			EC2ReadyChan:  ec2ReadyCh,
+			ReadyChan:     spotPricingReadyCh,
+			HealthTracker: healthTracker,
 		},
 		Cost: &controller.CostReconciler{
 			Calculator:           costCalculator,
@@ -170,8 +186,10 @@ func initializeReconcilers(
 			EC2ReadyChan:         ec2ReadyCh,
 			SPRatesReadyChan:     spRatesReadyCh,
 			SpotPricingReadyChan: spotPricingReadyCh,
+			HealthTracker:        healthTracker,
 		},
-		ReadyCh: rispReadyCh,
+		ReadyCh:       rispReadyCh,
+		HealthTracker: healthTracker,
 	}
 }
 
@@ -387,12 +405,14 @@ func runStandalone(
 	setupLog.Info("metrics server ready")
 
 	// Setup health check server
-	// Health checks use the credential monitor's cached status instead of making AWS API calls
+	// Health checks use the credential monitor's cached status instead of making AWS API calls.
+	// The reconciler health tracker checks that no reconciler has permanently failed.
 	awsHealthChecker := aws.NewHealthChecker(credMonitor)
 	healthHandler := &healthz.Handler{
 		Checks: map[string]healthz.Checker{
-			"healthz": healthz.Ping,
-			"readyz":  awsHealthChecker.Check,
+			"healthz":                healthz.Ping,
+			"readyz":                 awsHealthChecker.Check,
+			"readyz-reconciler-health": recs.HealthTracker.Check,
 		},
 	}
 
@@ -776,6 +796,15 @@ func main() {
 	awsHealthChecker := aws.NewHealthChecker(credMonitor)
 	if err := mgr.AddReadyzCheck("readyz", awsHealthChecker.Check); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+
+	// The reconciler health check ensures that no reconciler has permanently failed.
+	// When a reconciler exits after exhausting retries on initial load, it marks itself
+	// as failed in the health tracker, causing this readiness check to fail and
+	// Kubernetes to restart the pod.
+	if err := mgr.AddReadyzCheck("readyz-reconciler-health", recs.HealthTracker.Check); err != nil {
+		setupLog.Error(err, "unable to set up reconciler health check")
 		os.Exit(1)
 	}
 

@@ -95,6 +95,9 @@ type SPRatesReconciler struct {
 	// (like CostReconciler) to wait for SP rates to be populated before they
 	// start their cost calculations.
 	ReadyChan chan struct{}
+
+	// HealthTracker is used to report permanent failures to the readiness probe.
+	HealthTracker *ReconcilerHealthTracker
 }
 
 // Reconcile performs a single reconciliation cycle.
@@ -505,11 +508,19 @@ func (r *SPRatesReconciler) Run(ctx context.Context) error {
 		}
 	}
 
-	// Run initial reconciliation now that both RISP and EC2 caches are populated
-	r.Log.Info("running initial SP rates reconciliation")
-	if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-		r.Log.Error(err, "initial SP rates reconciliation failed")
-		// Don't return error - continue with periodic reconciliation
+	// Run initial reconciliation with retry logic now that both RISP and EC2 caches are populated.
+	// Retry logic provides self-healing for transient errors (API rate limits, network issues).
+	r.Log.Info("⏳ running initial SP rates reconciliation (with retry)")
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), r.Log, "initial SP rates reconciliation", func() error {
+		_, err := r.Reconcile(ctx, ctrl.Request{})
+		return err
+	})
+	if err != nil {
+		r.Log.Error(err, "❌ initial SP rates reconciliation failed permanently")
+		if r.HealthTracker != nil {
+			r.HealthTracker.MarkFailed("sp_rates", err)
+		}
+		return err
 	}
 
 	// Signal that initial reconciliation is complete (if channel was provided)
