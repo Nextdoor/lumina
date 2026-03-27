@@ -87,6 +87,9 @@ type SpotPricingReconciler struct {
 
 	// readyOnce ensures ReadyChan is closed only once (after first reconciliation)
 	readyOnce sync.Once
+
+	// HealthTracker is used to report permanent failures to the readiness probe.
+	HealthTracker *ReconcilerHealthTracker
 }
 
 // Reconcile performs a single reconciliation cycle using lazy-loading.
@@ -643,6 +646,9 @@ func (r *SpotPricingReconciler) Run(ctx context.Context) error {
 
 	if err != nil {
 		log.Error(err, "❌ initial spot pricing reconciliation failed permanently")
+		if r.HealthTracker != nil {
+			r.HealthTracker.MarkFailed("spot_pricing", err)
+		}
 		return err
 	}
 
