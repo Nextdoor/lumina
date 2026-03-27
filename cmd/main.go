@@ -410,8 +410,8 @@ func runStandalone(
 	awsHealthChecker := aws.NewHealthChecker(credMonitor)
 	healthHandler := &healthz.Handler{
 		Checks: map[string]healthz.Checker{
-			"healthz":                healthz.Ping,
-			"readyz":                 awsHealthChecker.Check,
+			"healthz":                  healthz.Ping,
+			"readyz":                   awsHealthChecker.Check,
 			"readyz-reconciler-health": recs.HealthTracker.Check,
 		},
 	}
