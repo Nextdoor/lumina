@@ -16,8 +16,11 @@
 # This file enables LocalStack and configures mock AWS resources for testing
 
 # Enable LocalStack for CI/testing
+# Pin to last open-source 4.x release before licensing change
 localstack:
   enabled: true
+  image:
+    tag: "4.14.0"
   service:
     type: ClusterIP
   # Seed LocalStack with test data for CI
