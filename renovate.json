@@ -72,6 +72,13 @@
       "pinDigests": true
     },
     {
+      "description": "Ignore pinDigest for golangci-lint binary (not an Action, just a version string)",
+      "matchDepNames": ["golangci/golangci-lint"],
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["pinDigest"],
+      "enabled": false
+    },
+    {
       "description": "Critical security updates - create immediately",
       "matchDatasources": ["go", "github-actions"],
       "matchUpdateTypes": ["patch"],
