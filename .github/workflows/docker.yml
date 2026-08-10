@@ -193,7 +193,7 @@ jobs:
           fi
 
       - name: Create and push manifest
-        uses: int128/docker-manifest-create-action@a0bcb6430fe0047c0558deab102a6c66c373dae2 # v2
+        uses: int128/docker-manifest-create-action@1e15cac7af24af7153ff7968c09072d61bb4456b # v2
         with:
           tags: ${{ steps.meta.outputs.tags }}
           sources: |
@@ -202,7 +202,7 @@ jobs:
 
       - name: Create and push :latest manifest
         if: ${{ github.ref_type == 'tag' }}
-        uses: int128/docker-manifest-create-action@a0bcb6430fe0047c0558deab102a6c66c373dae2 # v2
+        uses: int128/docker-manifest-create-action@1e15cac7af24af7153ff7968c09072d61bb4456b # v2
         with:
           tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           sources: |
@@ -211,7 +211,7 @@ jobs:
 
       - name: Create and push :main manifest
         if: ${{ github.ref == 'refs/heads/main' }}
-        uses: int128/docker-manifest-create-action@a0bcb6430fe0047c0558deab102a6c66c373dae2 # v2
+        uses: int128/docker-manifest-create-action@1e15cac7af24af7153ff7968c09072d61bb4456b # v2
         with:
           tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:main
           sources: |
