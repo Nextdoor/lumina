@@ -224,6 +224,7 @@ pricing:
 #         "ec2:DescribeReservedInstances",
 #         "ec2:DescribeSpotPriceHistory",
 #         "savingsplans:DescribeSavingsPlans",
+#         "ce:GetSavingsPlansUtilization",
 #         "organizations:DescribeOrganization"
 #       ],
 #       "Resource": "*"

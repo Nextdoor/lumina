@@ -192,19 +192,19 @@ sum(savings_plan_hourly_commitment and savings_plan_remaining_hours < 720)
 
 ### `savings_plan_current_utilization_rate` (gauge)
 
-Current hourly rate ($/hour) being consumed by instances covered by this Savings Plan.
+Estimated hourly commitment being consumed by this Savings Plan. Compute SP values include a conservative reconciliation with the latest available hourly Cost Explorer utilization, which captures eligible usage outside the live EC2 inventory.
 
 - Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 
 ### `savings_plan_remaining_capacity` (gauge)
 
-Unused capacity in $/hour for a Savings Plan (HourlyCommitment - CurrentUtilizationRate).
+Unused capacity in $/hour for a Savings Plan (HourlyCommitment - CurrentUtilizationRate). Compute SP capacity is capped by the latest available hourly organization-wide Cost Explorer observation and may be distributed proportionally across multiple plans.
 
 - Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 
 ### `savings_plan_utilization_percent` (gauge)
 
-Utilization percentage of a Savings Plan ((CurrentUtilizationRate / HourlyCommitment) * 100).
+Utilization percentage of a Savings Plan ((CurrentUtilizationRate / HourlyCommitment) * 100). Compute SP utilization includes the Cost Explorer reconciliation described above.
 
 - Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 - Can exceed 100%

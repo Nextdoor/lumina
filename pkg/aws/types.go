@@ -240,6 +240,12 @@ type SavingsPlan struct {
 	EC2InstanceFamily string
 }
 
+// SavingsPlansUtilizationObservation is a settled Cost Explorer utilization bucket.
+type SavingsPlansUtilizationObservation struct {
+	UnusedCommitment float64
+	PeriodEnd        time.Time
+}
+
 // SpotPrice represents the current spot price for an instance type.
 type SpotPrice struct {
 	// InstanceType is the instance type

@@ -62,13 +62,14 @@ var (
 // reconcilers holds all initialized reconcilers.
 // This struct reduces code duplication between standalone and Kubernetes modes.
 type reconcilers struct {
-	RISP        *controller.RISPReconciler
-	EC2         *controller.EC2Reconciler
-	Pricing     *controller.PricingReconciler
-	SPRates     *controller.SPRatesReconciler
-	SpotPricing *controller.SpotPricingReconciler
-	Cost        *controller.CostReconciler
-	ReadyCh     chan struct{} // Channel for RISP->SPRates coordination
+	RISP          *controller.RISPReconciler
+	EC2           *controller.EC2Reconciler
+	Pricing       *controller.PricingReconciler
+	SPRates       *controller.SPRatesReconciler
+	SPUtilization *controller.SPUtilizationReconciler
+	SpotPricing   *controller.SpotPricingReconciler
+	Cost          *controller.CostReconciler
+	ReadyCh       chan struct{} // Channel for RISP->SPRates coordination
 
 	// HealthTracker tracks reconciler liveness for the readiness probe.
 	// When any reconciler permanently fails (after exhausting retries), it marks
@@ -85,6 +86,7 @@ func initializeReconcilers(
 	rispCache *cache.RISPCache,
 	ec2Cache *cache.EC2Cache,
 	pricingCache *cache.PricingCache,
+	spUtilizationCache *cache.SPUtilizationCache,
 	nodeCache *cache.NodeCache,
 	luminaMetrics *metrics.Metrics,
 	costCalculator *cost.Calculator,
@@ -107,6 +109,7 @@ func initializeReconcilers(
 	ec2ReadyCh := make(chan struct{})
 	spRatesReadyCh := make(chan struct{})
 	spotPricingReadyCh := make(chan struct{})
+	spUtilizationReadyCh := make(chan struct{})
 
 	// Create health tracker shared by all reconcilers.
 	// When any reconciler permanently fails (after exhausting retries on initial load),
@@ -145,6 +148,14 @@ func initializeReconcilers(
 			ReadyChan:     ec2ReadyCh,
 			HealthTracker: healthTracker,
 		},
+		SPUtilization: &controller.SPUtilizationReconciler{
+			AWSClient:     awsClient,
+			Config:        cfg,
+			Cache:         spUtilizationCache,
+			Log:           ctrl.Log.WithName("sp-utilization-reconciler"),
+			ReadyChan:     spUtilizationReadyCh,
+			HealthTracker: healthTracker,
+		},
 		SPRates: &controller.SPRatesReconciler{
 			AWSClient:        awsClient,
 			Config:           cfg,
@@ -171,20 +182,22 @@ func initializeReconcilers(
 			HealthTracker: healthTracker,
 		},
 		Cost: &controller.CostReconciler{
-			Calculator:           costCalculator,
-			Config:               cfg,
-			EC2Cache:             ec2Cache,
-			RISPCache:            rispCache,
-			PricingCache:         pricingCache,
-			NodeCache:            nodeCache,
-			Metrics:              luminaMetrics,
-			Log:                  ctrl.Log.WithName("cost-reconciler"),
-			PricingReadyChan:     pricingReadyCh,
-			RISPReadyChan:        rispReadyCh,
-			EC2ReadyChan:         ec2ReadyCh,
-			SPRatesReadyChan:     spRatesReadyCh,
-			SpotPricingReadyChan: spotPricingReadyCh,
-			HealthTracker:        healthTracker,
+			Calculator:             costCalculator,
+			Config:                 cfg,
+			EC2Cache:               ec2Cache,
+			RISPCache:              rispCache,
+			PricingCache:           pricingCache,
+			SPUtilizationCache:     spUtilizationCache,
+			NodeCache:              nodeCache,
+			Metrics:                luminaMetrics,
+			Log:                    ctrl.Log.WithName("cost-reconciler"),
+			PricingReadyChan:       pricingReadyCh,
+			RISPReadyChan:          rispReadyCh,
+			EC2ReadyChan:           ec2ReadyCh,
+			SPRatesReadyChan:       spRatesReadyCh,
+			SpotPricingReadyChan:   spotPricingReadyCh,
+			SPUtilizationReadyChan: spUtilizationReadyCh,
+			HealthTracker:          healthTracker,
 		},
 		ReadyCh:       rispReadyCh,
 		HealthTracker: healthTracker,
@@ -258,13 +271,19 @@ func runStandalone(
 	pricingCache := cache.NewPricingCache()
 	setupLog.Info("initialized pricing cache")
 
+	spUtilizationCache := cache.NewSPUtilizationCache()
+	setupLog.Info("initialized Savings Plans utilization cache")
+
 	// Create cost calculator (needed before initializing reconcilers)
 	costCalculator := cost.NewCalculator(pricingCache, cfg)
 
 	// Initialize all reconcilers using the helper function
 	// This reduces code duplication between standalone and Kubernetes modes
 	// Pass nil for nodeCache in standalone mode (no Kubernetes nodes to correlate)
-	recs := initializeReconcilers(awsClient, cfg, rispCache, ec2Cache, pricingCache, nil, luminaMetrics, costCalculator)
+	recs := initializeReconcilers(
+		awsClient, cfg, rispCache, ec2Cache, pricingCache, spUtilizationCache, nil,
+		luminaMetrics, costCalculator,
+	)
 
 	// Start reconcilers in background goroutines
 	ctx := ctrl.SetupSignalHandler()
@@ -293,6 +312,14 @@ func runStandalone(
 		}
 	}()
 	setupLog.Info("started EC2 reconciler")
+
+	// Start settled Savings Plans utilization reconciliation.
+	go func() {
+		if err := recs.SPUtilization.Run(ctx); err != nil {
+			setupLog.Error(err, "SP utilization reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started SP utilization reconciler")
 
 	// Start SP rates reconciler - waits for both RISP and EC2 to be ready via channels
 	go func() {
@@ -323,6 +350,7 @@ func runStandalone(
 	ec2Cache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	rispCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	spUtilizationCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
 	go func() {
 		if err := recs.Cost.Run(ctx); err != nil {
@@ -681,6 +709,9 @@ func main() {
 	pricingCache := cache.NewPricingCache()
 	setupLog.Info("initialized pricing cache")
 
+	spUtilizationCache := cache.NewSPUtilizationCache()
+	setupLog.Info("initialized Savings Plans utilization cache")
+
 	// Update debug handler with actual caches now that they're initialized
 	debugHandler.EC2Cache = ec2Cache
 	debugHandler.RISPCache = rispCache
@@ -693,7 +724,7 @@ func main() {
 	// Initialize all reconcilers using the helper function
 	// This reduces code duplication between standalone and Kubernetes modes
 	recs := initializeReconcilers(
-		awsClient, cfg, rispCache, ec2Cache, pricingCache, nodeCache, luminaMetrics, costCalculator,
+		awsClient, cfg, rispCache, ec2Cache, pricingCache, spUtilizationCache, nodeCache, luminaMetrics, costCalculator,
 	)
 
 	// Start timer-based reconcilers as background goroutines
@@ -716,6 +747,14 @@ func main() {
 		}
 	}()
 	setupLog.Info("started RISP reconciler (goroutine)")
+
+	// Start settled Savings Plans utilization reconciliation.
+	go func() {
+		if err := recs.SPUtilization.Run(ctx); err != nil {
+			setupLog.Error(err, "SP utilization reconciler stopped with error")
+		}
+	}()
+	setupLog.Info("started SP utilization reconciler")
 
 	// Start SP rates reconciler - waits for RISP via channel
 	go func() {
@@ -758,6 +797,7 @@ func main() {
 	ec2Cache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	rispCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	pricingCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
+	spUtilizationCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 	nodeCache.RegisterUpdateNotifier(recs.Cost.Debouncer.Trigger)
 
 	if err := recs.Cost.SetupWithManager(mgr); err != nil {

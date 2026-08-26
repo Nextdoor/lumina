@@ -160,12 +160,10 @@ type InstanceCost struct {
 	Lifecycle string
 }
 
-// SavingsPlanUtilization represents the current utilization state of a single
-// Savings Plan, calculated based on the instances currently running.
-//
-// This is a rate-based calculation ($/hour), not cumulative spending over time.
-// The metrics represent instantaneous utilization assuming current instances
-// keep running for the remainder of the hour.
+// SavingsPlanUtilization represents the estimated utilization state of a single
+// Savings Plan. EC2 allocation uses the current instance inventory. Compute SP
+// headroom can be conservatively capped by recent settled Cost Explorer data so
+// usage from services outside the EC2 inventory is not reported as available.
 type SavingsPlanUtilization struct {
 	// SavingsPlanARN is the unique identifier for this Savings Plan
 	SavingsPlanARN string
@@ -191,8 +189,8 @@ type SavingsPlanUtilization struct {
 	// This value does not change and represents the maximum discount available per hour.
 	HourlyCommitment float64
 
-	// CurrentUtilizationRate is the instantaneous $/hour rate being consumed by
-	// currently running instances. This is a snapshot based on what's running NOW.
+	// CurrentUtilizationRate is the estimated $/hour commitment being consumed.
+	// For Compute SPs, it can include settled usage outside the live EC2 inventory.
 	// Can exceed HourlyCommitment (overflow goes to OnDemand rates).
 	CurrentUtilizationRate float64
 
@@ -235,6 +233,11 @@ type CalculationInput struct {
 	// The calculator uses accessor methods (GetSpotPrice, GetOnDemandPrice) to
 	// retrieve prices, avoiding fragile key format dependencies.
 	PricingCache PricingCacheInterface
+
+	// ComputeSPUnusedCommitment is the latest fresh hourly unused Compute Savings
+	// Plans commitment observed by AWS Cost Explorer. Nil retains the
+	// instantaneous EC2-only estimate.
+	ComputeSPUnusedCommitment *float64
 
 	// OnDemandPrices maps instance-type+region to on-demand price ($/hour).
 	// Key format: "instance_type:region" (e.g., "m5.xlarge:us-west-2")
