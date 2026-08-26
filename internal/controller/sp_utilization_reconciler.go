@@ -25,18 +25,19 @@ import (
 	"github.com/nextdoor/lumina/internal/cache"
 	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/config"
+	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
 // SPUtilizationReconciler refreshes settled Compute Savings Plans utilization
 // from AWS Cost Explorer. Failed refreshes retain the last successful value.
 type SPUtilizationReconciler struct {
-	AWSClient     aws.Client
-	Config        *config.Config
-	Cache         *cache.SPUtilizationCache
-	Log           logr.Logger
-	ReadyChan     chan struct{}
-	HealthTracker *ReconcilerHealthTracker
-	now           func() time.Time
+	AWSClient aws.Client
+	Config    *config.Config
+	Cache     *cache.SPUtilizationCache
+	Log       logr.Logger
+	Metrics   *metrics.Metrics
+	ReadyChan chan struct{}
+	now       func() time.Time
 }
 
 func (r *SPUtilizationReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
@@ -47,23 +48,38 @@ func (r *SPUtilizationReconciler) Reconcile(ctx context.Context, _ ctrl.Request)
 		AssumeRoleARN: account.AssumeRoleARN,
 		Region:        r.Config.DefaultRegion,
 	}
-	client, err := r.AWSClient.CostExplorer(ctx, accountConfig)
-	if err != nil {
-		return ctrl.Result{RequeueAfter: time.Hour}, fmt.Errorf("create Cost Explorer client: %w", err)
-	}
-
 	now := time.Now()
 	if r.now != nil {
 		now = r.now()
+	}
+	if r.Config.TestData != nil && r.Config.TestData.ComputeSavingsPlanUnusedCommitment != nil {
+		observation := aws.SavingsPlansUtilizationObservation{
+			UnusedCommitment: *r.Config.TestData.ComputeSavingsPlanUnusedCommitment,
+			PeriodEnd:        now,
+		}
+		r.Cache.UpdateComputeUnusedCommitment(observation.UnusedCommitment, observation.PeriodEnd)
+		r.recordSuccess(account, observation)
+		return ctrl.Result{RequeueAfter: time.Hour}, nil
+	}
+
+	r.Log.V(1).Info("querying Cost Explorer for Savings Plans utilization",
+		"account_id", account.AccountID,
+		"account_name", account.Name)
+	client, err := r.AWSClient.CostExplorer(ctx, accountConfig)
+	if err != nil {
+		r.recordFailure(account)
+		return ctrl.Result{RequeueAfter: time.Hour}, fmt.Errorf("create Cost Explorer client: %w", err)
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	observation, err := client.GetComputeSavingsPlansUnusedCommitment(requestCtx, now)
 	if err != nil {
+		r.recordFailure(account)
 		return ctrl.Result{RequeueAfter: time.Hour},
 			fmt.Errorf("get Compute Savings Plans utilization: %w", err)
 	}
 	r.Cache.UpdateComputeUnusedCommitment(observation.UnusedCommitment, observation.PeriodEnd)
+	r.recordSuccess(account, observation)
 	return ctrl.Result{RequeueAfter: time.Hour}, nil
 }
 
@@ -90,4 +106,31 @@ func (r *SPUtilizationReconciler) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (r *SPUtilizationReconciler) recordFailure(account config.AWSAccount) {
+	if r.Metrics == nil {
+		return
+	}
+	r.Metrics.DataLastSuccess.WithLabelValues(
+		account.AccountID, account.Name, "", "savings_plan_utilization",
+	).Set(0)
+}
+
+func (r *SPUtilizationReconciler) recordSuccess(
+	account config.AWSAccount,
+	observation aws.SavingsPlansUtilizationObservation,
+) {
+	if r.Metrics == nil {
+		return
+	}
+	labels := []string{account.AccountID, account.Name}
+	r.Metrics.SavingsPlanObservedUnusedCommitment.WithLabelValues(labels...).Set(observation.UnusedCommitment)
+	r.Metrics.SavingsPlanUtilizationObservationTimestamp.WithLabelValues(labels...).Set(
+		float64(observation.PeriodEnd.Unix()),
+	)
+	r.Metrics.DataLastSuccess.WithLabelValues(
+		account.AccountID, account.Name, "", "savings_plan_utilization",
+	).Set(1)
+	r.Metrics.MarkDataUpdated(account.AccountID, account.Name, "", "savings_plan_utilization")
 }

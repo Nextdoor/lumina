@@ -19,6 +19,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoad(t *testing.T) {
@@ -699,4 +702,23 @@ testData:
 			t.Errorf("Pricing()[%q] = %v, want %v", key, actualValue, expectedValue)
 		}
 	}
+}
+
+func TestLoadWithComputeSavingsPlanUtilizationTestData(t *testing.T) {
+	yaml := `
+awsAccounts:
+  - accountId: "123456789012"
+    name: "test-account"
+    assumeRoleArn: "arn:aws:iam::123456789012:role/LuminaTestRole"
+testData:
+  computeSavingsPlanUnusedCommitment: 0
+`
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(yaml), 0600))
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.TestData)
+	require.NotNil(t, cfg.TestData.ComputeSavingsPlanUnusedCommitment)
+	assert.Zero(t, *cfg.TestData.ComputeSavingsPlanUnusedCommitment)
 }

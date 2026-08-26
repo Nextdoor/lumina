@@ -113,6 +113,16 @@ type Metrics struct {
 	// Labels: instance_id, account_id, region, instance_type, cost_type, availability_zone, lifecycle, pricing_accuracy
 	EC2InstanceHourlyCost *prometheus.GaugeVec
 
+	// SavingsPlanObservedUnusedCommitment tracks the latest settled organization-wide
+	// unused Compute Savings Plans commitment reported by Cost Explorer.
+	// Labels: account_id, account_name
+	SavingsPlanObservedUnusedCommitment *prometheus.GaugeVec
+
+	// SavingsPlanUtilizationObservationTimestamp tracks the Unix timestamp of the
+	// selected Cost Explorer utilization bucket end.
+	// Labels: account_id, account_name
+	SavingsPlanUtilizationObservationTimestamp *prometheus.GaugeVec
+
 	// SavingsPlanCurrentUtilizationRate tracks the current hourly rate being consumed by
 	// instances covered by this Savings Plan. This is a snapshot of current usage ($/hour).
 	// Labels: savings_plan_arn, account_id, type
@@ -252,6 +262,16 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 			cfg.GetHostNameLabel(),
 		}),
 
+		SavingsPlanObservedUnusedCommitment: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: MetricSavingsPlanObservedUnusedCommitment,
+			Help: "Latest settled unused Compute Savings Plans commitment from Cost Explorer (USD/hour)",
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
+
+		SavingsPlanUtilizationObservationTimestamp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: MetricSavingsPlanUtilizationObservationTimestampSeconds,
+			Help: "Unix timestamp of the selected Cost Explorer Savings Plans utilization bucket end",
+		}, []string{cfg.GetAccountIDLabel(), cfg.GetAccountNameLabel()}),
+
 		SavingsPlanCurrentUtilizationRate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: MetricSavingsPlanCurrentUtilizationRate,
 			Help: "Current hourly rate being consumed by instances covered by this Savings Plan (USD/hour)",
@@ -283,6 +303,8 @@ func NewMetrics(reg prometheus.Registerer, cfg *config.Config) *Metrics {
 		m.EC2Instance,
 		m.EC2InstanceCount,
 		m.EC2InstanceHourlyCost,
+		m.SavingsPlanObservedUnusedCommitment,
+		m.SavingsPlanUtilizationObservationTimestamp,
 		m.SavingsPlanCurrentUtilizationRate,
 		m.SavingsPlanRemainingCapacity,
 		m.SavingsPlanUtilizationPercent,

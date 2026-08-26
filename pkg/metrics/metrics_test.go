@@ -54,6 +54,8 @@ func TestNewMetrics(t *testing.T) {
 	assert.NotNil(t, m.AccountValidationDuration)
 	assert.NotNil(t, m.DataFreshness)
 	assert.NotNil(t, m.DataLastSuccess)
+	assert.NotNil(t, m.SavingsPlanObservedUnusedCommitment)
+	assert.NotNil(t, m.SavingsPlanUtilizationObservationTimestamp)
 
 	// Set the controller running gauge so it appears in Gather()
 	m.ControllerRunning.Set(1)

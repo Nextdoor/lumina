@@ -149,12 +149,12 @@ func initializeReconcilers(
 			HealthTracker: healthTracker,
 		},
 		SPUtilization: &controller.SPUtilizationReconciler{
-			AWSClient:     awsClient,
-			Config:        cfg,
-			Cache:         spUtilizationCache,
-			Log:           ctrl.Log.WithName("sp-utilization-reconciler"),
-			ReadyChan:     spUtilizationReadyCh,
-			HealthTracker: healthTracker,
+			AWSClient: awsClient,
+			Config:    cfg,
+			Cache:     spUtilizationCache,
+			Log:       ctrl.Log.WithName("sp-utilization-reconciler"),
+			Metrics:   luminaMetrics,
+			ReadyChan: spUtilizationReadyCh,
 		},
 		SPRates: &controller.SPRatesReconciler{
 			AWSClient:        awsClient,

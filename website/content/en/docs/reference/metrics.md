@@ -24,6 +24,8 @@ Label names shown in this document use defaults. If you have customized labels v
 | [`ec2_reserved_instance_count`](#ec2_reserved_instance_count-gauge) | Gauge | RI count by instance family |
 | [`savings_plan_hourly_commitment`](#savings_plan_hourly_commitment-gauge) | Gauge | SP hourly commitment ($/hr) |
 | [`savings_plan_remaining_hours`](#savings_plan_remaining_hours-gauge) | Gauge | Hours until SP expiration |
+| [`savings_plan_observed_unused_commitment`](#savings_plan_observed_unused_commitment-gauge) | Gauge | Settled Compute SP unused commitment ($/hr) |
+| [`savings_plan_utilization_observation_timestamp_seconds`](#savings_plan_utilization_observation_timestamp_seconds-gauge) | Gauge | Settled utilization bucket timestamp |
 | [`savings_plan_current_utilization_rate`](#savings_plan_current_utilization_rate-gauge) | Gauge | Current SP consumption ($/hr) |
 | [`savings_plan_remaining_capacity`](#savings_plan_remaining_capacity-gauge) | Gauge | Unused SP capacity ($/hr) |
 | [`savings_plan_utilization_percent`](#savings_plan_utilization_percent-gauge) | Gauge | SP utilization percentage |
@@ -90,7 +92,7 @@ histogram_quantile(0.95,
 Age of cached data in seconds since last successful update (auto-updated every second).
 
 - Labels: `account_id`, `account_name`, `region`, `data_type`
-- Data types: `ec2_instances`, `reserved_instances`, `savings_plans`, `pricing`, `sp_rates`, `spot_pricing`
+- Data types: `ec2_instances`, `reserved_instances`, `savings_plans`, `savings_plan_utilization`, `pricing`, `sp_rates`, `spot_pricing`
 
 ### `lumina_data_last_success` (gauge)
 
@@ -190,6 +192,20 @@ sum(savings_plan_hourly_commitment and savings_plan_remaining_hours < 720)
 
 ## Savings Plans Utilization
 
+### `savings_plan_observed_unused_commitment` (gauge)
+
+Latest settled organization-wide unused Compute Savings Plans commitment from Cost Explorer.
+
+- Labels: `account_id`, `account_name` (the configured default account used for the query)
+- Value: USD/hour
+
+### `savings_plan_utilization_observation_timestamp_seconds` (gauge)
+
+Unix timestamp of the Cost Explorer hourly bucket used to reconcile Compute SP headroom.
+
+- Labels: `account_id`, `account_name`
+- Use: Compute bucket age with `time() - savings_plan_utilization_observation_timestamp_seconds` and alert as it approaches the seven-day freshness cutoff
+
 ### `savings_plan_current_utilization_rate` (gauge)
 
 Estimated hourly commitment being consumed by this Savings Plan. Compute SP values include a conservative reconciliation with the latest available hourly Cost Explorer utilization, which captures eligible usage outside the live EC2 inventory.
@@ -198,7 +214,7 @@ Estimated hourly commitment being consumed by this Savings Plan. Compute SP valu
 
 ### `savings_plan_remaining_capacity` (gauge)
 
-Unused capacity in $/hour for a Savings Plan (HourlyCommitment - CurrentUtilizationRate). Compute SP capacity is capped by the latest available hourly organization-wide Cost Explorer observation and may be distributed proportionally across multiple plans.
+Unused capacity in $/hour for a Savings Plan (HourlyCommitment - CurrentUtilizationRate). Compute SP capacity is capped by the latest available hourly organization-wide Cost Explorer observation and may be distributed proportionally across multiple plans. The per-plan split is synthetic; Cost Explorer provides a single organization-wide observation rather than per-plan attribution.
 
 - Labels: `savings_plan_arn`, `account_id`, `account_name`, `type`
 

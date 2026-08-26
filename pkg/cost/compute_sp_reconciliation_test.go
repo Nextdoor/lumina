@@ -30,6 +30,7 @@ func TestReconcileComputeSavingsPlanUtilization(t *testing.T) {
 		{name: "caps headroom", observed: float64Pointer(2), wantA: 8.0 / 7, wantB: 6.0 / 7},
 		{name: "does not increase headroom", observed: float64Pointer(10), wantA: 4, wantB: 3},
 		{name: "missing observation retains estimate", observed: nil, wantA: 4, wantB: 3},
+		{name: "equal headroom is unchanged", observed: float64Pointer(7), wantA: 4, wantB: 3},
 		{name: "negative observation clamps to zero", observed: float64Pointer(-1), wantA: 0, wantB: 0},
 	}
 
@@ -67,4 +68,24 @@ func TestReconcileComputeSavingsPlanUtilization(t *testing.T) {
 
 func float64Pointer(value float64) *float64 {
 	return &value
+}
+
+func TestReconcileComputeSavingsPlanUtilizationWithoutComputePlans(t *testing.T) {
+	utilization := map[string]*SavingsPlanUtilization{
+		"ec2": {Type: "EC2Instance", HourlyCommitment: 4, RemainingCapacity: 4},
+	}
+	reconcileComputeSavingsPlanUtilization(
+		CalculationInput{ComputeSPUnusedCommitment: float64Pointer(0)}, utilization,
+	)
+	assert.Equal(t, 4.0, utilization["ec2"].RemainingCapacity)
+}
+
+func TestReconcileComputeSavingsPlanUtilizationWithZeroHeadroom(t *testing.T) {
+	utilization := map[string]*SavingsPlanUtilization{
+		"compute": {Type: savingsPlanTypeCompute, HourlyCommitment: 4, RemainingCapacity: 0},
+	}
+	reconcileComputeSavingsPlanUtilization(
+		CalculationInput{ComputeSPUnusedCommitment: float64Pointer(0)}, utilization,
+	)
+	assert.Zero(t, utilization["compute"].RemainingCapacity)
 }

@@ -338,7 +338,7 @@ func computeSPUnusedCommitment(c *cache.SPUtilizationCache, now time.Time) *floa
 	if c == nil {
 		return nil
 	}
-	observation, ok := c.GetFresh(now, 72*time.Hour)
+	observation, ok := c.GetFresh(now, 7*24*time.Hour)
 	if !ok {
 		return nil
 	}

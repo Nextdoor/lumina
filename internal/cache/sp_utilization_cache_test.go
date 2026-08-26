@@ -30,8 +30,8 @@ func TestSPUtilizationCacheGetFresh(t *testing.T) {
 	assert.False(t, ok)
 
 	cache.UpdateComputeUnusedCommitment(1.25, now.Add(-time.Hour))
-	observation, ok := cache.GetFresh(now, 3*time.Hour)
-	require.True(t, ok)
+	observation, ok := cache.GetFresh(now, time.Hour)
+	require.True(t, ok, "an observation at the exact freshness boundary should be accepted")
 	assert.Equal(t, 1.25, observation.UnusedCommitment)
 
 	_, ok = cache.GetFresh(now, 30*time.Minute)

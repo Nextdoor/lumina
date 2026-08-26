@@ -17,6 +17,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -26,7 +27,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 )
 
-const costExplorerRegion = "us-east-1"
+const (
+	costExplorerRegion          = "us-east-1"
+	computeSavingsPlansType     = "ComputeSavingsPlans"
+	costExplorerLookbackDays    = -7
+	costExplorerTimestampFormat = "2006-01-02T15:04:05Z"
+)
 
 type costExplorerAPI interface {
 	GetSavingsPlansUtilization(
@@ -69,17 +75,17 @@ func (c *RealCostExplorerClient) GetComputeSavingsPlansUnusedCommitment(
 	end := now.UTC().Truncate(24 * time.Hour)
 	// Hourly Cost Explorer data can arrive after the billing hour closes. Query
 	// several complete days and use the latest bucket AWS has made available.
-	start := end.AddDate(0, 0, -3)
+	start := end.AddDate(0, 0, costExplorerLookbackDays)
 	out, err := c.client.GetSavingsPlansUtilization(ctx, &costexplorer.GetSavingsPlansUtilizationInput{
 		TimePeriod: &types.DateInterval{
-			Start: sdkaws.String(start.Format(time.DateOnly)),
-			End:   sdkaws.String(end.Format(time.DateOnly)),
+			Start: sdkaws.String(start.Format(costExplorerTimestampFormat)),
+			End:   sdkaws.String(end.Format(costExplorerTimestampFormat)),
 		},
 		Granularity: types.GranularityHourly,
 		Filter: &types.Expression{
 			Dimensions: &types.DimensionValues{
 				Key:    types.DimensionSavingsPlansType,
-				Values: []string{"Compute SP"},
+				Values: []string{computeSavingsPlansType},
 			},
 		},
 	})
@@ -98,10 +104,18 @@ func (c *RealCostExplorerClient) GetComputeSavingsPlansUnusedCommitment(
 		if err != nil {
 			return SavingsPlansUtilizationObservation{}, err
 		}
+		if periodEnd.After(now.UTC()) {
+			return SavingsPlansUtilizationObservation{},
+				fmt.Errorf("utilization period ends in the future: %s", periodEnd)
+		}
 		unused, err := strconv.ParseFloat(*period.Utilization.UnusedCommitment, 64)
 		if err != nil {
 			return SavingsPlansUtilizationObservation{},
 				fmt.Errorf("parse unused Compute Savings Plans commitment: %w", err)
+		}
+		if math.IsNaN(unused) || math.IsInf(unused, 0) || unused < 0 {
+			return SavingsPlansUtilizationObservation{},
+				fmt.Errorf("invalid unused Compute Savings Plans commitment: %v", unused)
 		}
 		if latest.PeriodEnd.IsZero() || periodEnd.After(latest.PeriodEnd) {
 			latest = SavingsPlansUtilizationObservation{

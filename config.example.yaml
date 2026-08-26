@@ -42,6 +42,8 @@ awsAccounts:
   #     - "us-west-2"  # This account only uses us-west-2
 
 # Default Account Configuration (Optional)
+# This account must have Cost Explorer visibility for the Savings Plans scope
+# monitored by Lumina. For AWS Organizations, use the management/payer account.
 # Specifies which AWS account to use for non-account-specific API calls
 # such as AWS Pricing API. If not specified, the first account in awsAccounts
 # will be used. This ensures all AWS API calls use assumed role credentials

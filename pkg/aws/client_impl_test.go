@@ -17,6 +17,9 @@ package aws
 import (
 	"context"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNewRealClient tests that NewRealClient creates a valid client instance.
@@ -256,6 +259,21 @@ func TestRealClientSavingsPlans(t *testing.T) {
 	if spClient1 != spClient2 {
 		t.Error("expected same cached SavingsPlans client instance")
 	}
+}
+
+// TestRealClientCostExplorer tests the CostExplorer method with caching.
+func TestRealClientCostExplorer(t *testing.T) {
+	ctx := context.Background()
+	client, err := NewRealClient(ctx, ClientConfig{DefaultRegion: "us-west-2"}, AccountConfig{}, "")
+	require.NoError(t, err)
+	accountConfig := AccountConfig{AccountID: "123456789012", Name: "Test", Region: "us-west-2"}
+
+	ceClient1, err := client.CostExplorer(ctx, accountConfig)
+	require.NoError(t, err)
+	require.NotNil(t, ceClient1)
+	ceClient2, err := client.CostExplorer(ctx, accountConfig)
+	require.NoError(t, err)
+	assert.Same(t, ceClient1, ceClient2)
 }
 
 // TestRealClientGetCredentialsWithoutAssumeRole tests getCredentials without AssumeRole.

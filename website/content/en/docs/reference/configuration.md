@@ -20,7 +20,8 @@ awsAccounts:
     name: "Staging"
     assumeRoleArn: "arn:aws:iam::987654321098:role/lumina-controller"
 
-# Default Account for non-account-specific API calls (e.g., AWS Pricing API)
+# Default Account for global API calls (AWS Pricing and Cost Explorer)
+# Use an account with billing visibility for the monitored Savings Plans scope.
 # If not specified, the first account in awsAccounts is used.
 # defaultAccount:
 #   accountId: "123456789012"

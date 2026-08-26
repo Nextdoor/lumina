@@ -300,7 +300,8 @@ Lumina Behavior:
 - Compute Savings Plans can also cover services that are not part of Lumina's live EC2 inventory.
 - Lumina queries Cost Explorer through the configured default account and caps aggregate Compute SP headroom with the latest available settled hourly utilization.
 - Hourly Cost Explorer data must be enabled for the account and can take up to 48 hours to become available.
-- **Impact:** Remaining-capacity metrics are conservative, but can lag changes in non-EC2 usage. If a fresh Cost Explorer observation is unavailable, Lumina temporarily falls back to the live EC2 estimate.
+- The result is a lagging conservative bound: newly available headroom can remain suppressed until Cost Explorer publishes a newer hourly bucket.
+- **Impact:** If no Cost Explorer observation from the last seven days is available, Lumina temporarily falls back to the live EC2 estimate.
 
 ### 3. Simplified SP Model
 

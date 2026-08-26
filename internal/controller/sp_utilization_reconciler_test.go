@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -28,6 +30,7 @@ import (
 	"github.com/nextdoor/lumina/internal/cache"
 	"github.com/nextdoor/lumina/pkg/aws"
 	"github.com/nextdoor/lumina/pkg/config"
+	"github.com/nextdoor/lumina/pkg/metrics"
 )
 
 func TestSPUtilizationReconcilerReconcile(t *testing.T) {
@@ -40,15 +43,18 @@ func TestSPUtilizationReconcilerReconcile(t *testing.T) {
 		},
 	}
 	utilizationCache := cache.NewSPUtilizationCache()
+	luminaMetrics := metrics.NewMetrics(prometheus.NewRegistry(), &config.Config{})
+	defer luminaMetrics.Stop()
 	reconciler := &SPUtilizationReconciler{
 		AWSClient: client,
 		Config: &config.Config{
 			DefaultRegion: "us-east-1",
 			AWSAccounts:   []config.AWSAccount{{AccountID: "111111111111", Name: "example"}},
 		},
-		Cache: utilizationCache,
-		Log:   logr.Discard(),
-		now:   func() time.Time { return now },
+		Cache:   utilizationCache,
+		Log:     logr.Discard(),
+		Metrics: luminaMetrics,
+		now:     func() time.Time { return now },
 	}
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{})
@@ -58,6 +64,39 @@ func TestSPUtilizationReconcilerReconcile(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 2.5, observation.UnusedCommitment)
 	assert.Equal(t, 1, client.CostExplorerClients["111111111111"].CallCount)
+	assert.Equal(t, 2.5, testutil.ToFloat64(
+		luminaMetrics.SavingsPlanObservedUnusedCommitment.WithLabelValues("111111111111", "example"),
+	))
+	assert.Equal(t, float64(now.Add(-time.Hour).Unix()), testutil.ToFloat64(
+		luminaMetrics.SavingsPlanUtilizationObservationTimestamp.WithLabelValues("111111111111", "example"),
+	))
+	assert.Equal(t, 1.0, testutil.ToFloat64(luminaMetrics.DataLastSuccess.WithLabelValues(
+		"111111111111", "example", "", "savings_plan_utilization",
+	)))
+}
+
+func TestSPUtilizationReconcilerUsesConfiguredTestData(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	unused := 0.0
+	client := aws.NewMockClient()
+	client.CostExplorerError = errors.New("Cost Explorer should not be called")
+	utilizationCache := cache.NewSPUtilizationCache()
+	reconciler := &SPUtilizationReconciler{
+		AWSClient: client,
+		Config: &config.Config{
+			AWSAccounts: []config.AWSAccount{{AccountID: "111111111111", Name: "example"}},
+			TestData:    &config.TestData{ComputeSavingsPlanUnusedCommitment: &unused},
+		},
+		Cache: utilizationCache,
+		Log:   logr.Discard(),
+		now:   func() time.Time { return now },
+	}
+
+	_, err := reconciler.Reconcile(context.Background(), ctrl.Request{})
+	require.NoError(t, err)
+	observation, ok := utilizationCache.GetFresh(now, time.Minute)
+	require.True(t, ok)
+	assert.Zero(t, observation.UnusedCommitment)
 }
 
 func TestSPUtilizationReconcilerReconcileErrors(t *testing.T) {
@@ -75,19 +114,25 @@ func TestSPUtilizationReconcilerReconcileErrors(t *testing.T) {
 			client := aws.NewMockClient()
 			client.CostExplorerError = tt.clientError
 			client.CostExplorerClients["111111111111"] = &aws.MockCostExplorerClient{Err: tt.apiError}
+			luminaMetrics := metrics.NewMetrics(prometheus.NewRegistry(), &config.Config{})
+			defer luminaMetrics.Stop()
 			reconciler := &SPUtilizationReconciler{
 				AWSClient: client,
 				Config: &config.Config{
 					DefaultRegion: "us-east-1",
 					AWSAccounts:   []config.AWSAccount{{AccountID: "111111111111", Name: "example"}},
 				},
-				Cache: cache.NewSPUtilizationCache(),
-				Log:   logr.Discard(),
+				Cache:   cache.NewSPUtilizationCache(),
+				Log:     logr.Discard(),
+				Metrics: luminaMetrics,
 			}
 
 			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{})
 			require.Error(t, err)
 			assert.Equal(t, time.Hour, result.RequeueAfter)
+			assert.Equal(t, 0.0, testutil.ToFloat64(luminaMetrics.DataLastSuccess.WithLabelValues(
+				"111111111111", "example", "", "savings_plan_utilization",
+			)))
 		})
 	}
 }
