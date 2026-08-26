@@ -11,7 +11,8 @@
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;Staging&amp;#34;&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">assumeRoleArn&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;arn:aws:iam::987654321098:role/lumina-controller&amp;#34;&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
-&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Default Account for non-account-specific API calls (e.g., AWS Pricing API)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Default Account for global API calls (AWS Pricing and Cost Explorer)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Use an account with billing visibility for the monitored Savings Plans scope.&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># If not specified, the first account in awsAccounts is used.&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># defaultAccount:&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># accountId: &amp;#34;123456789012&amp;#34;&lt;/span>
@@ -133,6 +134,16 @@
  &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_remaining_hours-gauge">&lt;code>savings_plan_remaining_hours&lt;/code>&lt;/a>&lt;/td>
  &lt;td>Gauge&lt;/td>
  &lt;td>Hours until SP expiration&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_observed_unused_commitment-gauge">&lt;code>savings_plan_observed_unused_commitment&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Settled Compute SP unused commitment ($/hr)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_utilization_observation_timestamp_seconds-gauge">&lt;code>savings_plan_utilization_observation_timestamp_seconds&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Settled utilization bucket timestamp&lt;/td>
  &lt;/tr>
  &lt;tr>
  &lt;td>&lt;a href="https://oss.nextdoor.com/lumina/docs/reference/metrics/#savings_plan_current_utilization_rate-gauge">&lt;code>savings_plan_current_utilization_rate&lt;/code>&lt;/a>&lt;/td>
