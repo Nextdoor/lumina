@@ -32,6 +32,9 @@ awsAccounts:
 # Test data for E2E tests
 # LocalStack's free tier doesn't support Savings Plans API or Pricing API, so we inject test data
 testData:
+  # LocalStack Community does not implement Cost Explorer.
+  computeSavingsPlanUnusedCommitment: 0
+
   savingsPlans:
     # Test data for test-production account
     "000000000000":

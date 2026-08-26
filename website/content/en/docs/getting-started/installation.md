@@ -79,6 +79,7 @@ Lumina requires read-only access to AWS APIs in each account it monitors. Create
         "ec2:DescribeSpotPriceHistory",
         "savingsplans:DescribeSavingsPlans",
         "savingsplans:DescribeSavingsPlansOfferingRates",
+        "ce:GetSavingsPlansUtilization",
         "pricing:GetProducts"
       ],
       "Resource": "*"

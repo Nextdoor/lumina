@@ -113,6 +113,18 @@ const (
 	// Labels: savings_plan_arn, account_id, account_name, type
 	MetricSavingsPlanRemainingHours = "savings_plan_remaining_hours"
 
+	// MetricSavingsPlanObservedUnusedCommitment tracks the latest settled
+	// organization-wide unused Compute Savings Plans commitment from Cost Explorer.
+	// Type: Gauge
+	// Labels: account_id, account_name
+	MetricSavingsPlanObservedUnusedCommitment = "savings_plan_observed_unused_commitment"
+
+	// MetricSavingsPlanUtilizationObservationTimestampSeconds tracks the Unix
+	// timestamp of the Cost Explorer utilization bucket used for reconciliation.
+	// Type: Gauge
+	// Labels: account_id, account_name
+	MetricSavingsPlanUtilizationObservationTimestampSeconds = "savings_plan_utilization_observation_timestamp_seconds"
+
 	// MetricSavingsPlanCurrentUtilizationRate tracks the current hourly rate
 	// being consumed by instances covered by this Savings Plan. This is a snapshot
 	// of current usage in USD/hour. Compare against MetricSavingsPlanHourlyCommitment

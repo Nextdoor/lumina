@@ -20,7 +20,7 @@
   "policies": [
     {
       "policy_name": "LuminaReadOnlyPolicy",
-      "description": "Read-only access to EC2 and Savings Plans",
+      "description": "Read-only access to EC2, Savings Plans, and Cost Explorer",
       "policy_document": {
         "Version": "2012-10-17",
         "Statement": [
@@ -31,6 +31,7 @@
               "ec2:DescribeReservedInstances",
               "ec2:DescribeSpotPriceHistory",
               "savingsplans:DescribeSavingsPlans",
+              "ce:GetSavingsPlansUtilization",
               "pricing:GetProducts"
             ],
             "Resource": "*"

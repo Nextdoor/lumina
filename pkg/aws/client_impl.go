@@ -37,13 +37,14 @@ import (
 type RealClient struct {
 	config               ClientConfig
 	stsClient            *sts.Client
-	defaultCredsProvider aws.CredentialsProvider   // Default credential provider from credential chain
-	defaultAccountConfig AccountConfig             // Account config for non-account-specific calls (pricing, etc)
-	mu                   sync.RWMutex              // Protects ec2Clients and spClients maps
-	ec2Clients           map[string]*RealEC2Client // Cached per-account EC2 clients
-	spClients            map[string]*RealSPClient  // Cached per-account Savings Plans clients
-	pricingCache         *RealPricingClient        // Shared pricing client (region-independent)
-	endpointURL          string                    // Optional endpoint URL (for LocalStack testing)
+	defaultCredsProvider aws.CredentialsProvider            // Default credential provider from credential chain
+	defaultAccountConfig AccountConfig                      // Account config for non-account-specific calls (pricing, etc)
+	mu                   sync.RWMutex                       // Protects ec2Clients and spClients maps
+	ec2Clients           map[string]*RealEC2Client          // Cached per-account EC2 clients
+	spClients            map[string]*RealSPClient           // Cached per-account Savings Plans clients
+	costExplorerClients  map[string]*RealCostExplorerClient // Cached per-account Cost Explorer clients
+	pricingCache         *RealPricingClient                 // Shared pricing client (region-independent)
+	endpointURL          string                             // Optional endpoint URL (for LocalStack testing)
 }
 
 // NewRealClient creates a new RealClient with the specified configuration.
@@ -89,6 +90,7 @@ func NewRealClient(
 		defaultAccountConfig: defaultAccountConfig,
 		ec2Clients:           make(map[string]*RealEC2Client),
 		spClients:            make(map[string]*RealSPClient),
+		costExplorerClients:  make(map[string]*RealCostExplorerClient),
 		pricingCache:         nil, // Will be initialized on first Pricing() call
 		endpointURL:          endpointURL,
 	}, nil
@@ -154,6 +156,26 @@ func (c *RealClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 	// Cache the client (write lock)
 	c.mu.Lock()
 	c.spClients[cacheKey] = client
+	c.mu.Unlock()
+	return client, nil
+}
+
+// CostExplorer returns a cached Cost Explorer client for an account.
+func (c *RealClient) CostExplorer(ctx context.Context, accountConfig AccountConfig) (CostExplorerClient, error) {
+	cacheKey := accountConfig.AccountID + ":" + accountConfig.Region
+	c.mu.RLock()
+	if client, ok := c.costExplorerClients[cacheKey]; ok {
+		c.mu.RUnlock()
+		return client, nil
+	}
+	c.mu.RUnlock()
+
+	client, err := NewRealCostExplorerClient(ctx, c.getCredentials(accountConfig), c.endpointURL)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.costExplorerClients[cacheKey] = client
 	c.mu.Unlock()
 	return client, nil
 }

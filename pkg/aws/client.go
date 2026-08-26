@@ -31,6 +31,9 @@ type Client interface {
 	// SavingsPlans returns a SavingsPlansClient for the specified account.
 	SavingsPlans(ctx context.Context, accountConfig AccountConfig) (SavingsPlansClient, error)
 
+	// CostExplorer returns a CostExplorerClient for the specified account.
+	CostExplorer(ctx context.Context, accountConfig AccountConfig) (CostExplorerClient, error)
+
 	// Pricing returns a PricingClient (does not require account-specific credentials)
 	Pricing(ctx context.Context) PricingClient
 }
@@ -114,6 +117,16 @@ type SavingsPlansClient interface {
 		operatingSystems []string,
 		tenancies []string,
 	) ([]SavingsPlanRate, error)
+}
+
+// CostExplorerClient provides settled Savings Plans utilization from AWS billing data.
+type CostExplorerClient interface {
+	// GetComputeSavingsPlansUnusedCommitment returns the latest observed hourly
+	// unused Compute Savings Plans commitment visible to the caller.
+	GetComputeSavingsPlansUnusedCommitment(
+		ctx context.Context,
+		now time.Time,
+	) (SavingsPlansUtilizationObservation, error)
 }
 
 // PricingClient provides access to AWS Pricing API operations.

@@ -63,17 +63,20 @@ graph TD
     SPR_API["DescribeSavingsPlanRates"]:::api
     SPOT_API["EC2 Spot Price History"]:::api
     PRICING_API["AWS Pricing API"]:::api
+    CE_API["Cost Explorer SP Utilization"]:::api
 
     EC2R["EC2 Reconciler"]:::recon
     RISPR["RISP Reconciler"]:::recon
     SPRR["SP Rates Reconciler"]:::recon
     SPOTR["Spot Reconciler"]:::recon
     PRICINGR["Pricing Reconciler"]:::recon
+    CE_R["SP Utilization Reconciler"]:::recon
 
     EC2C["EC2 Cache"]:::cache
     RISPC["RISP Cache"]:::cache
     PRICEC["Pricing Cache"]:::cache
     SPOTC["Spot Price Cache"]:::cache
+    CE_C["SP Utilization Cache"]:::cache
 
     COST["Cost Calculator"]:::recon
     METRICS["Prometheus Metrics"]:::output
@@ -84,11 +87,13 @@ graph TD
     SPR_API --> SPRR --> PRICEC
     SPOT_API --> SPOTR --> SPOTC
     PRICING_API --> PRICINGR --> PRICEC
+    CE_API --> CE_R --> CE_C
 
     EC2C --> COST
     RISPC --> COST
     PRICEC --> COST
     SPOTC --> COST
+    CE_C --> COST
     COST --> METRICS
 ```
 
@@ -103,6 +108,7 @@ Lumina uses multiple reconciliation loops running at different intervals, each r
 | **EC2** | 5m | EC2 DescribeInstances | Instances change frequently (autoscaling) |
 | **SP Rates** | 1-2m | DescribeSavingsPlanRates | Incremental; only fetches missing rates |
 | **Spot Pricing** | 15s | EC2 Spot Price History | Fast checks OK due to lazy-loading |
+| **SP Utilization** | 1h | Cost Explorer | Caps Compute SP headroom with settled billing data |
 | **Cost** | Event-driven | Internal calculation | Triggered by cache updates |
 
 ```mermaid
@@ -157,6 +163,9 @@ If a rate is not cached (new instance type, cache warming), Lumina falls back to
 
 ### Spot Price Cache
 Stores real-time spot market rates. Uses lazy-loading -- only fetches prices for instance types that are actually running. Automatically refreshes stale prices.
+
+### Savings Plans Utilization Cache
+Stores the latest available hourly organization-wide unused Compute Savings Plans commitment from Cost Explorer. Lumina queries through the configured default account, which must have access to the monitored organization's billing data. Fresh observations conservatively cap the live EC2-only remaining-capacity estimate; stale or unavailable observations are ignored.
 
 ## Multi-Account Support
 

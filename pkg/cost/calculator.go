@@ -115,6 +115,9 @@ func (c *Calculator) Calculate(input CalculationInput) CalculationResult {
 	// This handles both EC2 Instance SPs and Compute SPs in priority order
 	applySavingsPlans(c, input.Instances, input.SavingsPlans, costsPtrs, spUtilPtrs)
 
+	// Reconcile Compute Savings Plans headroom with settled AWS billing data.
+	reconcileComputeSavingsPlanUtilization(input, spUtilPtrs)
+
 	// Step 4.5: Validate Savings Plans math invariants
 	// This runtime check ensures the algorithm calculated costs correctly
 	c.validateSavingsPlansInvariants(input.SavingsPlans, costsPtrs, spUtilPtrs)

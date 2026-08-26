@@ -65,6 +65,9 @@ type CostReconciler struct {
 	// PricingCache provides on-demand and spot pricing data
 	PricingCache *cache.PricingCache
 
+	// SPUtilizationCache provides settled account-level Compute SP headroom.
+	SPUtilizationCache *cache.SPUtilizationCache
+
 	// NodeCache provides EC2 instance ID → K8s node name mappings
 	// Used to add node_name labels to cost metrics (Phase 8)
 	NodeCache *cache.NodeCache
@@ -81,11 +84,12 @@ type CostReconciler struct {
 
 	// Ready channels for waiting on dependencies during initialization.
 	// The cost reconciler waits for all of these to be ready before its first calculation.
-	PricingReadyChan     chan struct{} // Wait for on-demand pricing to load
-	RISPReadyChan        chan struct{} // Wait for Savings Plans and RIs to load
-	EC2ReadyChan         chan struct{} // Wait for EC2 instances to load
-	SPRatesReadyChan     chan struct{} // Wait for SP rates to load
-	SpotPricingReadyChan chan struct{} // Wait for spot pricing to load
+	PricingReadyChan       chan struct{} // Wait for on-demand pricing to load
+	RISPReadyChan          chan struct{} // Wait for Savings Plans and RIs to load
+	EC2ReadyChan           chan struct{} // Wait for EC2 instances to load
+	SPRatesReadyChan       chan struct{} // Wait for SP rates to load
+	SpotPricingReadyChan   chan struct{} // Wait for spot pricing to load
+	SPUtilizationReadyChan chan struct{} // Wait for settled SP utilization to load
 
 	// initialized tracks whether the initial dependency wait has completed.
 	// This prevents the debouncer from triggering calculations before all
@@ -147,11 +151,12 @@ func (r *CostReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Re
 	// Pass the PricingCache directly so the calculator can use accessor methods
 	// for spot pricing instead of fragile map key lookups
 	input := cost.CalculationInput{
-		Instances:         instances,
-		ReservedInstances: ris,
-		SavingsPlans:      sps,
-		PricingCache:      r.PricingCache,
-		OnDemandPrices:    onDemandPrices,
+		Instances:                 instances,
+		ReservedInstances:         ris,
+		SavingsPlans:              sps,
+		ComputeSPUnusedCommitment: computeSPUnusedCommitment(r.SPUtilizationCache, time.Now()),
+		PricingCache:              r.PricingCache,
+		OnDemandPrices:            onDemandPrices,
 	}
 
 	// Run cost calculation algorithm
@@ -291,6 +296,13 @@ func (r *CostReconciler) waitForDependencies() {
 		log.Info("SP rates cache ready")
 	}
 
+	// Wait for settled Savings Plans utilization to be ready.
+	if r.SPUtilizationReadyChan != nil {
+		log.Info("waiting for SP utilization cache to be ready")
+		<-r.SPUtilizationReadyChan
+		log.Info("SP utilization cache ready")
+	}
+
 	// Wait for spot pricing cache to be ready
 	if r.SpotPricingReadyChan != nil {
 		log.Info("waiting for spot pricing cache to be ready")
@@ -320,4 +332,15 @@ func (r *CostReconciler) waitForDependenciesAndCalculate(_ client.Client) {
 	} else {
 		log.Info("initial cost calculation completed successfully")
 	}
+}
+
+func computeSPUnusedCommitment(c *cache.SPUtilizationCache, now time.Time) *float64 {
+	if c == nil {
+		return nil
+	}
+	observation, ok := c.GetFresh(now, 7*24*time.Hour)
+	if !ok {
+		return nil
+	}
+	return &observation.UnusedCommitment
 }

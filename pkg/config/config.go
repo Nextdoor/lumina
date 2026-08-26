@@ -365,6 +365,11 @@ type TestData struct {
 	// Example: {"sp-12345": [{rate: 0.05, instanceType: "m5.xlarge", ...}]}
 	SavingsPlanRates map[string][]TestSavingsPlanRate `yaml:"savingsPlanRates,omitempty"`
 
+	// ComputeSavingsPlanUnusedCommitment provides a settled organization-wide
+	// Compute Savings Plans unused commitment for hermetic tests where Cost
+	// Explorer is unavailable. A pointer distinguishes an explicit zero from unset.
+	ComputeSavingsPlanUnusedCommitment *float64 `yaml:"computeSavingsPlanUnusedCommitment,omitempty"`
+
 	// PricingFlat contains mock pricing data in flat format for testing.
 	// Map keys are in format "region:instanceType:operatingSystem" -> price
 	// Example: {"us-west-2:m5.xlarge:Linux": 0.192}

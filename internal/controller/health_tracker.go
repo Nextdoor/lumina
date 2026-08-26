@@ -59,7 +59,7 @@ func (t *ReconcilerHealthTracker) Check(_ *http.Request) error {
 	}
 
 	// Build a descriptive error listing all failed reconcilers
-	var failures []string
+	failures := make([]string, 0, len(t.failed))
 	for name, err := range t.failed {
 		failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 	}

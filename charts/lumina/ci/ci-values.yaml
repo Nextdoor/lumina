@@ -33,7 +33,7 @@ localstack:
     # Create IAM policy for Lumina
     awslocal iam create-policy \
       --policy-name LuminaReadOnlyPolicy \
-      --description "Read-only access to EC2 and Savings Plans" \
+      --description "Read-only access to EC2, Savings Plans, and Cost Explorer" \
       --policy-document '{
         "Version": "2012-10-17",
         "Statement": [{
@@ -43,6 +43,7 @@ localstack:
             "ec2:DescribeReservedInstances",
             "ec2:DescribeSpotPriceHistory",
             "savingsplans:DescribeSavingsPlans",
+            "ce:GetSavingsPlansUtilization",
             "pricing:GetProducts"
           ],
           "Resource": "*"
@@ -97,6 +98,9 @@ serviceAccount:
 config:
   defaultRegion: us-west-2
   accountValidationInterval: "1h"
+  testData:
+    # LocalStack Community does not implement Cost Explorer.
+    computeSavingsPlanUnusedCommitment: 0
   awsAccounts:
     - accountId: "000000000000"
       name: "LocalStack"

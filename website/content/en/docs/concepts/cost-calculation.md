@@ -295,26 +295,34 @@ Lumina Behavior:
 - AWS: Cumulative tracking within each billing hour
 - **Impact:** If instances scale up/down during an hour, Lumina's costs will not match AWS exactly. Lumina may show higher costs if short-lived instances exhaust SP capacity.
 
-### 2. Simplified SP Model
+### 2. Compute SP Usage Outside EC2
+
+- Compute Savings Plans can also cover services that are not part of Lumina's live EC2 inventory.
+- Lumina queries Cost Explorer through the configured default account and caps aggregate Compute SP headroom with the latest available settled hourly utilization.
+- Hourly Cost Explorer data must be enabled for the account and can take up to 48 hours to become available.
+- The result is a lagging conservative bound: newly available headroom can remain suppressed until Cost Explorer publishes a newer hourly bucket.
+- **Impact:** If no Cost Explorer observation from the last seven days is available, Lumina temporarily falls back to the live EC2 estimate.
+
+### 3. Simplified SP Model
 
 - One SP per instance (see [above](#simplified-model-decisions))
 - **Impact:** Under-estimates costs in edge cases with multiple partial SPs. Typically less than 5% impact on total costs.
 
-### 3. Regional vs Zonal RIs
+### 4. Regional vs Zonal RIs
 
 - Lumina treats all RIs as zonal (tied to specific AZ)
 - AWS has "Regional RIs" that can float across AZs in a region
 - **Impact:** Lumina may under-utilize Regional RIs. Instances in different AZs will not share Regional RI pool.
 - **Status:** Low priority -- most production RIs are zonal for capacity guarantees.
 
-### 4. RI Instance Size Flexibility
+### 5. RI Instance Size Flexibility
 
 - Lumina requires exact instance type match for RIs
 - AWS allows some instance size flexibility within same family (e.g., 2x m5.large = 1x m5.xlarge)
 - **Impact:** Lumina will not apply RI coverage to differently-sized instances in the same family.
 - **Status:** Medium priority -- common in production, but complex to implement correctly.
 
-### 5. Capacity Reservations
+### 6. Capacity Reservations
 
 - Lumina does not track AWS Capacity Reservations
 - **Impact:** Capacity Reservation usage is treated as on-demand. No cost impact (same rate), but capacity planning metrics may be affected.
@@ -326,14 +334,14 @@ Lumina Behavior:
 
 These invariants must always hold true. If they do not, there is a bug in the cost calculation logic.
 
-**Invariant 1: SP-covered costs >= SP utilization**
+**Invariant 1: SP commitment balance**
 ```promql
-sum(ec2_instance_hourly_cost{cost_type="compute_savings_plan"}) +
-sum(ec2_instance_hourly_cost{cost_type="ec2_instance_savings_plan"})
-  >=
-sum(savings_plan_current_utilization_rate)
+sum(savings_plan_current_utilization_rate) +
+sum(savings_plan_remaining_capacity)
+  ==
+sum(savings_plan_hourly_commitment)
 ```
-SP-covered instances may have on-demand spillover from partial coverage.
+Utilization and remaining capacity always partition the purchased commitment, including after Compute SP reconciliation.
 
 **Invariant 2: SP utilization <= SP commitment**
 ```promql

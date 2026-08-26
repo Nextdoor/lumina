@@ -32,6 +32,9 @@ type MockClient struct {
 	// SavingsPlansClients maps AccountID to MockSavingsPlansClient
 	SavingsPlansClients map[string]*MockSavingsPlansClient
 
+	// CostExplorerClients maps AccountID to MockCostExplorerClient
+	CostExplorerClients map[string]*MockCostExplorerClient
+
 	// PricingClientInstance is the mock pricing client
 	PricingClientInstance *MockPricingClient
 
@@ -41,6 +44,7 @@ type MockClient struct {
 	// Errors can be set to simulate AWS API errors
 	EC2Error          error
 	SavingsPlansError error
+	CostExplorerError error
 	PricingError      error
 }
 
@@ -56,6 +60,7 @@ func NewMockClient() *MockClient {
 	return &MockClient{
 		EC2Clients:            make(map[string]*MockEC2Client),
 		SavingsPlansClients:   make(map[string]*MockSavingsPlansClient),
+		CostExplorerClients:   make(map[string]*MockCostExplorerClient),
 		PricingClientInstance: NewMockPricingClient(),
 		AssumeRoleCalls:       []AssumeRoleCall{},
 	}
@@ -115,6 +120,36 @@ func (m *MockClient) SavingsPlans(ctx context.Context, accountConfig AccountConf
 	}
 
 	return client, nil
+}
+
+// CostExplorer returns a mock CostExplorerClient for the specified account.
+func (m *MockClient) CostExplorer(_ context.Context, accountConfig AccountConfig) (CostExplorerClient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.CostExplorerError != nil {
+		return nil, m.CostExplorerError
+	}
+	client, exists := m.CostExplorerClients[accountConfig.AccountID]
+	if !exists {
+		client = &MockCostExplorerClient{}
+		m.CostExplorerClients[accountConfig.AccountID] = client
+	}
+	return client, nil
+}
+
+// MockCostExplorerClient is a configurable Cost Explorer client for tests.
+type MockCostExplorerClient struct {
+	Observation SavingsPlansUtilizationObservation
+	Err         error
+	CallCount   int
+}
+
+func (m *MockCostExplorerClient) GetComputeSavingsPlansUnusedCommitment(
+	_ context.Context,
+	_ time.Time,
+) (SavingsPlansUtilizationObservation, error) {
+	m.CallCount++
+	return m.Observation, m.Err
 }
 
 // Pricing returns the mock PricingClient.
