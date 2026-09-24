@@ -39,7 +39,7 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
         with:
-          version: v4.2.4
+          version: v4.3.0
 
       - name: Helm Lint
         run: |
@@ -56,8 +56,8 @@ jobs:
       - name: Create Kind cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
-          version: v0.26.0
-          kubectl_version: v1.31.14
+          version: v0.33.0
+          kubectl_version: v1.37.1
 
       - name: Install chart
         run: |
