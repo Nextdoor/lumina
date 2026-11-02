@@ -7,10 +7,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.13
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.74.5
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.341.0
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.343.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.64.6
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.51.2
-	github.com/aws/aws-sdk-go-v2/service/savingsplans v1.40.5
+	github.com/aws/aws-sdk-go-v2/service/savingsplans v1.41.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6
 	github.com/go-logr/logr v1.4.4
 	github.com/onsi/ginkgo/v2 v2.33.1
