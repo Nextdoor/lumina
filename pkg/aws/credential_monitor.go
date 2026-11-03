@@ -27,6 +27,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+const (
+	labelAccountID   = "account_id"
+	labelAccountName = "account_name"
+)
+
 var (
 	// credentialCheckTotal tracks the total number of credential checks performed.
 	credentialCheckTotal = promauto.NewCounterVec(
@@ -34,7 +39,7 @@ var (
 			Name: "aws_credential_check_total",
 			Help: "Total number of AWS credential checks performed by account and status",
 		},
-		[]string{"account_id", "account_name", "status"},
+		[]string{labelAccountID, labelAccountName, "status"},
 	)
 
 	// credentialCheckDuration tracks the duration of credential checks.
@@ -44,7 +49,7 @@ var (
 			Help:    "Duration of AWS credential checks in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"account_id", "account_name"},
+		[]string{labelAccountID, labelAccountName},
 	)
 
 	// credentialLastCheckTimestamp tracks when the last check was performed.
@@ -53,7 +58,7 @@ var (
 			Name: "aws_credential_last_check_timestamp",
 			Help: "Unix timestamp of the last AWS credential check",
 		},
-		[]string{"account_id", "account_name"},
+		[]string{labelAccountID, labelAccountName},
 	)
 
 	// credentialHealthy indicates whether credentials are currently healthy.
@@ -62,7 +67,7 @@ var (
 			Name: "aws_credential_healthy",
 			Help: "Indicates if AWS credentials are healthy (1=healthy, 0=unhealthy)",
 		},
-		[]string{"account_id", "account_name"},
+		[]string{labelAccountID, labelAccountName},
 	)
 )
 

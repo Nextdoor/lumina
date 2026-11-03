@@ -24,6 +24,13 @@ import (
 	"github.com/nextdoor/lumina/internal/cache"
 )
 
+// JSON keys shared across debug endpoint responses.
+const (
+	keyTotalCount = "total_count"
+	keyLastUpdate = "last_update"
+	keyAgeSeconds = "age_seconds"
+)
+
 // DebugHandler provides HTTP endpoints for inspecting internal caches.
 // These endpoints are useful for debugging and should only be enabled in development/staging.
 //
@@ -111,9 +118,9 @@ func (h *DebugHandler) handleEC2(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"total_count": len(instances),
-		"last_update": lastUpdate,
-		"age_seconds": time.Since(lastUpdate).Seconds(),
+		keyTotalCount: len(instances),
+		keyLastUpdate: lastUpdate,
+		keyAgeSeconds: time.Since(lastUpdate).Seconds(),
 		"by_region":   byRegion,
 	}
 
@@ -132,8 +139,8 @@ func (h *DebugHandler) handleRISP(w http.ResponseWriter, _ *http.Request) {
 	stats := h.RISPCache.GetStats()
 
 	response := map[string]interface{}{
-		"last_update": stats.LastUpdate,
-		"age_seconds": time.Since(stats.LastUpdate).Seconds(),
+		keyLastUpdate: stats.LastUpdate,
+		keyAgeSeconds: time.Since(stats.LastUpdate).Seconds(),
 		"reserved_instances": map[string]interface{}{
 			"count": len(ris),
 			"items": ris,
@@ -158,9 +165,9 @@ func (h *DebugHandler) handlePricingOnDemand(w http.ResponseWriter, _ *http.Requ
 	stats := h.PricingCache.GetStats()
 
 	response := map[string]interface{}{
-		"total_count": len(prices),
-		"last_update": stats.LastUpdated,
-		"age_seconds": time.Since(stats.LastUpdated).Seconds(),
+		keyTotalCount: len(prices),
+		keyLastUpdate: stats.LastUpdated,
+		keyAgeSeconds: time.Since(stats.LastUpdated).Seconds(),
 		"prices":      prices,
 	}
 
@@ -189,7 +196,7 @@ func (h *DebugHandler) handlePricingSpot(w http.ResponseWriter, _ *http.Request)
 	}
 
 	response := map[string]interface{}{
-		"total_count": len(prices),
+		keyTotalCount: len(prices),
 		"stats": map[string]interface{}{
 			"is_populated":       stats.IsPopulated,
 			"spot_price_count":   stats.SpotPriceCount,
@@ -225,9 +232,9 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 
 		response := map[string]interface{}{
 			"sp_arn":      spArn,
-			"total_count": len(filteredRates),
-			"last_update": stats.LastUpdated,
-			"age_seconds": time.Since(stats.LastUpdated).Seconds(),
+			keyTotalCount: len(filteredRates),
+			keyLastUpdate: stats.LastUpdated,
+			keyAgeSeconds: time.Since(stats.LastUpdated).Seconds(),
 			"rates":       filteredRates,
 		}
 		_ = json.NewEncoder(w).Encode(response) // Best-effort encoding for debug endpoint
@@ -263,8 +270,8 @@ func (h *DebugHandler) handlePricingSP(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"total_rates": len(allRates),
 		"sp_count":    len(bySpArn),
-		"last_update": stats.LastUpdated,
-		"age_seconds": time.Since(stats.LastUpdated).Seconds(),
+		keyLastUpdate: stats.LastUpdated,
+		keyAgeSeconds: time.Since(stats.LastUpdated).Seconds(),
 		"by_sp_arn":   bySpArn,
 		"key_format":  "spArn,instanceType,region,tenancy,os (comma-separated)",
 	}
